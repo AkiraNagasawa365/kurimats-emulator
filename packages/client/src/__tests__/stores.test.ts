@@ -55,3 +55,61 @@ describe('レイアウトストア', () => {
     expect(state.panels[1].sessionId).toBe('new-session')
   })
 })
+
+describe('自動レイアウト拡張', () => {
+  beforeEach(() => {
+    useLayoutStore.setState({
+      mode: '1x1',
+      panels: [{ sessionId: null, position: 0 }],
+      activePanelIndex: 0,
+      autoLayoutMode: 'grid',
+      maximizedPanelIndex: null,
+    })
+  })
+
+  it('autoLayoutModeの初期値はgrid', () => {
+    expect(useLayoutStore.getState().autoLayoutMode).toBe('grid')
+  })
+
+  it('autoLayoutModeをflowに切り替えられる', () => {
+    useLayoutStore.getState().setAutoLayoutMode('flow')
+    expect(useLayoutStore.getState().autoLayoutMode).toBe('flow')
+  })
+
+  it('autoLayoutModeをtreeに切り替えられる', () => {
+    useLayoutStore.getState().setAutoLayoutMode('tree')
+    expect(useLayoutStore.getState().autoLayoutMode).toBe('tree')
+  })
+
+  it('maximizedPanelIndexの初期値はnull', () => {
+    expect(useLayoutStore.getState().maximizedPanelIndex).toBeNull()
+  })
+
+  it('toggleMaximizeでパネルを最大化できる', () => {
+    useLayoutStore.getState().toggleMaximize(0)
+    expect(useLayoutStore.getState().maximizedPanelIndex).toBe(0)
+  })
+
+  it('toggleMaximizeで同じパネルを再度トグルすると元に戻る', () => {
+    useLayoutStore.getState().toggleMaximize(0)
+    useLayoutStore.getState().toggleMaximize(0)
+    expect(useLayoutStore.getState().maximizedPanelIndex).toBeNull()
+  })
+
+  it('toggleMaximizeで異なるパネルに切り替えられる', () => {
+    useLayoutStore.getState().setMode('2x1')
+    useLayoutStore.getState().toggleMaximize(0)
+    useLayoutStore.getState().toggleMaximize(1)
+    expect(useLayoutStore.getState().maximizedPanelIndex).toBe(1)
+  })
+
+  it('autoArrangeがCardRect配列を返す', () => {
+    useLayoutStore.getState().setMode('2x1')
+    useLayoutStore.getState().assignSession(0, 'session-1')
+    useLayoutStore.getState().assignSession(1, 'session-2')
+    const result = useLayoutStore.getState().autoArrange(800, 600)
+    expect(result).toHaveLength(2)
+    expect(result[0].id).toBe('session-1')
+    expect(result[1].id).toBe('session-2')
+  })
+})

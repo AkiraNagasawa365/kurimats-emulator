@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import type { LayoutMode } from '@kurimats/shared'
+import type { LayoutMode, AutoLayoutMode } from '@kurimats/shared'
 import { layoutApi } from '../lib/api'
+import { gridLayout, flowLayout, treeLayout, type CardRect } from '../lib/layout-engine'
 
 interface PanelInfo {
   sessionId: string | null
@@ -11,6 +12,8 @@ interface LayoutState {
   mode: LayoutMode
   panels: PanelInfo[]
   activePanelIndex: number
+  autoLayoutMode: AutoLayoutMode
+  maximizedPanelIndex: number | null
 
   setMode: (mode: LayoutMode) => void
   assignSession: (panelIndex: number, sessionId: string) => void
@@ -18,6 +21,9 @@ interface LayoutState {
   setActivePanel: (index: number) => void
   addPanel: (sessionId: string) => void
   loadSavedLayout: () => Promise<void>
+  setAutoLayoutMode: (mode: AutoLayoutMode) => void
+  autoArrange: (containerWidth: number, containerHeight: number) => CardRect[]
+  toggleMaximize: (index: number) => void
 }
 
 const STORAGE_KEY = 'kurimats-layout'
@@ -83,6 +89,8 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   mode: savedState?.mode ?? '1x1',
   panels: savedState?.panels ?? [{ sessionId: null, position: 0 }],
   activePanelIndex: savedState?.activePanelIndex ?? 0,
+  autoLayoutMode: 'grid' as AutoLayoutMode,
+  maximizedPanelIndex: null as number | null,
 
   setMode: (mode) => {
     const count = panelCountForMode(mode)
@@ -168,5 +176,40 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     } catch {
       // サーバー取得失敗はlocalStorageの状態を維持
     }
+  },
+
+  setAutoLayoutMode: (mode: AutoLayoutMode) => {
+    set({ autoLayoutMode: mode })
+  },
+
+  autoArrange: (containerWidth: number, containerHeight: number): CardRect[] => {
+    const { panels, autoLayoutMode } = get()
+    // パネルをCardRectに変換（均等サイズで仮配置）
+    const cards: CardRect[] = panels
+      .filter(p => p.sessionId !== null)
+      .map((p, i) => ({
+        id: p.sessionId!,
+        x: 0,
+        y: 0,
+        width: 300,
+        height: 200,
+        projectId: null,
+      }))
+
+    switch (autoLayoutMode) {
+      case 'grid':
+        return gridLayout(cards, containerWidth, containerHeight)
+      case 'flow':
+        return flowLayout(cards, containerWidth)
+      case 'tree':
+        return treeLayout(cards, containerWidth, containerHeight)
+      default:
+        return cards
+    }
+  },
+
+  toggleMaximize: (index: number) => {
+    const current = get().maximizedPanelIndex
+    set({ maximizedPanelIndex: current === index ? null : index })
   },
 }))

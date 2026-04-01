@@ -47,6 +47,9 @@ export interface BoardCard {
   createdAt: number
 }
 
+// 自動レイアウトモード
+export type AutoLayoutMode = 'grid' | 'flow' | 'tree'
+
 // パネルレイアウト
 export type LayoutMode = '1x1' | '2x1' | '1x2' | '2x2' | '3x1'
 
