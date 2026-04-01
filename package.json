@@ -10,7 +10,9 @@
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
     "dev:server": "npm run dev -w packages/server",
-    "dev:client": "npm run dev -w packages/client"
+    "dev:client": "npm run dev -w packages/client",
+    "electron": "npm run dev -w packages/electron",
+    "build:electron": "npm run build -w packages/electron"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
