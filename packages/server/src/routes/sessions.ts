@@ -1,12 +1,14 @@
 import { Router } from 'express'
 import type { SessionStore } from '../services/session-store.js'
 import type { PtyManager } from '../services/pty-manager.js'
+import type { SshManager } from '../services/ssh-manager.js'
 import type { WorktreeService } from '../services/worktree-service.js'
 import type { CreateSessionParams } from '@kurimats/shared'
 
 export function createSessionsRouter(
   store: SessionStore,
   ptyManager: PtyManager,
+  sshManager: SshManager,
   worktreeService: WorktreeService
 ): Router {
   const router = Router()
@@ -26,10 +28,12 @@ export function createSessionsRouter(
       return
     }
 
+    const isRemote = !!params.sshHost
+
     let worktreePath: string | null = null
 
-    // worktreeを使用する場合（デフォルト有効）
-    if (params.useWorktree !== false && worktreeService.isGitRepo(params.repoPath)) {
+    // ローカルセッションの場合のみworktreeを使用
+    if (!isRemote && params.useWorktree !== false && worktreeService.isGitRepo(params.repoPath)) {
       try {
         worktreePath = worktreeService.create(
           params.repoPath,
@@ -38,22 +42,32 @@ export function createSessionsRouter(
         )
       } catch (e) {
         console.error('Worktree作成エラー:', e)
-        // worktree作成失敗時はrepoPathをそのまま使用
       }
     }
 
     const session = store.create({
-      ...params,
+      name: params.name,
+      repoPath: params.repoPath,
+      baseBranch: params.baseBranch,
+      useWorktree: params.useWorktree,
       worktreePath,
+      sshHost: params.sshHost || null,
+      isRemote,
     })
 
-    // PTYを起動（worktreeがあればそのパス、なければrepoPath）
     const cwd = worktreePath || params.repoPath
+
     try {
-      await ptyManager.spawn(session.id, cwd)
+      if (isRemote && params.sshHost) {
+        // リモートSSHセッション
+        await sshManager.spawn(session.id, params.sshHost, cwd)
+      } else {
+        // ローカルPTYセッション
+        await ptyManager.spawn(session.id, cwd)
+      }
     } catch (e) {
       store.delete(session.id)
-      res.status(500).json({ error: `PTY起動エラー: ${e}` })
+      res.status(500).json({ error: `${isRemote ? 'リモートシェル' : 'PTY'}起動エラー: ${e}` })
       return
     }
 
@@ -78,7 +92,12 @@ export function createSessionsRouter(
       return
     }
 
-    ptyManager.kill(session.id)
+    // リモートかローカルかで適切なマネージャーを使用
+    if (session.isRemote && sshManager.hasSession(session.id)) {
+      sshManager.kill(session.id)
+    } else {
+      ptyManager.kill(session.id)
+    }
     store.updateStatus(session.id, 'terminated')
     res.json({ ok: true })
   })

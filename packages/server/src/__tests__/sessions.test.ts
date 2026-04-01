@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import express from 'express'
 import { createServer, type Server } from 'http'
 import { PtyManager } from '../services/pty-manager.js'
+import { SshManager } from '../services/ssh-manager.js'
 import { SessionStore } from '../services/session-store.js'
 import { WorktreeService } from '../services/worktree-service.js'
 import { createSessionsRouter } from '../routes/sessions.js'
@@ -15,11 +16,12 @@ describe('セッションAPI', () => {
   beforeEach(async () => {
     store = new SessionStore()
     ptyManager = new PtyManager()
+    const sshManager = new SshManager()
     const worktreeService = new WorktreeService()
 
     const app = express()
     app.use(express.json())
-    app.use('/api/sessions', createSessionsRouter(store, ptyManager, worktreeService))
+    app.use('/api/sessions', createSessionsRouter(store, ptyManager, sshManager, worktreeService))
 
     server = createServer(app)
     await new Promise<void>((resolve) => {

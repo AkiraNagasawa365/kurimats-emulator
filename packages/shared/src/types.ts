@@ -12,6 +12,8 @@ export interface Session {
   claudeSessionId: string | null
   isFavorite: boolean
   projectId: string | null
+  sshHost: string | null
+  isRemote: boolean
   createdAt: number
   lastActiveAt: number
 }
@@ -22,6 +24,7 @@ export interface CreateSessionParams {
   repoPath: string
   baseBranch?: string
   useWorktree?: boolean
+  sshHost?: string
 }
 
 // Worktree情報
@@ -90,6 +93,28 @@ export const PROJECT_COLORS = [
   '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
   '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
 ] as const
+
+// SSHホスト情報
+export interface SshHost {
+  name: string
+  hostname: string
+  user: string
+  port: number
+  identityFile: string | null
+  isConnected: boolean
+}
+
+// SSH接続ステータス
+export type SshConnectionStatus = 'online' | 'offline' | 'reconnecting'
+
+// Claude通知
+export interface ClaudeNotification {
+  id: string
+  sessionId: string
+  message: string
+  timestamp: number
+  read: boolean
+}
 
 // ファイルツリーノード
 export interface FileNode {

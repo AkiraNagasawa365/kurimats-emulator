@@ -23,6 +23,11 @@ export function TerminalHeader({ session, isActive, onClose }: Props) {
         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
           session.status === 'active' ? 'bg-green-500' : 'bg-gray-400'
         }`} />
+        {session.isRemote && (
+          <span className="text-[9px] px-1 py-0.5 bg-blue-100 text-blue-600 rounded flex-shrink-0 font-medium">
+            SSH:{session.sshHost}
+          </span>
+        )}
         <span className="truncate font-medium">{session.name}</span>
         {session.branch && (
           <span className="text-text-muted truncate">
