@@ -28,3 +28,8 @@ export type ProjectMessage =
 export type FileWatchMessage =
   | { type: 'file_changed'; path: string; event: 'add' | 'change' | 'unlink' }
   | { type: 'dir_changed'; path: string; event: 'addDir' | 'unlinkDir' }
+
+// 通知WebSocketメッセージ（サーバー → クライアント）
+export type NotificationMessage =
+  | { type: 'claude_notification'; sessionId: string; message: string; timestamp: number }
+  | { type: 'connection_status'; host: string; status: 'online' | 'offline' | 'reconnecting' }

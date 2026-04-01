@@ -86,6 +86,20 @@ export class SessionStore {
     // 既存テーブルへのカラム追加（既にあればスキップ）
     try { this.db.exec('ALTER TABLE sessions ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0') } catch { /* カラム既存 */ }
     try { this.db.exec('ALTER TABLE sessions ADD COLUMN project_id TEXT') } catch { /* カラム既存 */ }
+    try { this.db.exec('ALTER TABLE sessions ADD COLUMN ssh_host TEXT') } catch { /* カラム既存 */ }
+    try { this.db.exec('ALTER TABLE sessions ADD COLUMN is_remote INTEGER NOT NULL DEFAULT 0') } catch { /* カラム既存 */ }
+
+    // SSHホストテーブル
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS ssh_hosts (
+        name TEXT PRIMARY KEY,
+        hostname TEXT NOT NULL,
+        user TEXT NOT NULL DEFAULT 'root',
+        port INTEGER NOT NULL DEFAULT 22,
+        identity_file TEXT,
+        last_connected INTEGER
+      );
+    `)
   }
 
   // ==================== セッション ====================
@@ -93,7 +107,12 @@ export class SessionStore {
   /**
    * セッション作成
    */
-  create(params: CreateSessionParams & { worktreePath?: string | null; projectId?: string | null }): Session {
+  create(params: Omit<CreateSessionParams, 'sshHost'> & {
+    worktreePath?: string | null
+    projectId?: string | null
+    sshHost?: string | null
+    isRemote?: boolean
+  }): Session {
     const now = Date.now()
     const session: Session = {
       id: uuidv4(),
@@ -105,17 +124,20 @@ export class SessionStore {
       claudeSessionId: null,
       isFavorite: false,
       projectId: params.projectId ?? null,
+      sshHost: params.sshHost ?? null,
+      isRemote: params.isRemote ?? false,
       createdAt: now,
       lastActiveAt: now,
     }
 
     this.db.prepare(`
-      INSERT INTO sessions (id, name, repo_path, worktree_path, branch, status, claude_session_id, is_favorite, project_id, created_at, last_active_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, name, repo_path, worktree_path, branch, status, claude_session_id, is_favorite, project_id, ssh_host, is_remote, created_at, last_active_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       session.id, session.name, session.repoPath, session.worktreePath,
       session.branch, session.status, session.claudeSessionId,
       session.isFavorite ? 1 : 0, session.projectId,
+      session.sshHost, session.isRemote ? 1 : 0,
       session.createdAt, session.lastActiveAt
     )
 
@@ -312,6 +334,8 @@ export class SessionStore {
       claudeSessionId: row.claude_session_id as string | null,
       isFavorite: Boolean(row.is_favorite),
       projectId: row.project_id as string | null,
+      sshHost: (row.ssh_host as string | null) ?? null,
+      isRemote: Boolean(row.is_remote),
       createdAt: row.created_at as number,
       lastActiveAt: row.last_active_at as number,
     }

@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion'
 import type { Session } from '@kurimats/shared'
 import { PROJECT_COLORS } from '@kurimats/shared'
 import { useSessionStore } from '../../stores/session-store'
 import { useLayoutStore } from '../../stores/layout-store'
+import { useSshStore } from '../../stores/ssh-store'
 import { tabApi } from '../../lib/api'
 import {
   AnimatedFavoriteButton,
@@ -20,19 +21,27 @@ import {
 export function Sidebar() {
   const { sessions, projects, createSession, toggleFavorite, assignProject, createProject, fetchProjects } = useSessionStore()
   const { addPanel, setActiveSession, boardNodes } = useLayoutStore()
+  const { hosts, fetchHosts, connectHost, disconnectHost } = useSshStore()
   const [showNewForm, setShowNewForm] = useState(false)
   const [newName, setNewName] = useState('')
   const [newRepoPath, setNewRepoPath] = useState('')
   const [newProjectId, setNewProjectId] = useState<string | null>(null)
+  const [newSshHost, setNewSshHost] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
   const [favoritesCollapsed, setFavoritesCollapsed] = useState(false)
   const [projectsCollapsed, setProjectsCollapsed] = useState(false)
   const [favoritesOnly, setFavoritesOnly] = useState(false)
+  const [sshCollapsed, setSshCollapsed] = useState(false)
   const [showProjectForm, setShowProjectForm] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectColor, setNewProjectColor] = useState<string>(PROJECT_COLORS[0])
   const [tabSyncing, setTabSyncing] = useState(false)
   const [tabSyncResult, setTabSyncResult] = useState<string | null>(null)
+
+  // SSHホスト一覧を初回取得
+  useEffect(() => {
+    fetchHosts()
+  }, [fetchHosts])
 
   // お気に入りセッション
   const favoriteSessions = useMemo(() =>
@@ -57,6 +66,7 @@ export function Sidebar() {
       const session = await createSession({
         name: newName.trim(),
         repoPath: newRepoPath.trim(),
+        sshHost: newSshHost || undefined,
       })
       if (newProjectId) {
         await assignProject(session.id, newProjectId)
@@ -65,6 +75,7 @@ export function Sidebar() {
       setNewName('')
       setNewRepoPath('')
       setNewProjectId(null)
+      setNewSshHost('')
       setShowNewForm(false)
     } catch (e) {
       alert(`作成エラー: ${e}`)
@@ -149,6 +160,19 @@ export function Sidebar() {
             className="w-full px-2.5 py-1.5 text-xs bg-white border border-border rounded text-text-primary placeholder-text-muted focus:border-accent outline-none"
             onKeyDown={e => e.key === 'Enter' && handleCreate()}
           />
+          {/* SSHホスト選択 */}
+          {hosts.length > 0 && (
+            <select
+              value={newSshHost}
+              onChange={e => setNewSshHost(e.target.value)}
+              className="w-full px-2.5 py-1.5 text-xs bg-white border border-border rounded text-text-primary outline-none focus:border-accent"
+            >
+              <option value="">ローカル</option>
+              {hosts.filter(h => h.isConnected).map(h => (
+                <option key={h.name} value={h.name}>SSH: {h.name} ({h.user}@{h.hostname})</option>
+              ))}
+            </select>
+          )}
           {/* プロジェクト選択 */}
           {projects.length > 0 && (
             <select
@@ -364,6 +388,28 @@ export function Sidebar() {
         </div>
       </div>
 
+      {/* SSHホストセクション */}
+      {hosts.length > 0 && (
+        <div className="border-t border-border">
+          <button
+            onClick={() => setSshCollapsed(!sshCollapsed)}
+            className="w-full text-left px-3 py-1.5 text-[10px] font-semibold text-text-secondary uppercase tracking-wider hover:bg-surface-2 transition-colors flex items-center gap-1"
+          >
+            <span className="text-[8px]">{sshCollapsed ? '▶' : '▼'}</span>
+            SSHホスト
+            <span className="text-text-muted ml-auto">{hosts.length}</span>
+          </button>
+          {!sshCollapsed && hosts.map(host => (
+            <SshHostItem
+              key={host.name}
+              host={host}
+              onConnect={() => connectHost(host.name).catch(() => {})}
+              onDisconnect={() => disconnectHost(host.name)}
+            />
+          ))}
+        </div>
+      )}
+
       {/* ボードキャンバス情報 */}
       <div className="px-3 py-2.5 border-t border-border">
         <p className="text-[10px] text-text-secondary font-medium">
@@ -413,6 +459,13 @@ function SessionItem({
       {/* セッション名 */}
       <span className="truncate flex-1">{session.name}</span>
 
+      {/* リモートバッジ */}
+      {session.isRemote && (
+        <span className="text-[9px] px-1 py-0.5 bg-blue-100 text-blue-600 rounded flex-shrink-0">
+          SSH
+        </span>
+      )}
+
       {/* ボード上表示インジケーター */}
       {isOnBoard && (
         <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-accent" title="ボード上に表示中" />
@@ -424,5 +477,39 @@ function SessionItem({
         onToggle={onToggleFavorite}
       />
     </button>
+  )
+}
+
+/**
+ * SSHホストリストアイテム
+ */
+function SshHostItem({
+  host,
+  onConnect,
+  onDisconnect,
+}: {
+  host: import('@kurimats/shared').SshHost
+  onConnect: () => void
+  onDisconnect: () => void
+}) {
+  const statusColor = host.isConnected ? 'bg-green-500' : 'bg-gray-400'
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-text-primary hover:bg-surface-2 transition-colors group">
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusColor}`} />
+      <span className="truncate flex-1" title={`${host.user}@${host.hostname}:${host.port}`}>
+        {host.name}
+      </span>
+      <button
+        onClick={host.isConnected ? onDisconnect : onConnect}
+        className={`text-[10px] px-1.5 py-0.5 rounded transition-colors opacity-0 group-hover:opacity-100 ${
+          host.isConnected
+            ? 'bg-red-100 text-red-600 hover:bg-red-200'
+            : 'bg-green-100 text-green-600 hover:bg-green-200'
+        }`}
+      >
+        {host.isConnected ? '切断' : '接続'}
+      </button>
+    </div>
   )
 }

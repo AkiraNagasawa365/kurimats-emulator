@@ -7,11 +7,13 @@ import { CommandPalette } from './components/command-palette/CommandPalette'
 import { FileTreeOverlay } from './components/overlays/FileTreeOverlay'
 import { CodeViewerOverlay } from './components/overlays/CodeViewerOverlay'
 import { MarkdownOverlay } from './components/overlays/MarkdownOverlay'
+import { NotificationToast } from './components/notifications/NotificationToast'
 import { useSessionStore } from './stores/session-store'
 import { useOverlayStore } from './stores/overlay-store'
 import { useCommandPaletteStore } from './stores/command-palette-store'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useLayoutStore } from './stores/layout-store'
+import { useNotificationWs } from './hooks/useNotificationWs'
 
 export default function App() {
   const { fetchSessions, fetchProjects } = useSessionStore()
@@ -20,6 +22,7 @@ export default function App() {
   const { loadSavedLayout } = useLayoutStore()
 
   useKeyboardShortcuts()
+  useNotificationWs()
 
   useEffect(() => {
     fetchSessions()
@@ -61,6 +64,9 @@ export default function App() {
           onClose={closeOverlay}
         />
       )}
+
+      {/* 通知トースト */}
+      <NotificationToast />
     </div>
   )
 }
