@@ -1,0 +1,39 @@
+import type { Session, CreateSessionParams, FileNode } from '@kurimats/shared'
+
+const BASE = '/api'
+
+async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE}${url}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(error.error || res.statusText)
+  }
+  return res.json()
+}
+
+// セッションAPI
+export const sessionsApi = {
+  list: () => request<Session[]>('/sessions'),
+  get: (id: string) => request<Session>(`/sessions/${id}`),
+  create: (params: CreateSessionParams) =>
+    request<Session>('/sessions', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
+  delete: (id: string) =>
+    request<{ ok: boolean }>(`/sessions/${id}`, { method: 'DELETE' }),
+}
+
+// ファイルAPI
+export const filesApi = {
+  tree: (root: string) => request<FileNode[]>(`/files/tree?root=${encodeURIComponent(root)}`),
+  content: (path: string) => request<{ content: string; path: string }>(`/files/content?path=${encodeURIComponent(path)}`),
+  save: (path: string, content: string) =>
+    request<{ ok: boolean }>('/files/content', {
+      method: 'PUT',
+      body: JSON.stringify({ path, content }),
+    }),
+}
