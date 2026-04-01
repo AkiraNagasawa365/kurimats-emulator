@@ -1,8 +1,16 @@
 import { useState, useMemo } from 'react'
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion'
 import type { LayoutMode, Session } from '@kurimats/shared'
 import { PROJECT_COLORS } from '@kurimats/shared'
 import { useSessionStore } from '../../stores/session-store'
 import { useLayoutStore } from '../../stores/layout-store'
+import {
+  AnimatedFavoriteButton,
+  FavoriteBadge,
+  gatherVariants,
+  disperseVariants,
+  fadeOutVariants,
+} from '../animations/FavoriteAnimations'
 
 const LAYOUT_OPTIONS: { mode: LayoutMode; label: string; icon: string }[] = [
   { mode: '1x1', label: '1列', icon: '▣' },
@@ -26,6 +34,7 @@ export function Sidebar() {
   const [searchQuery, setSearchQuery] = useState('')
   const [favoritesCollapsed, setFavoritesCollapsed] = useState(false)
   const [projectsCollapsed, setProjectsCollapsed] = useState(false)
+  const [favoritesOnly, setFavoritesOnly] = useState(false)
   const [showProjectForm, setShowProjectForm] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectColor, setNewProjectColor] = useState<string>(PROJECT_COLORS[0])
@@ -168,24 +177,51 @@ export function Sidebar() {
         {/* お気に入りセクション */}
         {favoriteSessions.length > 0 && (
           <div>
-            <button
-              onClick={() => setFavoritesCollapsed(!favoritesCollapsed)}
-              className="w-full text-left px-3 py-1.5 text-[10px] font-semibold text-text-secondary uppercase tracking-wider hover:bg-surface-2 transition-colors flex items-center gap-1"
-            >
-              <span className="text-[8px]">{favoritesCollapsed ? '▶' : '▼'}</span>
-              お気に入り
-              <span className="text-text-muted ml-auto">{favoriteSessions.length}</span>
-            </button>
-            {!favoritesCollapsed && favoriteSessions.map(session => (
-              <SessionItem
-                key={`fav-${session.id}`}
-                session={session}
-                isInPanel={panels.some(p => p.sessionId === session.id)}
-                projectColor={getProjectColor(session.projectId)}
-                onClick={() => handleSessionClick(session)}
-                onToggleFavorite={() => toggleFavorite(session.id)}
-              />
-            ))}
+            <div className="flex items-center">
+              <button
+                onClick={() => setFavoritesCollapsed(!favoritesCollapsed)}
+                className="flex-1 text-left px-3 py-1.5 text-[10px] font-semibold text-text-secondary uppercase tracking-wider hover:bg-surface-2 transition-colors flex items-center gap-1"
+              >
+                <span className="text-[8px]">{favoritesCollapsed ? '▶' : '▼'}</span>
+                お気に入り
+                <FavoriteBadge count={favoriteSessions.length} />
+              </button>
+              {/* お気に入りフィルターボタン */}
+              <button
+                onClick={() => setFavoritesOnly(!favoritesOnly)}
+                className={`px-2 py-1 text-[10px] mr-1 rounded transition-colors ${
+                  favoritesOnly
+                    ? 'bg-yellow-500 text-white'
+                    : 'text-text-muted hover:text-text-secondary hover:bg-surface-2'
+                }`}
+                title={favoritesOnly ? 'フィルター解除' : 'お気に入りのみ表示'}
+                data-testid="favorites-filter-button"
+              >
+                ★
+              </button>
+            </div>
+            <LayoutGroup>
+              <AnimatePresence mode="popLayout">
+                {!favoritesCollapsed && favoriteSessions.map(session => (
+                  <motion.div
+                    key={`fav-${session.id}`}
+                    layout
+                    variants={disperseVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                  >
+                    <SessionItem
+                      session={session}
+                      isInPanel={panels.some(p => p.sessionId === session.id)}
+                      projectColor={getProjectColor(session.projectId)}
+                      onClick={() => handleSessionClick(session)}
+                      onToggleFavorite={() => toggleFavorite(session.id)}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </LayoutGroup>
           </div>
         )}
 
@@ -200,16 +236,33 @@ export function Sidebar() {
               {searchQuery ? '一致するセッションなし' : 'セッションなし'}
             </p>
           ) : (
-            filteredSessions.map(session => (
-              <SessionItem
-                key={session.id}
-                session={session}
-                isInPanel={panels.some(p => p.sessionId === session.id)}
-                projectColor={getProjectColor(session.projectId)}
-                onClick={() => handleSessionClick(session)}
-                onToggleFavorite={() => toggleFavorite(session.id)}
-              />
-            ))
+            <LayoutGroup>
+              <AnimatePresence mode="popLayout">
+                {filteredSessions.map(session => {
+                  // お気に入りフィルターON時、非お気に入りはフェードアウト
+                  const isVisible = !favoritesOnly || session.isFavorite
+                  if (!isVisible) return null
+                  return (
+                    <motion.div
+                      key={session.id}
+                      layout
+                      variants={favoritesOnly ? gatherVariants : fadeOutVariants}
+                      initial={favoritesOnly ? 'initial' : 'visible'}
+                      animate={favoritesOnly ? 'animate' : 'visible'}
+                      exit="hidden"
+                    >
+                      <SessionItem
+                        session={session}
+                        isInPanel={panels.some(p => p.sessionId === session.id)}
+                        projectColor={getProjectColor(session.projectId)}
+                        onClick={() => handleSessionClick(session)}
+                        onToggleFavorite={() => toggleFavorite(session.id)}
+                      />
+                    </motion.div>
+                  )
+                })}
+              </AnimatePresence>
+            </LayoutGroup>
           )}
         </div>
 
@@ -352,18 +405,11 @@ function SessionItem({
       {/* セッション名 */}
       <span className="truncate flex-1">{session.name}</span>
 
-      {/* お気に入りボタン */}
-      <span
-        onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
-        className={`flex-shrink-0 transition-colors cursor-pointer ${
-          session.isFavorite
-            ? 'text-yellow-500'
-            : 'text-transparent group-hover:text-text-muted'
-        }`}
-        title={session.isFavorite ? 'お気に入り解除' : 'お気に入りに追加'}
-      >
-        ★
-      </span>
+      {/* お気に入りボタン（アニメーション付き） */}
+      <AnimatedFavoriteButton
+        isFavorite={session.isFavorite}
+        onToggle={onToggleFavorite}
+      />
     </button>
   )
 }
