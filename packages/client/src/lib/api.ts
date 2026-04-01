@@ -1,4 +1,4 @@
-import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, LayoutState } from '@kurimats/shared'
+import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, LayoutState, BoardLayoutState, TabListResponse, TabSyncResponse } from '@kurimats/shared'
 
 const BASE = '/api'
 
@@ -61,4 +61,13 @@ export const layoutApi = {
   get: () => request<LayoutState | null>('/layout'),
   save: (state: LayoutState) =>
     request<{ ok: boolean }>('/layout', { method: 'PUT', body: JSON.stringify(state) }),
+  getBoard: () => request<BoardLayoutState | null>('/layout/board'),
+  saveBoard: (state: BoardLayoutState) =>
+    request<{ ok: boolean }>('/layout/board', { method: 'PUT', body: JSON.stringify(state) }),
+}
+
+// tabコマンドAPI
+export const tabApi = {
+  list: () => request<TabListResponse>('/tab/list'),
+  sync: () => request<TabSyncResponse>('/tab/sync', { method: 'POST' }),
 }

@@ -98,3 +98,41 @@ export interface FileNode {
   isDirectory: boolean
   children?: FileNode[]
 }
+
+// ボードノード位置情報（React Flow用）
+export interface BoardNodePosition {
+  sessionId: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+// ボードレイアウト永続化
+export interface BoardLayoutState {
+  nodes: BoardNodePosition[]
+  viewport: { x: number; y: number; zoom: number }
+  savedAt: number
+}
+
+// tabコマンド連携
+export interface TabHost {
+  name: string
+  type: 'local' | 'remote'
+  projects: TabProject[]
+}
+
+export interface TabProject {
+  name: string
+  path: string
+}
+
+export interface TabListResponse {
+  hosts: TabHost[]
+}
+
+export interface TabSyncResponse {
+  created: number
+  skipped: number
+  projects: Project[]
+}

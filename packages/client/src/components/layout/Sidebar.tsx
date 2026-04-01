@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react'
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion'
-import type { LayoutMode, Session } from '@kurimats/shared'
+import type { Session } from '@kurimats/shared'
 import { PROJECT_COLORS } from '@kurimats/shared'
 import { useSessionStore } from '../../stores/session-store'
 import { useLayoutStore } from '../../stores/layout-store'
+import { tabApi } from '../../lib/api'
 import {
   AnimatedFavoriteButton,
   FavoriteBadge,
@@ -12,21 +13,13 @@ import {
   fadeOutVariants,
 } from '../animations/FavoriteAnimations'
 
-const LAYOUT_OPTIONS: { mode: LayoutMode; label: string; icon: string }[] = [
-  { mode: '1x1', label: '1列', icon: '▣' },
-  { mode: '2x1', label: '2列', icon: '▥' },
-  { mode: '1x2', label: '2段', icon: '▤' },
-  { mode: '2x2', label: '4分割', icon: '⊞' },
-  { mode: '3x1', label: '3列', icon: '⫼' },
-]
-
 /**
  * サイドバー
  * セッション一覧、お気に入り、プロジェクト管理、レイアウト変更
  */
 export function Sidebar() {
-  const { sessions, projects, createSession, toggleFavorite, assignProject, createProject } = useSessionStore()
-  const { mode, setMode, addPanel, setActivePanel, panels } = useLayoutStore()
+  const { sessions, projects, createSession, toggleFavorite, assignProject, createProject, fetchProjects } = useSessionStore()
+  const { addPanel, setActiveSession, boardNodes } = useLayoutStore()
   const [showNewForm, setShowNewForm] = useState(false)
   const [newName, setNewName] = useState('')
   const [newRepoPath, setNewRepoPath] = useState('')
@@ -38,6 +31,8 @@ export function Sidebar() {
   const [showProjectForm, setShowProjectForm] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectColor, setNewProjectColor] = useState<string>(PROJECT_COLORS[0])
+  const [tabSyncing, setTabSyncing] = useState(false)
+  const [tabSyncResult, setTabSyncResult] = useState<string | null>(null)
 
   // お気に入りセッション
   const favoriteSessions = useMemo(() =>
@@ -93,11 +88,26 @@ export function Sidebar() {
   }
 
   const handleSessionClick = (session: Session) => {
-    const panelIndex = panels.findIndex(p => p.sessionId === session.id)
-    if (panelIndex >= 0) {
-      setActivePanel(panelIndex)
+    const isOnBoard = boardNodes.some(n => n.sessionId === session.id)
+    if (isOnBoard) {
+      setActiveSession(session.id)
     } else {
       addPanel(session.id)
+    }
+  }
+
+  const handleTabSync = async () => {
+    setTabSyncing(true)
+    setTabSyncResult(null)
+    try {
+      const result = await tabApi.sync()
+      setTabSyncResult(`${result.created}件作成 / ${result.skipped}件スキップ`)
+      await fetchProjects()
+    } catch (e) {
+      setTabSyncResult(`同期エラー: ${e}`)
+    } finally {
+      setTabSyncing(false)
+      setTimeout(() => setTabSyncResult(null), 3000)
     }
   }
 
@@ -213,7 +223,7 @@ export function Sidebar() {
                   >
                     <SessionItem
                       session={session}
-                      isInPanel={panels.some(p => p.sessionId === session.id)}
+                      isOnBoard={boardNodes.some(n => n.sessionId === session.id)}
                       projectColor={getProjectColor(session.projectId)}
                       onClick={() => handleSessionClick(session)}
                       onToggleFavorite={() => toggleFavorite(session.id)}
@@ -253,7 +263,7 @@ export function Sidebar() {
                     >
                       <SessionItem
                         session={session}
-                        isInPanel={panels.some(p => p.sessionId === session.id)}
+                        isOnBoard={boardNodes.some(n => n.sessionId === session.id)}
                         projectColor={getProjectColor(session.projectId)}
                         onClick={() => handleSessionClick(session)}
                         onToggleFavorite={() => toggleFavorite(session.id)}
@@ -290,6 +300,18 @@ export function Sidebar() {
                   <span className="truncate">{project.name}</span>
                 </div>
               ))}
+              {/* tab同期ボタン */}
+              <button
+                onClick={handleTabSync}
+                disabled={tabSyncing}
+                className="w-full text-left px-3 py-1.5 text-xs text-cyan-600 hover:bg-surface-2 transition-colors disabled:opacity-50"
+              >
+                {tabSyncing ? '同期中...' : 'tab同期'}
+              </button>
+              {tabSyncResult && (
+                <p className="px-3 py-1 text-[10px] text-text-muted">{tabSyncResult}</p>
+              )}
+
               {/* 新規プロジェクト */}
               {showProjectForm ? (
                 <div className="px-3 py-2 space-y-2">
@@ -342,25 +364,11 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* レイアウト切り替え */}
+      {/* ボードキャンバス情報 */}
       <div className="px-3 py-2.5 border-t border-border">
-        <p className="text-[10px] text-text-secondary mb-1.5 font-medium">レイアウト</p>
-        <div className="flex gap-1">
-          {LAYOUT_OPTIONS.map(opt => (
-            <button
-              key={opt.mode}
-              onClick={() => setMode(opt.mode)}
-              className={`flex-1 py-1.5 text-xs rounded transition-colors ${
-                mode === opt.mode
-                  ? 'bg-accent text-white'
-                  : 'bg-surface-2 text-text-secondary hover:bg-surface-3'
-              }`}
-              title={opt.label}
-            >
-              {opt.icon}
-            </button>
-          ))}
-        </div>
+        <p className="text-[10px] text-text-secondary font-medium">
+          ボード: {boardNodes.length}件のセッション
+        </p>
       </div>
     </div>
   )
@@ -371,13 +379,13 @@ export function Sidebar() {
  */
 function SessionItem({
   session,
-  isInPanel,
+  isOnBoard,
   projectColor,
   onClick,
   onToggleFavorite,
 }: {
   session: Session
-  isInPanel: boolean
+  isOnBoard: boolean
   projectColor: string | null
   onClick: () => void
   onToggleFavorite: () => void
@@ -386,7 +394,7 @@ function SessionItem({
     <button
       onClick={onClick}
       className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-surface-2 transition-colors group ${
-        isInPanel ? 'text-text-primary font-medium' : 'text-text-secondary'
+        isOnBoard ? 'text-text-primary font-medium' : 'text-text-secondary'
       }`}
     >
       {/* ステータスドット */}
@@ -404,6 +412,11 @@ function SessionItem({
 
       {/* セッション名 */}
       <span className="truncate flex-1">{session.name}</span>
+
+      {/* ボード上表示インジケーター */}
+      {isOnBoard && (
+        <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-accent" title="ボード上に表示中" />
+      )}
 
       {/* お気に入りボタン（アニメーション付き） */}
       <AnimatedFavoriteButton
