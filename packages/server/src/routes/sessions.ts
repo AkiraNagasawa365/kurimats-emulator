@@ -18,7 +18,7 @@ export function createSessionsRouter(
   })
 
   // セッション作成
-  router.post('/', (req, res) => {
+  router.post('/', async (req, res) => {
     const params = req.body as CreateSessionParams
 
     if (!params.name || !params.repoPath) {
@@ -50,7 +50,7 @@ export function createSessionsRouter(
     // PTYを起動（worktreeがあればそのパス、なければrepoPath）
     const cwd = worktreePath || params.repoPath
     try {
-      ptyManager.spawn(session.id, cwd)
+      await ptyManager.spawn(session.id, cwd)
     } catch (e) {
       store.delete(session.id)
       res.status(500).json({ error: `PTY起動エラー: ${e}` })
