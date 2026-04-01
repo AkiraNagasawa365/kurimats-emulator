@@ -18,6 +18,12 @@ export type BoardMessage =
   | { type: 'card_updated'; card: import('./types.js').BoardCard }
   | { type: 'card_removed'; cardId: string }
 
+// プロジェクトWebSocketメッセージ
+export type ProjectMessage =
+  | { type: 'project_created'; project: import('./types.js').Project }
+  | { type: 'project_updated'; project: import('./types.js').Project }
+  | { type: 'project_deleted'; projectId: string }
+
 // ファイルウォッチWebSocketメッセージ
 export type FileWatchMessage =
   | { type: 'file_changed'; path: string; event: 'add' | 'change' | 'unlink' }

@@ -1,4 +1,4 @@
-import type { Session, CreateSessionParams, FileNode } from '@kurimats/shared'
+import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, LayoutState } from '@kurimats/shared'
 
 const BASE = '/api'
 
@@ -25,6 +25,13 @@ export const sessionsApi = {
     }),
   delete: (id: string) =>
     request<{ ok: boolean }>(`/sessions/${id}`, { method: 'DELETE' }),
+  toggleFavorite: (id: string) =>
+    request<{ isFavorite: boolean }>(`/sessions/${id}/favorite`, { method: 'POST' }),
+  assignProject: (id: string, projectId: string | null) =>
+    request<{ ok: boolean }>(`/sessions/${id}/project`, {
+      method: 'POST',
+      body: JSON.stringify({ projectId }),
+    }),
 }
 
 // ファイルAPI
@@ -36,4 +43,22 @@ export const filesApi = {
       method: 'PUT',
       body: JSON.stringify({ path, content }),
     }),
+}
+
+// プロジェクトAPI
+export const projectsApi = {
+  list: () => request<Project[]>('/projects'),
+  create: (params: CreateProjectParams) =>
+    request<Project>('/projects', { method: 'POST', body: JSON.stringify(params) }),
+  update: (id: string, updates: Partial<CreateProjectParams>) =>
+    request<{ ok: boolean }>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(updates) }),
+  delete: (id: string) =>
+    request<{ ok: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
+}
+
+// レイアウトAPI
+export const layoutApi = {
+  get: () => request<LayoutState | null>('/layout'),
+  save: (state: LayoutState) =>
+    request<{ ok: boolean }>('/layout', { method: 'PUT', body: JSON.stringify(state) }),
 }

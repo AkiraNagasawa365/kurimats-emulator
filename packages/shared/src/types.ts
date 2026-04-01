@@ -10,6 +10,8 @@ export interface Session {
   branch: string | null
   status: SessionStatus
   claudeSessionId: string | null
+  isFavorite: boolean
+  projectId: string | null
   createdAt: number
   lastActiveAt: number
 }
@@ -55,6 +57,36 @@ export interface PanelLayout {
     position: number
   }>
 }
+
+// プロジェクト
+export interface Project {
+  id: string
+  name: string
+  color: string // hex color like '#3b82f6'
+  repoPath: string
+  createdAt: number
+}
+
+// プロジェクト作成パラメータ
+export interface CreateProjectParams {
+  name: string
+  color: string
+  repoPath: string
+}
+
+// レイアウト永続化
+export interface LayoutState {
+  mode: LayoutMode
+  panels: Array<{ sessionId: string | null; position: number }>
+  activePanelIndex: number
+  savedAt: number
+}
+
+// プロジェクトカラー定数
+export const PROJECT_COLORS = [
+  '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
+  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
+] as const
 
 // ファイルツリーノード
 export interface FileNode {

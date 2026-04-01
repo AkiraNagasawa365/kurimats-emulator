@@ -1,19 +1,27 @@
 import { create } from 'zustand'
-import type { Session, CreateSessionParams } from '@kurimats/shared'
-import { sessionsApi } from '../lib/api'
+import type { Session, CreateSessionParams, Project, CreateProjectParams } from '@kurimats/shared'
+import { sessionsApi, projectsApi } from '../lib/api'
 
 interface SessionState {
   sessions: Session[]
+  projects: Project[]
   loading: boolean
   error: string | null
 
   fetchSessions: () => Promise<void>
   createSession: (params: CreateSessionParams) => Promise<Session>
   deleteSession: (id: string) => Promise<void>
+  toggleFavorite: (id: string) => Promise<void>
+  assignProject: (sessionId: string, projectId: string | null) => Promise<void>
+
+  fetchProjects: () => Promise<void>
+  createProject: (params: CreateProjectParams) => Promise<Project>
+  deleteProject: (id: string) => Promise<void>
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
+  projects: [],
   loading: false,
   error: null,
 
@@ -36,5 +44,51 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   deleteSession: async (id) => {
     await sessionsApi.delete(id)
     set({ sessions: get().sessions.filter(s => s.id !== id) })
+  },
+
+  toggleFavorite: async (id) => {
+    try {
+      const { isFavorite } = await sessionsApi.toggleFavorite(id)
+      set({
+        sessions: get().sessions.map(s =>
+          s.id === id ? { ...s, isFavorite } : s
+        ),
+      })
+    } catch (e) {
+      console.error('お気に入り切り替えエラー:', e)
+    }
+  },
+
+  assignProject: async (sessionId, projectId) => {
+    try {
+      await sessionsApi.assignProject(sessionId, projectId)
+      set({
+        sessions: get().sessions.map(s =>
+          s.id === sessionId ? { ...s, projectId } : s
+        ),
+      })
+    } catch (e) {
+      console.error('プロジェクト割り当てエラー:', e)
+    }
+  },
+
+  fetchProjects: async () => {
+    try {
+      const projects = await projectsApi.list()
+      set({ projects })
+    } catch (e) {
+      console.error('プロジェクト取得エラー:', e)
+    }
+  },
+
+  createProject: async (params) => {
+    const project = await projectsApi.create(params)
+    set({ projects: [...get().projects, project] })
+    return project
+  },
+
+  deleteProject: async (id) => {
+    await projectsApi.delete(id)
+    set({ projects: get().projects.filter(p => p.id !== id) })
   },
 }))
