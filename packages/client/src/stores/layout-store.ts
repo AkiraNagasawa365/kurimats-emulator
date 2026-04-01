@@ -1,16 +1,28 @@
 import { create } from 'zustand'
-import type { LayoutMode } from '@kurimats/shared'
+import type { LayoutMode, AutoLayoutMode, BoardNodePosition } from '@kurimats/shared'
 import { layoutApi } from '../lib/api'
+import { gridLayout, flowLayout, treeLayout, findOptimalPosition, type CardRect } from '../lib/layout-engine'
 
 interface PanelInfo {
   sessionId: string | null
   position: number
 }
 
+// ボードノードのデフォルトサイズ
+const DEFAULT_NODE_WIDTH = 600
+const DEFAULT_NODE_HEIGHT = 400
+
 interface LayoutState {
   mode: LayoutMode
   panels: PanelInfo[]
   activePanelIndex: number
+  autoLayoutMode: AutoLayoutMode
+  maximizedPanelIndex: number | null
+
+  // ボードキャンバス用
+  boardNodes: BoardNodePosition[]
+  activeSessionId: string | null
+  viewport: { x: number; y: number; zoom: number }
 
   setMode: (mode: LayoutMode) => void
   assignSession: (panelIndex: number, sessionId: string) => void
@@ -18,9 +30,22 @@ interface LayoutState {
   setActivePanel: (index: number) => void
   addPanel: (sessionId: string) => void
   loadSavedLayout: () => Promise<void>
+  setAutoLayoutMode: (mode: AutoLayoutMode) => void
+  autoArrange: (containerWidth: number, containerHeight: number) => CardRect[]
+  toggleMaximize: (index: number) => void
+
+  // ボードキャンバス用アクション
+  setActiveSession: (sessionId: string | null) => void
+  updateNodePosition: (sessionId: string, x: number, y: number) => void
+  updateNodeSize: (sessionId: string, width: number, height: number) => void
+  addBoardNode: (sessionId: string) => void
+  removeBoardNode: (sessionId: string) => void
+  setViewport: (viewport: { x: number; y: number; zoom: number }) => void
+  setBoardNodes: (nodes: BoardNodePosition[]) => void
 }
 
 const STORAGE_KEY = 'kurimats-layout'
+const BOARD_STORAGE_KEY = 'kurimats-board-layout'
 
 function panelCountForMode(mode: LayoutMode): number {
   switch (mode) {
@@ -43,18 +68,34 @@ function persistLayout(state: { mode: LayoutMode; panels: PanelInfo[]; activePan
     savedAt: Date.now(),
   }
 
-  // localStorageに即座に保存
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(layoutData))
   } catch {
     // localStorage利用不可の場合は無視
   }
 
-  // サーバーへの保存はデバウンス
   if (saveTimeout) clearTimeout(saveTimeout)
   saveTimeout = setTimeout(() => {
     layoutApi.save(layoutData).catch(() => {
-      // サーバー保存失敗は無視（localStorageがバックアップ）
+      // サーバー保存失敗は無視
+    })
+  }, 1000)
+}
+
+let boardSaveTimeout: ReturnType<typeof setTimeout> | null = null
+
+function persistBoardLayout(nodes: BoardNodePosition[], viewport: { x: number; y: number; zoom: number }) {
+  const data = { nodes, viewport, savedAt: Date.now() }
+  try {
+    localStorage.setItem(BOARD_STORAGE_KEY, JSON.stringify(data))
+  } catch {
+    // localStorage利用不可の場合は無視
+  }
+
+  if (boardSaveTimeout) clearTimeout(boardSaveTimeout)
+  boardSaveTimeout = setTimeout(() => {
+    layoutApi.saveBoard(data).catch(() => {
+      // サーバー保存失敗は無視
     })
   }, 1000)
 }
@@ -76,13 +117,34 @@ function loadFromStorage(): Partial<LayoutState> | null {
   return null
 }
 
+function loadBoardFromStorage(): { nodes: BoardNodePosition[]; viewport: { x: number; y: number; zoom: number } } | null {
+  try {
+    const saved = localStorage.getItem(BOARD_STORAGE_KEY)
+    if (saved) {
+      const data = JSON.parse(saved)
+      return { nodes: data.nodes || [], viewport: data.viewport || { x: 0, y: 0, zoom: 1 } }
+    }
+  } catch {
+    // パースエラーは無視
+  }
+  return null
+}
+
 // 初期状態をlocalStorageから復元
 const savedState = loadFromStorage()
+const savedBoardState = loadBoardFromStorage()
 
 export const useLayoutStore = create<LayoutState>((set, get) => ({
   mode: savedState?.mode ?? '1x1',
   panels: savedState?.panels ?? [{ sessionId: null, position: 0 }],
   activePanelIndex: savedState?.activePanelIndex ?? 0,
+  autoLayoutMode: 'grid' as AutoLayoutMode,
+  maximizedPanelIndex: null as number | null,
+
+  // ボードキャンバス用
+  boardNodes: savedBoardState?.nodes ?? [],
+  activeSessionId: null,
+  viewport: savedBoardState?.viewport ?? { x: 0, y: 0, zoom: 1 },
 
   setMode: (mode) => {
     const count = panelCountForMode(mode)
@@ -111,6 +173,11 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     )
     set({ panels })
     persistLayout({ ...get(), panels })
+
+    // ボードノードも削除
+    const boardNodes = get().boardNodes.filter(n => n.sessionId !== sessionId)
+    set({ boardNodes })
+    persistBoardLayout(boardNodes, get().viewport)
   },
 
   setActivePanel: (index) => {
@@ -119,8 +186,38 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   },
 
   addPanel: (sessionId) => {
-    const { panels, mode } = get()
-    // 空きパネルを探す
+    const { panels, mode, boardNodes } = get()
+
+    // ボードノードも追加
+    if (!boardNodes.find(n => n.sessionId === sessionId)) {
+      const existingCards: CardRect[] = boardNodes.map(n => ({
+        id: n.sessionId,
+        x: n.x,
+        y: n.y,
+        width: n.width,
+        height: n.height,
+      }))
+      const pos = findOptimalPosition(
+        existingCards,
+        { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT },
+        3000, // 仮想キャンバス幅
+        3000, // 仮想キャンバス高さ
+      )
+      const newNode: BoardNodePosition = {
+        sessionId,
+        x: pos.x,
+        y: pos.y,
+        width: DEFAULT_NODE_WIDTH,
+        height: DEFAULT_NODE_HEIGHT,
+      }
+      const newBoardNodes = [...boardNodes, newNode]
+      set({ boardNodes: newBoardNodes, activeSessionId: sessionId })
+      persistBoardLayout(newBoardNodes, get().viewport)
+    } else {
+      set({ activeSessionId: sessionId })
+    }
+
+    // 既存グリッドレイアウトの空きパネルを探す
     const emptyIndex = panels.findIndex(p => p.sessionId === null)
     if (emptyIndex >= 0) {
       const newPanels = [...panels]
@@ -139,7 +236,6 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
         sessionId: panels[i]?.sessionId ?? (i === panels.length ? sessionId : null),
         position: i,
       }))
-      // 新しいパネルにセッションを割り当て
       const firstEmpty = newPanels.findIndex(p => p.sessionId === null)
       if (firstEmpty >= 0) {
         newPanels[firstEmpty] = { ...newPanels[firstEmpty], sessionId }
@@ -154,9 +250,9 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     try {
       const serverLayout = await layoutApi.get()
       if (serverLayout) {
-        const localSaved = loadFromStorage()
-        // サーバーの方が新しい場合はサーバーのデータを使用
-        const localSavedAt = localSaved ? (JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}').savedAt || 0) : 0
+        const localSavedAt = (() => {
+          try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}').savedAt || 0 } catch { return 0 }
+        })()
         if (serverLayout.savedAt > localSavedAt) {
           set({
             mode: serverLayout.mode,
@@ -168,5 +264,125 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     } catch {
       // サーバー取得失敗はlocalStorageの状態を維持
     }
+
+    // ボードレイアウトも読み込み
+    try {
+      const serverBoard = await layoutApi.getBoard()
+      if (serverBoard) {
+        const localBoardSavedAt = (() => {
+          try { return JSON.parse(localStorage.getItem(BOARD_STORAGE_KEY) || '{}').savedAt || 0 } catch { return 0 }
+        })()
+        if (serverBoard.savedAt > localBoardSavedAt) {
+          set({
+            boardNodes: serverBoard.nodes,
+            viewport: serverBoard.viewport,
+          })
+        }
+      }
+    } catch {
+      // サーバー取得失敗は無視
+    }
+  },
+
+  setAutoLayoutMode: (mode: AutoLayoutMode) => {
+    set({ autoLayoutMode: mode })
+  },
+
+  autoArrange: (containerWidth: number, containerHeight: number): CardRect[] => {
+    const { panels, autoLayoutMode } = get()
+    const cards: CardRect[] = panels
+      .filter(p => p.sessionId !== null)
+      .map((p) => ({
+        id: p.sessionId!,
+        x: 0,
+        y: 0,
+        width: 300,
+        height: 200,
+        projectId: null,
+      }))
+
+    switch (autoLayoutMode) {
+      case 'grid':
+        return gridLayout(cards, containerWidth, containerHeight)
+      case 'flow':
+        return flowLayout(cards, containerWidth)
+      case 'tree':
+        return treeLayout(cards, containerWidth, containerHeight)
+      default:
+        return cards
+    }
+  },
+
+  toggleMaximize: (index: number) => {
+    const current = get().maximizedPanelIndex
+    set({ maximizedPanelIndex: current === index ? null : index })
+  },
+
+  // ボードキャンバス用アクション
+  setActiveSession: (sessionId) => {
+    set({ activeSessionId: sessionId })
+  },
+
+  updateNodePosition: (sessionId, x, y) => {
+    const boardNodes = get().boardNodes.map(n =>
+      n.sessionId === sessionId ? { ...n, x, y } : n
+    )
+    set({ boardNodes })
+    persistBoardLayout(boardNodes, get().viewport)
+  },
+
+  updateNodeSize: (sessionId, width, height) => {
+    const boardNodes = get().boardNodes.map(n =>
+      n.sessionId === sessionId ? { ...n, width, height } : n
+    )
+    set({ boardNodes })
+    persistBoardLayout(boardNodes, get().viewport)
+  },
+
+  addBoardNode: (sessionId) => {
+    const { boardNodes } = get()
+    if (boardNodes.find(n => n.sessionId === sessionId)) return
+    const existingCards: CardRect[] = boardNodes.map(n => ({
+      id: n.sessionId,
+      x: n.x,
+      y: n.y,
+      width: n.width,
+      height: n.height,
+    }))
+    const pos = findOptimalPosition(
+      existingCards,
+      { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT },
+      3000,
+      3000,
+    )
+    const newNode: BoardNodePosition = {
+      sessionId,
+      x: pos.x,
+      y: pos.y,
+      width: DEFAULT_NODE_WIDTH,
+      height: DEFAULT_NODE_HEIGHT,
+    }
+    const newBoardNodes = [...boardNodes, newNode]
+    set({ boardNodes: newBoardNodes, activeSessionId: sessionId })
+    persistBoardLayout(newBoardNodes, get().viewport)
+  },
+
+  removeBoardNode: (sessionId) => {
+    const boardNodes = get().boardNodes.filter(n => n.sessionId !== sessionId)
+    set({ boardNodes })
+    if (get().activeSessionId === sessionId) {
+      set({ activeSessionId: null })
+    }
+    persistBoardLayout(boardNodes, get().viewport)
+  },
+
+  setViewport: (viewport) => {
+    set({ viewport })
+    persistBoardLayout(get().boardNodes, viewport)
+  },
+
+  setBoardNodes: (nodes) => {
+    set({ boardNodes: nodes })
+    persistBoardLayout(nodes, get().viewport)
   },
 }))

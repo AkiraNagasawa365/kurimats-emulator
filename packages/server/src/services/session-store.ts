@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { mkdirSync } from 'fs'
 import { fileURLToPath } from 'url'
-import type { Session, CreateSessionParams, Project, CreateProjectParams, LayoutState } from '@kurimats/shared'
+import type { Session, CreateSessionParams, Project, CreateProjectParams, LayoutState, BoardLayoutState } from '@kurimats/shared'
 import { v4 as uuidv4 } from 'uuid'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -68,6 +68,18 @@ export class SessionStore {
         panels TEXT NOT NULL DEFAULT '[]',
         active_panel_index INTEGER NOT NULL DEFAULT 0,
         saved_at INTEGER NOT NULL
+      );
+    `)
+
+    // ボードレイアウト永続化テーブル
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS board_layout (
+        id TEXT PRIMARY KEY DEFAULT 'default',
+        nodes TEXT NOT NULL DEFAULT '[]',
+        viewport_x REAL NOT NULL DEFAULT 0,
+        viewport_y REAL NOT NULL DEFAULT 0,
+        viewport_zoom REAL NOT NULL DEFAULT 1,
+        saved_at INTEGER NOT NULL DEFAULT 0
       );
     `)
 
@@ -245,6 +257,41 @@ export class SessionStore {
       mode: row.mode as LayoutState['mode'],
       panels: JSON.parse(row.panels as string),
       activePanelIndex: row.active_panel_index as number,
+      savedAt: row.saved_at as number,
+    }
+  }
+
+  // ==================== ボードレイアウト ====================
+
+  /**
+   * ボードレイアウト保存
+   */
+  saveBoardLayout(state: BoardLayoutState): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO board_layout (id, nodes, viewport_x, viewport_y, viewport_zoom, saved_at)
+      VALUES ('default', ?, ?, ?, ?, ?)
+    `).run(
+      JSON.stringify(state.nodes),
+      state.viewport.x,
+      state.viewport.y,
+      state.viewport.zoom,
+      state.savedAt,
+    )
+  }
+
+  /**
+   * ボードレイアウト取得
+   */
+  getBoardLayout(): BoardLayoutState | null {
+    const row = this.db.prepare('SELECT * FROM board_layout WHERE id = ?').get('default') as Record<string, unknown> | undefined
+    if (!row) return null
+    return {
+      nodes: JSON.parse(row.nodes as string),
+      viewport: {
+        x: row.viewport_x as number,
+        y: row.viewport_y as number,
+        zoom: row.viewport_zoom as number,
+      },
       savedAt: row.saved_at as number,
     }
   }

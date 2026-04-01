@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "@kurimats/shared": "*",
-    "@xterm/xterm": "^5.5.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
+    "@xyflow/react": "^12.10.2",
+    "framer-motion": "^11.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-markdown": "^9.0.0",

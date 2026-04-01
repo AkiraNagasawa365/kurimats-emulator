@@ -47,6 +47,9 @@ export interface BoardCard {
   createdAt: number
 }
 
+// 自動レイアウトモード
+export type AutoLayoutMode = 'grid' | 'flow' | 'tree'
+
 // パネルレイアウト
 export type LayoutMode = '1x1' | '2x1' | '1x2' | '2x2' | '3x1'
 
@@ -94,4 +97,42 @@ export interface FileNode {
   path: string
   isDirectory: boolean
   children?: FileNode[]
+}
+
+// ボードノード位置情報（React Flow用）
+export interface BoardNodePosition {
+  sessionId: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+// ボードレイアウト永続化
+export interface BoardLayoutState {
+  nodes: BoardNodePosition[]
+  viewport: { x: number; y: number; zoom: number }
+  savedAt: number
+}
+
+// tabコマンド連携
+export interface TabHost {
+  name: string
+  type: 'local' | 'remote'
+  projects: TabProject[]
+}
+
+export interface TabProject {
+  name: string
+  path: string
+}
+
+export interface TabListResponse {
+  hosts: TabHost[]
+}
+
+export interface TabSyncResponse {
+  created: number
+  skipped: number
+  projects: Project[]
 }

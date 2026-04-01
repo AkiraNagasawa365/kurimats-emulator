@@ -11,6 +11,7 @@ import { createFilesRouter } from './routes/files.js'
 import { createWorktreesRouter } from './routes/worktrees.js'
 import { createProjectsRouter } from './routes/projects.js'
 import { createLayoutRouter } from './routes/layout.js'
+import { createTabRouter } from './routes/tab.js'
 
 const PORT = parseInt(process.env.PORT || '3001', 10)
 
@@ -30,6 +31,7 @@ app.use('/api/files', createFilesRouter())
 app.use('/api/worktrees', createWorktreesRouter(worktreeService))
 app.use('/api/projects', createProjectsRouter(sessionStore))
 app.use('/api/layout', createLayoutRouter(sessionStore))
+app.use('/api/tab', createTabRouter(sessionStore))
 
 // ヘルスチェック
 app.get('/api/health', (_req, res) => {
