@@ -83,5 +83,18 @@ export function createSessionsRouter(
     res.json({ ok: true })
   })
 
+  // お気に入りトグル
+  router.post('/:id/favorite', (req, res) => {
+    const isFavorite = store.toggleFavorite(req.params.id)
+    res.json({ isFavorite })
+  })
+
+  // プロジェクト割り当て
+  router.post('/:id/project', (req, res) => {
+    const { projectId } = req.body as { projectId: string | null }
+    store.assignProject(req.params.id, projectId)
+    res.json({ ok: true })
+  })
+
   return router
 }
