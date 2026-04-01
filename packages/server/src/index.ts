@@ -9,6 +9,8 @@ import { setupTerminalWs } from './ws/terminal-handler.js'
 import { createSessionsRouter } from './routes/sessions.js'
 import { createFilesRouter } from './routes/files.js'
 import { createWorktreesRouter } from './routes/worktrees.js'
+import { createProjectsRouter } from './routes/projects.js'
+import { createLayoutRouter } from './routes/layout.js'
 
 const PORT = parseInt(process.env.PORT || '3001', 10)
 
@@ -26,6 +28,8 @@ app.use(express.json())
 app.use('/api/sessions', createSessionsRouter(sessionStore, ptyManager, worktreeService))
 app.use('/api/files', createFilesRouter())
 app.use('/api/worktrees', createWorktreesRouter(worktreeService))
+app.use('/api/projects', createProjectsRouter(sessionStore))
+app.use('/api/layout', createLayoutRouter(sessionStore))
 
 // ヘルスチェック
 app.get('/api/health', (_req, res) => {

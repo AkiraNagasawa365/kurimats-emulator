@@ -24,7 +24,7 @@ export function PanelContainer() {
           <div
             key={index}
             className={`flex flex-col min-h-0 min-w-0 border ${
-              isActive ? 'border-accent/50' : 'border-border/30'
+              isActive ? 'border-accent' : 'border-border'
             }`}
             onClick={() => setActivePanel(index)}
           >
@@ -38,7 +38,7 @@ export function PanelContainer() {
                     removeSession(session.id)
                   }}
                 />
-                <div className="flex-1 min-h-0 bg-surface-0">
+                <div className="flex-1 min-h-0">
                   <TerminalComponent
                     sessionId={session.id}
                     isActive={isActive}
@@ -47,10 +47,10 @@ export function PanelContainer() {
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center bg-surface-0 text-gray-600">
+              <div className="flex-1 flex items-center justify-center bg-white text-text-muted">
                 <div className="text-center">
                   <p className="text-sm">空のパネル</p>
-                  <p className="text-xs mt-1">サイドバーからセッションを作成</p>
+                  <p className="text-xs mt-1 text-text-muted">サイドバーからセッションを作成</p>
                 </div>
               </div>
             )}
