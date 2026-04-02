@@ -39,6 +39,7 @@ export function Sidebar() {
   const [newProjectColor, setNewProjectColor] = useState<string>(PROJECT_COLORS[0])
   const [tabSyncing, setTabSyncing] = useState(false)
   const [tabSyncResult, setTabSyncResult] = useState<string | null>(null)
+  const [creatingProjectId, setCreatingProjectId] = useState<string | null>(null)
 
   // SSHホスト一覧を初回取得
   useEffect(() => {
@@ -106,6 +107,30 @@ export function Sidebar() {
       setActiveSession(session.id)
     } else {
       addPanel(session.id)
+    }
+  }
+
+  const handleProjectClick = async (project: { id: string; name: string; repoPath: string }) => {
+    if (creatingProjectId) return // 二重クリック防止
+    // プロジェクトに紐づく既存セッションを探す
+    const existing = sessions.find(s => s.projectId === project.id && s.status === 'active')
+    if (existing) {
+      handleSessionClick(existing)
+      return
+    }
+    // 存在しなければ新規セッション作成
+    setCreatingProjectId(project.id)
+    try {
+      const session = await createSession({
+        name: project.name,
+        repoPath: project.repoPath,
+      })
+      await assignProject(session.id, project.id)
+      addPanel(session.id)
+    } catch (e) {
+      alert(`セッション作成エラー: ${e}`)
+    } finally {
+      setCreatingProjectId(null)
     }
   }
 
@@ -327,13 +352,16 @@ export function Sidebar() {
               {projects.map(project => (
                 <div
                   key={project.id}
-                  className="flex items-center gap-2 px-3 py-1.5 text-xs text-text-primary hover:bg-surface-2 transition-colors"
+                  onClick={() => handleProjectClick(project)}
+                  className={`flex items-center gap-2 px-3 py-1.5 text-xs text-text-primary hover:bg-surface-2 transition-colors cursor-pointer ${creatingProjectId === project.id ? 'opacity-50' : ''}`}
                 >
                   <span
                     className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
                     style={{ backgroundColor: project.color }}
                   />
-                  <span className="truncate">{project.name}</span>
+                  <span className="truncate">
+                    {creatingProjectId === project.id ? `${project.name} (起動中...)` : project.name}
+                  </span>
                 </div>
               ))}
               {/* tab同期ボタン */}
