@@ -3,19 +3,28 @@ import cors from 'cors'
 import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import { PtyManager } from './services/pty-manager.js'
+import { SshManager } from './services/ssh-manager.js'
 import { WorktreeService } from './services/worktree-service.js'
 import { SessionStore } from './services/session-store.js'
 import { setupTerminalWs } from './ws/terminal-handler.js'
+import { setupNotificationWs } from './ws/notification-handler.js'
 import { createSessionsRouter } from './routes/sessions.js'
 import { createFilesRouter } from './routes/files.js'
 import { createWorktreesRouter } from './routes/worktrees.js'
 import { createProjectsRouter } from './routes/projects.js'
 import { createLayoutRouter } from './routes/layout.js'
+import { createTabRouter } from './routes/tab.js'
+import { createSshRouter } from './routes/ssh.js'
 
 const PORT = parseInt(process.env.PORT || '3001', 10)
+const HOST = process.env.HOST || 'localhost'
+
+// トークン認証（リモートアクセス用、オプション）
+const AUTH_TOKEN = process.env.AUTH_TOKEN || ''
 
 // サービス初期化
 const ptyManager = new PtyManager()
+const sshManager = new SshManager()
 const worktreeService = new WorktreeService()
 const sessionStore = new SessionStore()
 
@@ -24,16 +33,35 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
+// トークン認証ミドルウェア（AUTH_TOKENが設定されている場合のみ）
+if (AUTH_TOKEN) {
+  app.use('/api', (req, res, next) => {
+    const token = req.headers.authorization?.replace('Bearer ', '')
+    if (token !== AUTH_TOKEN) {
+      res.status(401).json({ error: '認証トークンが無効です' })
+      return
+    }
+    next()
+  })
+}
+
 // REST APIルーティング
-app.use('/api/sessions', createSessionsRouter(sessionStore, ptyManager, worktreeService))
+app.use('/api/sessions', createSessionsRouter(sessionStore, ptyManager, sshManager, worktreeService))
 app.use('/api/files', createFilesRouter())
 app.use('/api/worktrees', createWorktreesRouter(worktreeService))
 app.use('/api/projects', createProjectsRouter(sessionStore))
 app.use('/api/layout', createLayoutRouter(sessionStore))
+app.use('/api/tab', createTabRouter(sessionStore, ptyManager))
+app.use('/api/ssh', createSshRouter(sshManager))
 
 // ヘルスチェック
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', activeSessions: ptyManager.getActiveSessionIds().length })
+  res.json({
+    status: 'ok',
+    activeSessions: ptyManager.getActiveSessionIds().length,
+    remoteSessions: sshManager.getActiveSessionIds().length,
+    sshHosts: sshManager.getHosts().filter(h => h.isConnected).length,
+  })
 })
 
 // HTTPサーバー作成
@@ -41,15 +69,32 @@ const server = createServer(app)
 
 // WebSocketサーバー（ターミナル用）
 const terminalWss = new WebSocketServer({ noServer: true })
-setupTerminalWs(terminalWss, ptyManager)
+setupTerminalWs(terminalWss, ptyManager, sshManager)
+
+// WebSocketサーバー（通知用）
+const notificationWss = new WebSocketServer({ noServer: true })
+setupNotificationWs(notificationWss, sshManager)
 
 // WebSocketアップグレード処理
 server.on('upgrade', (request, socket, head) => {
   const url = new URL(request.url || '', `http://${request.headers.host}`)
 
+  // トークン認証（AUTH_TOKENが設定されている場合）
+  if (AUTH_TOKEN) {
+    const token = url.searchParams.get('token')
+    if (token !== AUTH_TOKEN) {
+      socket.destroy()
+      return
+    }
+  }
+
   if (url.pathname.startsWith('/ws/terminal/')) {
     terminalWss.handleUpgrade(request, socket, head, (ws) => {
       terminalWss.emit('connection', ws, request)
+    })
+  } else if (url.pathname === '/ws/notifications') {
+    notificationWss.handleUpgrade(request, socket, head, (ws) => {
+      notificationWss.emit('connection', ws, request)
     })
   } else {
     socket.destroy()
@@ -57,14 +102,18 @@ server.on('upgrade', (request, socket, head) => {
 })
 
 // サーバー起動
-server.listen(PORT, () => {
-  console.log(`🚀 Kurimats Emulator サーバー起動: http://localhost:${PORT}`)
+server.listen(PORT, HOST, () => {
+  console.log(`🚀 Kurimats Emulator サーバー起動: http://${HOST}:${PORT}`)
+  if (HOST === '0.0.0.0') {
+    console.log('⚠️  外部アクセスが有効です。AUTH_TOKENの設定を推奨します。')
+  }
 })
 
 // グレースフルシャットダウン
 function shutdown() {
   console.log('\nシャットダウン中...')
   ptyManager.killAll()
+  sshManager.disconnectAll()
   sessionStore.close()
   server.close()
   process.exit(0)

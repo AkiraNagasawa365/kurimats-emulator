@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { mkdirSync } from 'fs'
 import { fileURLToPath } from 'url'
-import type { Session, CreateSessionParams, Project, CreateProjectParams, LayoutState } from '@kurimats/shared'
+import type { Session, CreateSessionParams, Project, CreateProjectParams, LayoutState, BoardLayoutState } from '@kurimats/shared'
 import { v4 as uuidv4 } from 'uuid'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -71,9 +71,35 @@ export class SessionStore {
       );
     `)
 
+    // ボードレイアウト永続化テーブル
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS board_layout (
+        id TEXT PRIMARY KEY DEFAULT 'default',
+        nodes TEXT NOT NULL DEFAULT '[]',
+        viewport_x REAL NOT NULL DEFAULT 0,
+        viewport_y REAL NOT NULL DEFAULT 0,
+        viewport_zoom REAL NOT NULL DEFAULT 1,
+        saved_at INTEGER NOT NULL DEFAULT 0
+      );
+    `)
+
     // 既存テーブルへのカラム追加（既にあればスキップ）
     try { this.db.exec('ALTER TABLE sessions ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0') } catch { /* カラム既存 */ }
     try { this.db.exec('ALTER TABLE sessions ADD COLUMN project_id TEXT') } catch { /* カラム既存 */ }
+    try { this.db.exec('ALTER TABLE sessions ADD COLUMN ssh_host TEXT') } catch { /* カラム既存 */ }
+    try { this.db.exec('ALTER TABLE sessions ADD COLUMN is_remote INTEGER NOT NULL DEFAULT 0') } catch { /* カラム既存 */ }
+
+    // SSHホストテーブル
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS ssh_hosts (
+        name TEXT PRIMARY KEY,
+        hostname TEXT NOT NULL,
+        user TEXT NOT NULL DEFAULT 'root',
+        port INTEGER NOT NULL DEFAULT 22,
+        identity_file TEXT,
+        last_connected INTEGER
+      );
+    `)
   }
 
   // ==================== セッション ====================
@@ -81,7 +107,12 @@ export class SessionStore {
   /**
    * セッション作成
    */
-  create(params: CreateSessionParams & { worktreePath?: string | null; projectId?: string | null }): Session {
+  create(params: Omit<CreateSessionParams, 'sshHost'> & {
+    worktreePath?: string | null
+    projectId?: string | null
+    sshHost?: string | null
+    isRemote?: boolean
+  }): Session {
     const now = Date.now()
     const session: Session = {
       id: uuidv4(),
@@ -93,17 +124,20 @@ export class SessionStore {
       claudeSessionId: null,
       isFavorite: false,
       projectId: params.projectId ?? null,
+      sshHost: params.sshHost ?? null,
+      isRemote: params.isRemote ?? false,
       createdAt: now,
       lastActiveAt: now,
     }
 
     this.db.prepare(`
-      INSERT INTO sessions (id, name, repo_path, worktree_path, branch, status, claude_session_id, is_favorite, project_id, created_at, last_active_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, name, repo_path, worktree_path, branch, status, claude_session_id, is_favorite, project_id, ssh_host, is_remote, created_at, last_active_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       session.id, session.name, session.repoPath, session.worktreePath,
       session.branch, session.status, session.claudeSessionId,
       session.isFavorite ? 1 : 0, session.projectId,
+      session.sshHost, session.isRemote ? 1 : 0,
       session.createdAt, session.lastActiveAt
     )
 
@@ -249,6 +283,41 @@ export class SessionStore {
     }
   }
 
+  // ==================== ボードレイアウト ====================
+
+  /**
+   * ボードレイアウト保存
+   */
+  saveBoardLayout(state: BoardLayoutState): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO board_layout (id, nodes, viewport_x, viewport_y, viewport_zoom, saved_at)
+      VALUES ('default', ?, ?, ?, ?, ?)
+    `).run(
+      JSON.stringify(state.nodes),
+      state.viewport.x,
+      state.viewport.y,
+      state.viewport.zoom,
+      state.savedAt,
+    )
+  }
+
+  /**
+   * ボードレイアウト取得
+   */
+  getBoardLayout(): BoardLayoutState | null {
+    const row = this.db.prepare('SELECT * FROM board_layout WHERE id = ?').get('default') as Record<string, unknown> | undefined
+    if (!row) return null
+    return {
+      nodes: JSON.parse(row.nodes as string),
+      viewport: {
+        x: row.viewport_x as number,
+        y: row.viewport_y as number,
+        zoom: row.viewport_zoom as number,
+      },
+      savedAt: row.saved_at as number,
+    }
+  }
+
   // ==================== マッピング ====================
 
   /**
@@ -265,6 +334,8 @@ export class SessionStore {
       claudeSessionId: row.claude_session_id as string | null,
       isFavorite: Boolean(row.is_favorite),
       projectId: row.project_id as string | null,
+      sshHost: (row.ssh_host as string | null) ?? null,
+      isRemote: Boolean(row.is_remote),
       createdAt: row.created_at as number,
       lastActiveAt: row.last_active_at as number,
     }

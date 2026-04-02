@@ -3,6 +3,7 @@ import express from 'express'
 import { createServer, type Server } from 'http'
 import { SessionStore } from '../services/session-store.js'
 import { PtyManager } from '../services/pty-manager.js'
+import { SshManager } from '../services/ssh-manager.js'
 import { WorktreeService } from '../services/worktree-service.js'
 import { createSessionsRouter } from '../routes/sessions.js'
 import { createProjectsRouter } from '../routes/projects.js'
@@ -17,11 +18,12 @@ describe('プロジェクト・お気に入り・レイアウトAPI', () => {
   beforeEach(async () => {
     store = new SessionStore()
     ptyManager = new PtyManager()
+    const sshManager = new SshManager()
     const worktreeService = new WorktreeService()
 
     const app = express()
     app.use(express.json())
-    app.use('/api/sessions', createSessionsRouter(store, ptyManager, worktreeService))
+    app.use('/api/sessions', createSessionsRouter(store, ptyManager, sshManager, worktreeService))
     app.use('/api/projects', createProjectsRouter(store))
     app.use('/api/layout', createLayoutRouter(store))
 

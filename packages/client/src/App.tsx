@@ -1,35 +1,44 @@
 import { useEffect } from 'react'
+import { ReactFlowProvider } from '@xyflow/react'
 import { Sidebar } from './components/layout/Sidebar'
-import { PanelContainer } from './components/layout/PanelContainer'
+import { BoardCanvas } from './components/board/BoardCanvas'
 import { StatusBar } from './components/layout/StatusBar'
 import { CommandPalette } from './components/command-palette/CommandPalette'
 import { FileTreeOverlay } from './components/overlays/FileTreeOverlay'
 import { CodeViewerOverlay } from './components/overlays/CodeViewerOverlay'
 import { MarkdownOverlay } from './components/overlays/MarkdownOverlay'
+import { NotificationToast } from './components/notifications/NotificationToast'
 import { useSessionStore } from './stores/session-store'
 import { useOverlayStore } from './stores/overlay-store'
 import { useCommandPaletteStore } from './stores/command-palette-store'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { useLayoutStore } from './stores/layout-store'
+import { useNotificationWs } from './hooks/useNotificationWs'
 
 export default function App() {
   const { fetchSessions, fetchProjects } = useSessionStore()
   const { activeOverlay, closeOverlay, overlayProps } = useOverlayStore()
   const { isOpen: isPaletteOpen } = useCommandPaletteStore()
+  const { loadSavedLayout } = useLayoutStore()
 
   useKeyboardShortcuts()
+  useNotificationWs()
 
   useEffect(() => {
     fetchSessions()
     fetchProjects()
-  }, [fetchSessions, fetchProjects])
+    loadSavedLayout()
+  }, [fetchSessions, fetchProjects, loadSavedLayout])
 
   return (
     <div className="h-screen flex flex-col bg-white text-text-primary">
-      {/* メインエリア: サイドバー + パネル */}
+      {/* メインエリア: サイドバー + ボードキャンバス */}
       <div className="flex-1 flex min-h-0">
         <Sidebar />
-        <div className="flex-1 min-w-0">
-          <PanelContainer />
+        <div className="flex-1 min-w-0 relative">
+          <ReactFlowProvider>
+            <BoardCanvas />
+          </ReactFlowProvider>
         </div>
       </div>
 
@@ -55,6 +64,9 @@ export default function App() {
           onClose={closeOverlay}
         />
       )}
+
+      {/* 通知トースト */}
+      <NotificationToast />
     </div>
   )
 }

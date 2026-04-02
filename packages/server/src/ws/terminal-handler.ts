@@ -1,40 +1,51 @@
 import { WebSocket, WebSocketServer } from 'ws'
 import type { IncomingMessage } from 'http'
 import type { PtyManager } from '../services/pty-manager.js'
+import type { SshManager } from '../services/ssh-manager.js'
 import type { ClientTerminalMessage, ServerTerminalMessage } from '@kurimats/shared'
 
 /**
  * ターミナルWebSocketハンドラー
- * xterm.js ↔ node-pty をWebSocketで橋渡しする
+ * xterm.js ↔ PTY/SSH をWebSocketで橋渡しする
  */
-export function setupTerminalWs(wss: WebSocketServer, ptyManager: PtyManager): void {
+export function setupTerminalWs(
+  wss: WebSocketServer,
+  ptyManager: PtyManager,
+  sshManager: SshManager
+): void {
   // セッションID → 接続中のWebSocketクライアント群
   const clients = new Map<string, Set<WebSocket>>()
 
-  // PTYからの出力をWebSocketクライアントへ転送
-  ptyManager.on('data', (sessionId: string, data: string) => {
+  /**
+   * セッションクライアントへメッセージ送信
+   */
+  function sendToClients(sessionId: string, msg: ServerTerminalMessage): void {
     const sessionClients = clients.get(sessionId)
     if (!sessionClients) return
-    const msg: ServerTerminalMessage = { type: 'output', data }
     const payload = JSON.stringify(msg)
     for (const ws of sessionClients) {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(payload)
       }
     }
+  }
+
+  // ローカルPTYからの出力を転送
+  ptyManager.on('data', (sessionId: string, data: string) => {
+    sendToClients(sessionId, { type: 'output', data })
   })
 
-  // PTY終了通知
   ptyManager.on('exit', (sessionId: string, code: number) => {
-    const sessionClients = clients.get(sessionId)
-    if (!sessionClients) return
-    const msg: ServerTerminalMessage = { type: 'exit', code }
-    const payload = JSON.stringify(msg)
-    for (const ws of sessionClients) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(payload)
-      }
-    }
+    sendToClients(sessionId, { type: 'exit', code })
+  })
+
+  // リモートSSHからの出力を転送
+  sshManager.on('data', (sessionId: string, data: string) => {
+    sendToClients(sessionId, { type: 'output', data })
+  })
+
+  sshManager.on('exit', (sessionId: string, code: number) => {
+    sendToClients(sessionId, { type: 'exit', code })
   })
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
@@ -48,6 +59,9 @@ export function setupTerminalWs(wss: WebSocketServer, ptyManager: PtyManager): v
       return
     }
 
+    // セッションがリモートかローカルか判定
+    const isRemote = sshManager.hasSession(sessionId)
+
     // クライアント登録
     if (!clients.has(sessionId)) {
       clients.set(sessionId, new Set())
@@ -59,7 +73,9 @@ export function setupTerminalWs(wss: WebSocketServer, ptyManager: PtyManager): v
     ws.send(JSON.stringify(connMsg))
 
     // リングバッファの内容を再送（再接続対応）
-    const buffer = ptyManager.getBuffer(sessionId)
+    const buffer = isRemote
+      ? sshManager.getBuffer(sessionId)
+      : ptyManager.getBuffer(sessionId)
     if (buffer) {
       const bufMsg: ServerTerminalMessage = { type: 'output', data: buffer }
       ws.send(JSON.stringify(bufMsg))
@@ -71,10 +87,18 @@ export function setupTerminalWs(wss: WebSocketServer, ptyManager: PtyManager): v
         const msg: ClientTerminalMessage = JSON.parse(raw.toString())
         switch (msg.type) {
           case 'input':
-            ptyManager.write(sessionId, msg.data)
+            if (isRemote) {
+              sshManager.write(sessionId, msg.data)
+            } else {
+              ptyManager.write(sessionId, msg.data)
+            }
             break
           case 'resize':
-            ptyManager.resize(sessionId, msg.cols, msg.rows)
+            if (isRemote) {
+              sshManager.resize(sessionId, msg.cols, msg.rows)
+            } else {
+              ptyManager.resize(sessionId, msg.cols, msg.rows)
+            }
             break
         }
       } catch {

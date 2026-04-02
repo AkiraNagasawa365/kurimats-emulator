@@ -1,34 +1,47 @@
-import { useState, useMemo } from 'react'
-import type { LayoutMode, Session } from '@kurimats/shared'
+import { useState, useMemo, useEffect } from 'react'
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion'
+import type { Session } from '@kurimats/shared'
 import { PROJECT_COLORS } from '@kurimats/shared'
 import { useSessionStore } from '../../stores/session-store'
 import { useLayoutStore } from '../../stores/layout-store'
-
-const LAYOUT_OPTIONS: { mode: LayoutMode; label: string; icon: string }[] = [
-  { mode: '1x1', label: '1列', icon: '▣' },
-  { mode: '2x1', label: '2列', icon: '▥' },
-  { mode: '1x2', label: '2段', icon: '▤' },
-  { mode: '2x2', label: '4分割', icon: '⊞' },
-  { mode: '3x1', label: '3列', icon: '⫼' },
-]
+import { useSshStore } from '../../stores/ssh-store'
+import { tabApi } from '../../lib/api'
+import {
+  AnimatedFavoriteButton,
+  FavoriteBadge,
+  gatherVariants,
+  disperseVariants,
+  fadeOutVariants,
+} from '../animations/FavoriteAnimations'
 
 /**
  * サイドバー
  * セッション一覧、お気に入り、プロジェクト管理、レイアウト変更
  */
 export function Sidebar() {
-  const { sessions, projects, createSession, toggleFavorite, assignProject, createProject } = useSessionStore()
-  const { mode, setMode, addPanel, setActivePanel, panels } = useLayoutStore()
+  const { sessions, projects, createSession, toggleFavorite, assignProject, createProject, fetchProjects, fetchSessions } = useSessionStore()
+  const { addPanel, setActiveSession, boardNodes } = useLayoutStore()
+  const { hosts, fetchHosts, connectHost, disconnectHost } = useSshStore()
   const [showNewForm, setShowNewForm] = useState(false)
   const [newName, setNewName] = useState('')
   const [newRepoPath, setNewRepoPath] = useState('')
   const [newProjectId, setNewProjectId] = useState<string | null>(null)
+  const [newSshHost, setNewSshHost] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
   const [favoritesCollapsed, setFavoritesCollapsed] = useState(false)
   const [projectsCollapsed, setProjectsCollapsed] = useState(false)
+  const [favoritesOnly, setFavoritesOnly] = useState(false)
+  const [sshCollapsed, setSshCollapsed] = useState(false)
   const [showProjectForm, setShowProjectForm] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectColor, setNewProjectColor] = useState<string>(PROJECT_COLORS[0])
+  const [tabSyncing, setTabSyncing] = useState(false)
+  const [tabSyncResult, setTabSyncResult] = useState<string | null>(null)
+
+  // SSHホスト一覧を初回取得
+  useEffect(() => {
+    fetchHosts()
+  }, [fetchHosts])
 
   // お気に入りセッション
   const favoriteSessions = useMemo(() =>
@@ -53,6 +66,7 @@ export function Sidebar() {
       const session = await createSession({
         name: newName.trim(),
         repoPath: newRepoPath.trim(),
+        sshHost: newSshHost || undefined,
       })
       if (newProjectId) {
         await assignProject(session.id, newProjectId)
@@ -61,6 +75,7 @@ export function Sidebar() {
       setNewName('')
       setNewRepoPath('')
       setNewProjectId(null)
+      setNewSshHost('')
       setShowNewForm(false)
     } catch (e) {
       alert(`作成エラー: ${e}`)
@@ -84,11 +99,36 @@ export function Sidebar() {
   }
 
   const handleSessionClick = (session: Session) => {
-    const panelIndex = panels.findIndex(p => p.sessionId === session.id)
-    if (panelIndex >= 0) {
-      setActivePanel(panelIndex)
+    const isOnBoard = boardNodes.some(n => n.sessionId === session.id)
+    if (isOnBoard) {
+      setActiveSession(session.id)
     } else {
       addPanel(session.id)
+    }
+  }
+
+  const handleTabSync = async () => {
+    setTabSyncing(true)
+    setTabSyncResult(null)
+    try {
+      const result = await tabApi.sync()
+      // プロジェクト一覧を更新
+      await fetchProjects()
+      // セッション一覧を更新
+      await fetchSessions()
+      // 作成されたセッションをボードに配置
+      for (const session of result.sessions) {
+        addPanel(session.id)
+      }
+      const sessionCount = result.sessions.length
+      setTabSyncResult(
+        `${result.created}件プロジェクト / ${sessionCount}件セッション作成`
+      )
+    } catch (e) {
+      setTabSyncResult(`同期エラー: ${e}`)
+    } finally {
+      setTabSyncing(false)
+      setTimeout(() => setTabSyncResult(null), 5000)
     }
   }
 
@@ -130,6 +170,19 @@ export function Sidebar() {
             className="w-full px-2.5 py-1.5 text-xs bg-white border border-border rounded text-text-primary placeholder-text-muted focus:border-accent outline-none"
             onKeyDown={e => e.key === 'Enter' && handleCreate()}
           />
+          {/* SSHホスト選択 */}
+          {hosts.length > 0 && (
+            <select
+              value={newSshHost}
+              onChange={e => setNewSshHost(e.target.value)}
+              className="w-full px-2.5 py-1.5 text-xs bg-white border border-border rounded text-text-primary outline-none focus:border-accent"
+            >
+              <option value="">ローカル</option>
+              {hosts.filter(h => h.isConnected).map(h => (
+                <option key={h.name} value={h.name}>SSH: {h.name} ({h.user}@{h.hostname})</option>
+              ))}
+            </select>
+          )}
           {/* プロジェクト選択 */}
           {projects.length > 0 && (
             <select
@@ -168,24 +221,51 @@ export function Sidebar() {
         {/* お気に入りセクション */}
         {favoriteSessions.length > 0 && (
           <div>
-            <button
-              onClick={() => setFavoritesCollapsed(!favoritesCollapsed)}
-              className="w-full text-left px-3 py-1.5 text-[10px] font-semibold text-text-secondary uppercase tracking-wider hover:bg-surface-2 transition-colors flex items-center gap-1"
-            >
-              <span className="text-[8px]">{favoritesCollapsed ? '▶' : '▼'}</span>
-              お気に入り
-              <span className="text-text-muted ml-auto">{favoriteSessions.length}</span>
-            </button>
-            {!favoritesCollapsed && favoriteSessions.map(session => (
-              <SessionItem
-                key={`fav-${session.id}`}
-                session={session}
-                isInPanel={panels.some(p => p.sessionId === session.id)}
-                projectColor={getProjectColor(session.projectId)}
-                onClick={() => handleSessionClick(session)}
-                onToggleFavorite={() => toggleFavorite(session.id)}
-              />
-            ))}
+            <div className="flex items-center">
+              <button
+                onClick={() => setFavoritesCollapsed(!favoritesCollapsed)}
+                className="flex-1 text-left px-3 py-1.5 text-[10px] font-semibold text-text-secondary uppercase tracking-wider hover:bg-surface-2 transition-colors flex items-center gap-1"
+              >
+                <span className="text-[8px]">{favoritesCollapsed ? '▶' : '▼'}</span>
+                お気に入り
+                <FavoriteBadge count={favoriteSessions.length} />
+              </button>
+              {/* お気に入りフィルターボタン */}
+              <button
+                onClick={() => setFavoritesOnly(!favoritesOnly)}
+                className={`px-2 py-1 text-[10px] mr-1 rounded transition-colors ${
+                  favoritesOnly
+                    ? 'bg-yellow-500 text-white'
+                    : 'text-text-muted hover:text-text-secondary hover:bg-surface-2'
+                }`}
+                title={favoritesOnly ? 'フィルター解除' : 'お気に入りのみ表示'}
+                data-testid="favorites-filter-button"
+              >
+                ★
+              </button>
+            </div>
+            <LayoutGroup>
+              <AnimatePresence mode="popLayout">
+                {!favoritesCollapsed && favoriteSessions.map(session => (
+                  <motion.div
+                    key={`fav-${session.id}`}
+                    layout
+                    variants={disperseVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                  >
+                    <SessionItem
+                      session={session}
+                      isOnBoard={boardNodes.some(n => n.sessionId === session.id)}
+                      projectColor={getProjectColor(session.projectId)}
+                      onClick={() => handleSessionClick(session)}
+                      onToggleFavorite={() => toggleFavorite(session.id)}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </LayoutGroup>
           </div>
         )}
 
@@ -200,16 +280,33 @@ export function Sidebar() {
               {searchQuery ? '一致するセッションなし' : 'セッションなし'}
             </p>
           ) : (
-            filteredSessions.map(session => (
-              <SessionItem
-                key={session.id}
-                session={session}
-                isInPanel={panels.some(p => p.sessionId === session.id)}
-                projectColor={getProjectColor(session.projectId)}
-                onClick={() => handleSessionClick(session)}
-                onToggleFavorite={() => toggleFavorite(session.id)}
-              />
-            ))
+            <LayoutGroup>
+              <AnimatePresence mode="popLayout">
+                {filteredSessions.map(session => {
+                  // お気に入りフィルターON時、非お気に入りはフェードアウト
+                  const isVisible = !favoritesOnly || session.isFavorite
+                  if (!isVisible) return null
+                  return (
+                    <motion.div
+                      key={session.id}
+                      layout
+                      variants={favoritesOnly ? gatherVariants : fadeOutVariants}
+                      initial={favoritesOnly ? 'initial' : 'visible'}
+                      animate={favoritesOnly ? 'animate' : 'visible'}
+                      exit="hidden"
+                    >
+                      <SessionItem
+                        session={session}
+                        isOnBoard={boardNodes.some(n => n.sessionId === session.id)}
+                        projectColor={getProjectColor(session.projectId)}
+                        onClick={() => handleSessionClick(session)}
+                        onToggleFavorite={() => toggleFavorite(session.id)}
+                      />
+                    </motion.div>
+                  )
+                })}
+              </AnimatePresence>
+            </LayoutGroup>
           )}
         </div>
 
@@ -237,6 +334,18 @@ export function Sidebar() {
                   <span className="truncate">{project.name}</span>
                 </div>
               ))}
+              {/* tab同期ボタン */}
+              <button
+                onClick={handleTabSync}
+                disabled={tabSyncing}
+                className="w-full text-left px-3 py-1.5 text-xs text-cyan-600 hover:bg-surface-2 transition-colors disabled:opacity-50"
+              >
+                {tabSyncing ? '同期中...' : 'tab同期'}
+              </button>
+              {tabSyncResult && (
+                <p className="px-3 py-1 text-[10px] text-text-muted">{tabSyncResult}</p>
+              )}
+
               {/* 新規プロジェクト */}
               {showProjectForm ? (
                 <div className="px-3 py-2 space-y-2">
@@ -289,25 +398,33 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* レイアウト切り替え */}
-      <div className="px-3 py-2.5 border-t border-border">
-        <p className="text-[10px] text-text-secondary mb-1.5 font-medium">レイアウト</p>
-        <div className="flex gap-1">
-          {LAYOUT_OPTIONS.map(opt => (
-            <button
-              key={opt.mode}
-              onClick={() => setMode(opt.mode)}
-              className={`flex-1 py-1.5 text-xs rounded transition-colors ${
-                mode === opt.mode
-                  ? 'bg-accent text-white'
-                  : 'bg-surface-2 text-text-secondary hover:bg-surface-3'
-              }`}
-              title={opt.label}
-            >
-              {opt.icon}
-            </button>
+      {/* SSHホストセクション */}
+      {hosts.length > 0 && (
+        <div className="border-t border-border">
+          <button
+            onClick={() => setSshCollapsed(!sshCollapsed)}
+            className="w-full text-left px-3 py-1.5 text-[10px] font-semibold text-text-secondary uppercase tracking-wider hover:bg-surface-2 transition-colors flex items-center gap-1"
+          >
+            <span className="text-[8px]">{sshCollapsed ? '▶' : '▼'}</span>
+            SSHホスト
+            <span className="text-text-muted ml-auto">{hosts.length}</span>
+          </button>
+          {!sshCollapsed && hosts.map(host => (
+            <SshHostItem
+              key={host.name}
+              host={host}
+              onConnect={() => connectHost(host.name).catch(() => {})}
+              onDisconnect={() => disconnectHost(host.name)}
+            />
           ))}
         </div>
+      )}
+
+      {/* ボードキャンバス情報 */}
+      <div className="px-3 py-2.5 border-t border-border">
+        <p className="text-[10px] text-text-secondary font-medium">
+          ボード: {boardNodes.length}件のセッション
+        </p>
       </div>
     </div>
   )
@@ -318,13 +435,13 @@ export function Sidebar() {
  */
 function SessionItem({
   session,
-  isInPanel,
+  isOnBoard,
   projectColor,
   onClick,
   onToggleFavorite,
 }: {
   session: Session
-  isInPanel: boolean
+  isOnBoard: boolean
   projectColor: string | null
   onClick: () => void
   onToggleFavorite: () => void
@@ -333,7 +450,7 @@ function SessionItem({
     <button
       onClick={onClick}
       className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-surface-2 transition-colors group ${
-        isInPanel ? 'text-text-primary font-medium' : 'text-text-secondary'
+        isOnBoard ? 'text-text-primary font-medium' : 'text-text-secondary'
       }`}
     >
       {/* ステータスドット */}
@@ -352,18 +469,57 @@ function SessionItem({
       {/* セッション名 */}
       <span className="truncate flex-1">{session.name}</span>
 
-      {/* お気に入りボタン */}
-      <span
-        onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
-        className={`flex-shrink-0 transition-colors cursor-pointer ${
-          session.isFavorite
-            ? 'text-yellow-500'
-            : 'text-transparent group-hover:text-text-muted'
-        }`}
-        title={session.isFavorite ? 'お気に入り解除' : 'お気に入りに追加'}
-      >
-        ★
-      </span>
+      {/* リモートバッジ */}
+      {session.isRemote && (
+        <span className="text-[9px] px-1 py-0.5 bg-blue-100 text-blue-600 rounded flex-shrink-0">
+          SSH
+        </span>
+      )}
+
+      {/* ボード上表示インジケーター */}
+      {isOnBoard && (
+        <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-accent" title="ボード上に表示中" />
+      )}
+
+      {/* お気に入りボタン（アニメーション付き） */}
+      <AnimatedFavoriteButton
+        isFavorite={session.isFavorite}
+        onToggle={onToggleFavorite}
+      />
     </button>
+  )
+}
+
+/**
+ * SSHホストリストアイテム
+ */
+function SshHostItem({
+  host,
+  onConnect,
+  onDisconnect,
+}: {
+  host: import('@kurimats/shared').SshHost
+  onConnect: () => void
+  onDisconnect: () => void
+}) {
+  const statusColor = host.isConnected ? 'bg-green-500' : 'bg-gray-400'
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-text-primary hover:bg-surface-2 transition-colors group">
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusColor}`} />
+      <span className="truncate flex-1" title={`${host.user}@${host.hostname}:${host.port}`}>
+        {host.name}
+      </span>
+      <button
+        onClick={host.isConnected ? onDisconnect : onConnect}
+        className={`text-[10px] px-1.5 py-0.5 rounded transition-colors opacity-0 group-hover:opacity-100 ${
+          host.isConnected
+            ? 'bg-red-100 text-red-600 hover:bg-red-200'
+            : 'bg-green-100 text-green-600 hover:bg-green-200'
+        }`}
+      >
+        {host.isConnected ? '切断' : '接続'}
+      </button>
+    </div>
   )
 }

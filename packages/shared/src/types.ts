@@ -12,6 +12,8 @@ export interface Session {
   claudeSessionId: string | null
   isFavorite: boolean
   projectId: string | null
+  sshHost: string | null
+  isRemote: boolean
   createdAt: number
   lastActiveAt: number
 }
@@ -22,6 +24,7 @@ export interface CreateSessionParams {
   repoPath: string
   baseBranch?: string
   useWorktree?: boolean
+  sshHost?: string
 }
 
 // Worktree情報
@@ -46,6 +49,9 @@ export interface BoardCard {
   dimensions: { width: number; height: number }
   createdAt: number
 }
+
+// 自動レイアウトモード
+export type AutoLayoutMode = 'grid' | 'flow' | 'tree'
 
 // パネルレイアウト
 export type LayoutMode = '1x1' | '2x1' | '1x2' | '2x2' | '3x1'
@@ -88,10 +94,79 @@ export const PROJECT_COLORS = [
   '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
 ] as const
 
+// SSHホスト情報
+export interface SshHost {
+  name: string
+  hostname: string
+  user: string
+  port: number
+  identityFile: string | null
+  isConnected: boolean
+}
+
+// SSH接続ステータス
+export type SshConnectionStatus = 'online' | 'offline' | 'reconnecting'
+
+// Claude通知
+export interface ClaudeNotification {
+  id: string
+  sessionId: string
+  message: string
+  timestamp: number
+  read: boolean
+}
+
 // ファイルツリーノード
 export interface FileNode {
   name: string
   path: string
   isDirectory: boolean
   children?: FileNode[]
+}
+
+// ボードノード位置情報（React Flow用）
+export interface BoardNodePosition {
+  sessionId: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+// ボードレイアウト永続化
+export interface BoardLayoutState {
+  nodes: BoardNodePosition[]
+  viewport: { x: number; y: number; zoom: number }
+  savedAt: number
+}
+
+// tabコマンド連携
+export interface TabHost {
+  name: string
+  type: 'local' | 'remote'
+  projects: TabProject[]
+}
+
+export interface TabProject {
+  name: string
+  path: string
+}
+
+export interface TabListResponse {
+  hosts: TabHost[]
+}
+
+export interface TabSyncResponse {
+  created: number
+  skipped: number
+  projects: Project[]
+  sessions: Session[]
+}
+
+// bookmarks.toml のブックマーク情報
+export interface TabBookmark {
+  name: string
+  directory: string
+  host?: string // リモートホスト名（ローカルの場合はundefined）
+  shared?: boolean
 }

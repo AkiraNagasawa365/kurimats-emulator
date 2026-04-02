@@ -1,4 +1,4 @@
-import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, LayoutState } from '@kurimats/shared'
+import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, LayoutState, BoardLayoutState, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus } from '@kurimats/shared'
 
 const BASE = '/api'
 
@@ -61,4 +61,30 @@ export const layoutApi = {
   get: () => request<LayoutState | null>('/layout'),
   save: (state: LayoutState) =>
     request<{ ok: boolean }>('/layout', { method: 'PUT', body: JSON.stringify(state) }),
+  getBoard: () => request<BoardLayoutState | null>('/layout/board'),
+  saveBoard: (state: BoardLayoutState) =>
+    request<{ ok: boolean }>('/layout/board', { method: 'PUT', body: JSON.stringify(state) }),
+}
+
+// tabコマンドAPI
+export const tabApi = {
+  list: () => request<TabListResponse>('/tab/list'),
+  sync: () => request<TabSyncResponse>('/tab/sync', { method: 'POST' }),
+  bookmarks: () => request<{ bookmarks: TabBookmark[] }>('/tab/bookmarks'),
+}
+
+// SSH API
+export const sshApi = {
+  hosts: () => request<SshHost[]>('/ssh/hosts'),
+  connect: (host: string) =>
+    request<{ ok: boolean; status: string }>('/ssh/connect', {
+      method: 'POST',
+      body: JSON.stringify({ host }),
+    }),
+  disconnect: (host: string) =>
+    request<{ ok: boolean; status: string }>(`/ssh/disconnect/${encodeURIComponent(host)}`, {
+      method: 'DELETE',
+    }),
+  status: () => request<Record<string, SshConnectionStatus>>('/ssh/status'),
+  refresh: () => request<SshHost[]>('/ssh/refresh', { method: 'POST' }),
 }
