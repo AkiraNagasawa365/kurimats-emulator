@@ -1,3 +1,4 @@
+// SSHセッション修正に伴うテスト更新 (#41)
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import express from 'express'
 import { createServer, type Server } from 'http'
