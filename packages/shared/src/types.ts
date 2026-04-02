@@ -160,4 +160,13 @@ export interface TabSyncResponse {
   created: number
   skipped: number
   projects: Project[]
+  sessions: Session[]
+}
+
+// bookmarks.toml のブックマーク情報
+export interface TabBookmark {
+  name: string
+  directory: string
+  host?: string // リモートホスト名（ローカルの場合はundefined）
+  shared?: boolean
 }

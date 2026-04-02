@@ -1,4 +1,4 @@
-import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, LayoutState, BoardLayoutState, TabListResponse, TabSyncResponse, SshHost, SshConnectionStatus } from '@kurimats/shared'
+import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, LayoutState, BoardLayoutState, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus } from '@kurimats/shared'
 
 const BASE = '/api'
 
@@ -70,6 +70,7 @@ export const layoutApi = {
 export const tabApi = {
   list: () => request<TabListResponse>('/tab/list'),
   sync: () => request<TabSyncResponse>('/tab/sync', { method: 'POST' }),
+  bookmarks: () => request<{ bookmarks: TabBookmark[] }>('/tab/bookmarks'),
 }
 
 // SSH API

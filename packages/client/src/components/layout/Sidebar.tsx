@@ -19,7 +19,7 @@ import {
  * セッション一覧、お気に入り、プロジェクト管理、レイアウト変更
  */
 export function Sidebar() {
-  const { sessions, projects, createSession, toggleFavorite, assignProject, createProject, fetchProjects } = useSessionStore()
+  const { sessions, projects, createSession, toggleFavorite, assignProject, createProject, fetchProjects, fetchSessions } = useSessionStore()
   const { addPanel, setActiveSession, boardNodes } = useLayoutStore()
   const { hosts, fetchHosts, connectHost, disconnectHost } = useSshStore()
   const [showNewForm, setShowNewForm] = useState(false)
@@ -112,13 +112,23 @@ export function Sidebar() {
     setTabSyncResult(null)
     try {
       const result = await tabApi.sync()
-      setTabSyncResult(`${result.created}件作成 / ${result.skipped}件スキップ`)
+      // プロジェクト一覧を更新
       await fetchProjects()
+      // セッション一覧を更新
+      await fetchSessions()
+      // 作成されたセッションをボードに配置
+      for (const session of result.sessions) {
+        addPanel(session.id)
+      }
+      const sessionCount = result.sessions.length
+      setTabSyncResult(
+        `${result.created}件プロジェクト / ${sessionCount}件セッション作成`
+      )
     } catch (e) {
       setTabSyncResult(`同期エラー: ${e}`)
     } finally {
       setTabSyncing(false)
-      setTimeout(() => setTabSyncResult(null), 3000)
+      setTimeout(() => setTabSyncResult(null), 5000)
     }
   }
 

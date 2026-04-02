@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import express from 'express'
 import { createServer, type Server } from 'http'
 import { SessionStore } from '../services/session-store.js'
+import { PtyManager } from '../services/pty-manager.js'
 import { createTabRouter } from '../routes/tab.js'
 import { createLayoutRouter } from '../routes/layout.js'
 
@@ -9,13 +10,15 @@ describe('tabコマンドAPI', () => {
   let server: Server
   let baseUrl: string
   let store: SessionStore
+  let ptyManager: PtyManager
 
   beforeEach(async () => {
     store = new SessionStore()
+    ptyManager = new PtyManager()
 
     const app = express()
     app.use(express.json())
-    app.use('/api/tab', createTabRouter(store))
+    app.use('/api/tab', createTabRouter(store, ptyManager))
     app.use('/api/layout', createLayoutRouter(store))
 
     server = createServer(app)
@@ -28,6 +31,7 @@ describe('tabコマンドAPI', () => {
   })
 
   afterEach(() => {
+    ptyManager.killAll()
     store.close()
     server.close()
   })
@@ -47,8 +51,10 @@ describe('tabコマンドAPI', () => {
     expect(data).toHaveProperty('created')
     expect(data).toHaveProperty('skipped')
     expect(data).toHaveProperty('projects')
+    expect(data).toHaveProperty('sessions')
     expect(typeof data.created).toBe('number')
     expect(typeof data.skipped).toBe('number')
+    expect(Array.isArray(data.sessions)).toBe(true)
   })
 })
 

@@ -59,11 +59,19 @@ export function createSessionsRouter(
 
     try {
       if (isRemote && params.sshHost) {
-        // リモートSSHセッション
-        await sshManager.spawn(session.id, params.sshHost, cwd)
+        // リモートSSHセッション: PTY経由でssh + shpool + claude-session
+        const sessionName = params.name.replace(/\s+/g, '-').toLowerCase()
+        const shpoolCmd = `~/.cargo/bin/shpool attach -f -d ${cwd} -c ~/.local/bin/claude-session ${sessionName}`
+        await ptyManager.spawn(
+          session.id,
+          process.env.HOME || '/tmp',
+          120, 30,
+          'ssh',
+          [params.sshHost, '-t', shpoolCmd],
+        )
       } else {
-        // ローカルPTYセッション
-        await ptyManager.spawn(session.id, cwd)
+        // ローカルPTYセッション: claude を起動
+        await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', [])
       }
     } catch (e) {
       store.delete(session.id)
@@ -92,12 +100,8 @@ export function createSessionsRouter(
       return
     }
 
-    // リモートかローカルかで適切なマネージャーを使用
-    if (session.isRemote && sshManager.hasSession(session.id)) {
-      sshManager.kill(session.id)
-    } else {
-      ptyManager.kill(session.id)
-    }
+    // PTYマネージャーで終了（リモートもPTY経由のsshコマンド）
+    ptyManager.kill(session.id)
     store.updateStatus(session.id, 'terminated')
     res.json({ ok: true })
   })

@@ -111,8 +111,17 @@ export class PtyManager extends EventEmitter {
 
   /**
    * 新しいシェルセッションを作成
+   * @param command 実行コマンド（省略時はデフォルトシェル）
+   * @param args コマンド引数
    */
-  async spawn(sessionId: string, cwd: string, cols = 120, rows = 30): Promise<void> {
+  async spawn(
+    sessionId: string,
+    cwd: string,
+    cols = 120,
+    rows = 30,
+    command?: string,
+    args?: string[],
+  ): Promise<void> {
     if (this.sessions.has(sessionId)) {
       throw new Error(`セッション ${sessionId} は既に存在します`)
     }
@@ -121,29 +130,38 @@ export class PtyManager extends EventEmitter {
 
     if (this._backend === 'node-pty' && nodePty) {
       try {
-        this._spawnWithNodePty(sessionId, cwd, cols, rows)
+        this._spawnWithNodePty(sessionId, cwd, cols, rows, command, args)
       } catch (e) {
         console.warn('node-ptyでのspawnに失敗。child_processにフォールバックします:', e)
         this._backend = 'child_process'
-        this._spawnWithChildProcess(sessionId, cwd, cols, rows)
+        this._spawnWithChildProcess(sessionId, cwd, cols, rows, command, args)
       }
     } else {
-      this._spawnWithChildProcess(sessionId, cwd, cols, rows)
+      this._spawnWithChildProcess(sessionId, cwd, cols, rows, command, args)
     }
   }
 
   /**
    * node-ptyでセッション作成
    */
-  private _spawnWithNodePty(sessionId: string, cwd: string, cols: number, rows: number): void {
-    const shell = process.env.SHELL || '/bin/zsh'
-    const ptyProcess = nodePty!.spawn(shell, [], {
+  private _spawnWithNodePty(
+    sessionId: string,
+    cwd: string,
+    cols: number,
+    rows: number,
+    command?: string,
+    args?: string[],
+  ): void {
+    const cmd = command || process.env.SHELL || '/bin/zsh'
+    const cmdArgs = args || []
+    const ptyProcess = nodePty!.spawn(cmd, cmdArgs, {
       name: 'xterm-256color',
       cols,
       rows,
       cwd,
       env: {
         ...process.env,
+        TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
       } as Record<string, string>,
     })
@@ -177,9 +195,17 @@ export class PtyManager extends EventEmitter {
   /**
    * child_processでセッション作成（フォールバック）
    */
-  private _spawnWithChildProcess(sessionId: string, cwd: string, cols: number, rows: number): void {
-    const shell = process.env.SHELL || '/bin/zsh'
-    const child = cpSpawn(shell, ['-i'], {
+  private _spawnWithChildProcess(
+    sessionId: string,
+    cwd: string,
+    cols: number,
+    rows: number,
+    command?: string,
+    args?: string[],
+  ): void {
+    const cmd = command || process.env.SHELL || '/bin/zsh'
+    const cmdArgs = args || (command ? [] : ['-i'])
+    const child = cpSpawn(cmd, cmdArgs, {
       cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
