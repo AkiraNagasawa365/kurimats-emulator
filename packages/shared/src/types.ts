@@ -172,6 +172,44 @@ export interface TabSyncResponse {
   sessions: Session[]
 }
 
+// フィードバックカテゴリ
+export type FeedbackCategory = 'feature_request' | 'bug_report' | 'improvement'
+
+// フィードバック優先度
+export type FeedbackPriority = 'high' | 'medium' | 'low'
+
+// フィードバック
+export interface Feedback {
+  id: string
+  title: string
+  detail: string
+  category: FeedbackCategory
+  priority: FeedbackPriority
+  createdAt: number
+}
+
+// フィードバック作成パラメータ
+export interface CreateFeedbackParams {
+  title: string
+  detail: string
+  category: FeedbackCategory
+  priority: FeedbackPriority
+}
+
+// フィードバックカテゴリラベル
+export const FEEDBACK_CATEGORY_LABELS: Record<FeedbackCategory, string> = {
+  feature_request: '機能要望',
+  bug_report: 'バグ報告',
+  improvement: '改善提案',
+} as const
+
+// フィードバック優先度ラベル
+export const FEEDBACK_PRIORITY_LABELS: Record<FeedbackPriority, string> = {
+  high: '高',
+  medium: '中',
+  low: '低',
+} as const
+
 // bookmarks.toml のブックマーク情報
 export interface TabBookmark {
   name: string

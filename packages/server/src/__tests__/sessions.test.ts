@@ -71,6 +71,49 @@ describe('セッションAPI', () => {
     expect(res.status).toBe(400)
   })
 
+  it('お気に入りをトグルできる', async () => {
+    // セッション作成
+    const createRes = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'fav-test', repoPath: '/tmp', useWorktree: false }),
+    })
+    const session = await createRes.json()
+
+    // お気に入りトグル（false → true）
+    const toggleRes = await fetch(`${baseUrl}/api/sessions/${session.id}/favorite`, { method: 'POST' })
+    const toggleResult = await toggleRes.json()
+    expect(toggleRes.status).toBe(200)
+    expect(toggleResult.isFavorite).toBe(true)
+
+    // もう一度トグル（true → false）
+    const toggleRes2 = await fetch(`${baseUrl}/api/sessions/${session.id}/favorite`, { method: 'POST' })
+    const toggleResult2 = await toggleRes2.json()
+    expect(toggleResult2.isFavorite).toBe(false)
+  })
+
+  it('ターミナルプレビューを取得できる', async () => {
+    // セッション作成
+    const createRes = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'preview-test', repoPath: '/tmp', useWorktree: false }),
+    })
+    const session = await createRes.json()
+
+    // プレビュー取得（バッファが空でも正常に返る）
+    const previewRes = await fetch(`${baseUrl}/api/sessions/${session.id}/preview?lines=3`)
+    const preview = await previewRes.json()
+    expect(previewRes.status).toBe(200)
+    expect(preview.sessionId).toBe(session.id)
+    expect(Array.isArray(preview.lines)).toBe(true)
+  })
+
+  it('存在しないセッションのプレビューは404', async () => {
+    const previewRes = await fetch(`${baseUrl}/api/sessions/nonexistent/preview`)
+    expect(previewRes.status).toBe(404)
+  })
+
   it('セッションを削除できる', async () => {
     // 作成
     const createRes = await fetch(`${baseUrl}/api/sessions`, {

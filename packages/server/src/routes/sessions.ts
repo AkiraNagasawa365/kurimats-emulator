@@ -112,6 +112,25 @@ export function createSessionsRouter(
     res.json({ isFavorite })
   })
 
+  // ターミナルプレビュー取得（最新出力の数行）
+  router.get('/:id/preview', (req, res) => {
+    const session = store.getById(req.params.id)
+    if (!session) {
+      res.status(404).json({ error: 'セッションが見つかりません' })
+      return
+    }
+
+    const lines = parseInt(req.query.lines as string) || 5
+    const buffer = ptyManager.getBuffer(session.id)
+
+    // ANSIエスケープシーケンスを除去して最新行を取得
+    const cleanBuffer = buffer.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '')
+    const allLines = cleanBuffer.split('\n').filter(l => l.trim().length > 0)
+    const previewLines = allLines.slice(-lines)
+
+    res.json({ sessionId: session.id, lines: previewLines })
+  })
+
   // プロジェクト割り当て
   router.post('/:id/project', (req, res) => {
     const { projectId } = req.body as { projectId: string | null }

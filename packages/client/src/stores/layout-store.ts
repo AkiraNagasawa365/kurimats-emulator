@@ -10,7 +10,7 @@ interface PanelInfo {
 
 // ボードノードのデフォルトサイズ
 const DEFAULT_NODE_WIDTH = 600
-const DEFAULT_NODE_HEIGHT = 400
+const DEFAULT_NODE_HEIGHT = 480
 
 interface LayoutState {
   mode: LayoutMode
