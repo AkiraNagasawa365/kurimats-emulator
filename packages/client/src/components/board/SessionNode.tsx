@@ -112,9 +112,29 @@ function SessionNodeComponent({ data }: NodeProps) {
         />
       </div>
 
-      {/* React Flow用の非表示ハンドル（接続用、将来拡張） */}
-      <Handle type="source" position={Position.Right} className="!invisible" />
-      <Handle type="target" position={Position.Left} className="!invisible" />
+      {/* React Flow接続ハンドル */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!w-3 !h-3 !bg-accent !border-2 !border-white hover:!bg-blue-400 !transition-colors"
+      />
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!w-3 !h-3 !bg-accent !border-2 !border-white hover:!bg-blue-400 !transition-colors"
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="bottom"
+        className="!w-3 !h-3 !bg-accent !border-2 !border-white hover:!bg-blue-400 !transition-colors"
+      />
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="top"
+        className="!w-3 !h-3 !bg-accent !border-2 !border-white hover:!bg-blue-400 !transition-colors"
+      />
     </div>
   )
 }

@@ -162,6 +162,7 @@ describe('SessionStore ボードレイアウト', () => {
       nodes: [
         { sessionId: 'test-1', x: 10, y: 20, width: 600, height: 400 },
       ],
+      edges: [],
       viewport: { x: 100, y: 200, zoom: 0.8 },
       savedAt: Date.now(),
     }
@@ -174,5 +175,63 @@ describe('SessionStore ボードレイアウト', () => {
     expect(loaded!.nodes[0].sessionId).toBe('test-1')
     expect(loaded!.nodes[0].x).toBe(10)
     expect(loaded!.viewport.zoom).toBe(0.8)
+    expect(loaded!.edges).toEqual([])
+  })
+
+  it('ボードエッジの保存・取得', () => {
+    const state = {
+      nodes: [
+        { sessionId: 'session-a', x: 0, y: 0, width: 600, height: 400 },
+        { sessionId: 'session-b', x: 700, y: 0, width: 600, height: 400 },
+      ],
+      edges: [
+        { id: 'edge-1', source: 'session-a', target: 'session-b', label: 'テスト接続' },
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      savedAt: Date.now(),
+    }
+
+    store.saveBoardLayout(state)
+    const loaded = store.getBoardLayout()
+
+    expect(loaded).not.toBeNull()
+    expect(loaded!.edges).toHaveLength(1)
+    expect(loaded!.edges[0].id).toBe('edge-1')
+    expect(loaded!.edges[0].source).toBe('session-a')
+    expect(loaded!.edges[0].target).toBe('session-b')
+    expect(loaded!.edges[0].label).toBe('テスト接続')
+  })
+
+  it('ボードエッジの更新（追加・削除）', () => {
+    // 初回保存
+    const state1 = {
+      nodes: [
+        { sessionId: 's1', x: 0, y: 0, width: 600, height: 400 },
+        { sessionId: 's2', x: 700, y: 0, width: 600, height: 400 },
+        { sessionId: 's3', x: 350, y: 500, width: 600, height: 400 },
+      ],
+      edges: [
+        { id: 'e1', source: 's1', target: 's2' },
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      savedAt: Date.now(),
+    }
+    store.saveBoardLayout(state1)
+
+    // エッジを追加して更新
+    const state2 = {
+      ...state1,
+      edges: [
+        { id: 'e1', source: 's1', target: 's2' },
+        { id: 'e2', source: 's2', target: 's3' },
+      ],
+      savedAt: Date.now(),
+    }
+    store.saveBoardLayout(state2)
+    const loaded = store.getBoardLayout()
+
+    expect(loaded!.edges).toHaveLength(2)
+    expect(loaded!.edges[1].source).toBe('s2')
+    expect(loaded!.edges[1].target).toBe('s3')
   })
 })
