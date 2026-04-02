@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-type OverlayType = 'file-tree' | 'code-viewer' | 'markdown' | null
+type OverlayType = 'file-tree' | 'code-viewer' | 'markdown' | 'feedback' | null
 
 interface OverlayState {
   activeOverlay: OverlayType

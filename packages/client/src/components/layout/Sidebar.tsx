@@ -6,6 +6,7 @@ import { useSessionStore } from '../../stores/session-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useSshStore } from '../../stores/ssh-store'
 import { tabApi } from '../../lib/api'
+import { useOverlayStore } from '../../stores/overlay-store'
 import {
   AnimatedFavoriteButton,
   FavoriteBadge,
@@ -22,6 +23,7 @@ export function Sidebar() {
   const { sessions, projects, createSession, toggleFavorite, assignProject, createProject, fetchProjects, fetchSessions } = useSessionStore()
   const { addPanel, setActiveSession, boardNodes } = useLayoutStore()
   const { hosts, fetchHosts, connectHost, disconnectHost } = useSshStore()
+  const { openOverlay } = useOverlayStore()
   const [showNewForm, setShowNewForm] = useState(false)
   const [newName, setNewName] = useState('')
   const [newRepoPath, setNewRepoPath] = useState('')
@@ -420,11 +422,18 @@ export function Sidebar() {
         </div>
       )}
 
-      {/* ボードキャンバス情報 */}
-      <div className="px-3 py-2.5 border-t border-border">
+      {/* フッター */}
+      <div className="px-3 py-2.5 border-t border-border space-y-1">
         <p className="text-[10px] text-text-secondary font-medium">
           ボード: {boardNodes.length}件のセッション
         </p>
+        <button
+          onClick={() => openOverlay('feedback')}
+          className="w-full text-left text-xs text-text-secondary hover:text-text-primary hover:bg-surface-2 px-1 py-1 rounded transition-colors"
+          data-testid="feedback-open-button"
+        >
+          フィードバック
+        </button>
       </div>
     </div>
   )
