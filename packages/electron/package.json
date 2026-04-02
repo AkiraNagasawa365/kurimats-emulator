@@ -4,9 +4,9 @@
   "private": true,
   "main": "dist/main.js",
   "scripts": {
-    "dev": "tsx src/main.ts",
-    "build": "tsc && electron-builder",
-    "electron": "electron dist/main.js"
+    "dev": "node scripts/build.mjs && electron .",
+    "build": "node scripts/build.mjs && electron-builder",
+    "start": "electron ."
   },
   "dependencies": {
     "electron-store": "^10.0.0"
