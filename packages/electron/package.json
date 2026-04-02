@@ -21,10 +21,12 @@
     "productName": "kurimats",
     "mac": {
       "category": "public.app-category.developer-tools",
-      "target": ["dmg", "zip"]
+      "target": ["dmg", "zip"],
+      "icon": "resources/icon.icns"
     },
     "files": [
       "dist/**/*",
+      "resources/**/*",
       "node_modules/**/*"
     ]
   }
