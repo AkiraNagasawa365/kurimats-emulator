@@ -215,9 +215,23 @@ function BoardCanvasInner() {
     prevActiveSessionRef.current = activeSessionId
   }, [activeSessionId, boardNodes, setCenter])
 
-  // ノードの変更を処理
+  // ノードの変更を処理（単一選択を強制）
   const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setNodes(nds => applyNodeChanges(changes, nds))
+    // 選択変更を検出: 1つのノードが選択されたら他を非選択にする
+    const selectChanges = changes.filter((c): c is NodeChange & { type: 'select'; id: string; selected: boolean } => c.type === 'select' && 'selected' in c && (c as { selected?: boolean }).selected === true)
+    if (selectChanges.length === 1) {
+      const selectedId = selectChanges[0].id
+      setNodes(nds => {
+        const applied = applyNodeChanges(changes, nds)
+        // 選択されたノード以外を非選択に
+        return applied.map(n => ({
+          ...n,
+          selected: n.id === selectedId,
+        }))
+      })
+    } else {
+      setNodes(nds => applyNodeChanges(changes, nds))
+    }
 
     // ドラッグ終了時に位置を永続化
     for (const change of changes) {
