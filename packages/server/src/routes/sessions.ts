@@ -105,7 +105,7 @@ export function createSessionsRouter(
     } else {
       ptyManager.kill(session.id)
     }
-    store.updateStatus(session.id, 'terminated')
+    store.delete(session.id)
     res.json({ ok: true })
   })
 

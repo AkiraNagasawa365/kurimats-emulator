@@ -127,9 +127,8 @@ describe('セッションAPI', () => {
     const delRes = await fetch(`${baseUrl}/api/sessions/${session.id}`, { method: 'DELETE' })
     expect(delRes.status).toBe(200)
 
-    // 削除後は terminated
+    // 削除後はDBから物理削除される（404）
     const getRes = await fetch(`${baseUrl}/api/sessions/${session.id}`)
-    const deleted = await getRes.json()
-    expect(deleted.status).toBe('terminated')
+    expect(getRes.status).toBe(404)
   })
 })
