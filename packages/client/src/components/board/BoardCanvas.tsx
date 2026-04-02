@@ -5,15 +5,23 @@ import {
   Background,
   BackgroundVariant,
   useNodesState,
+  useEdgesState,
+  addEdge as rfAddEdge,
   type Node,
+  type Edge,
   type NodeChange,
+  type EdgeChange,
+  type Connection,
   type Viewport,
   applyNodeChanges,
+  applyEdgeChanges,
+  MarkerType,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useSessionStore } from '../../stores/session-store'
 import { SessionNode, type SessionNodeData } from './SessionNode'
+import type { BoardEdge } from '@kurimats/shared'
 
 // カスタムノードタイプの登録
 const nodeTypes = {
@@ -27,6 +35,7 @@ const nodeTypes = {
 export function BoardCanvas() {
   const {
     boardNodes,
+    boardEdges,
     activeSessionId,
     viewport,
     setActiveSession,
@@ -34,6 +43,9 @@ export function BoardCanvas() {
     removeBoardNode,
     setViewport,
     setBoardNodes,
+    addEdge: addBoardEdge,
+    removeEdge: removeBoardEdge,
+    setBoardEdges,
   } = useLayoutStore()
 
   const { sessions, projects, deleteSession } = useSessionStore()
@@ -75,12 +87,35 @@ export function BoardCanvas() {
     return result
   }, [boardNodes, sessions, activeSessionId, projects, getProjectColor, deleteSession, removeBoardNode, setActiveSession])
 
+  // ボードエッジをReact Flowエッジに変換
+  const flowEdges: Edge[] = useMemo(() => {
+    return boardEdges.map((edge: BoardEdge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      label: edge.label || '',
+      type: 'smoothstep',
+      animated: false,
+      style: { stroke: '#6b7280', strokeWidth: 2 },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: '#6b7280',
+      },
+    }))
+  }, [boardEdges])
+
   const [nodes, setNodes] = useNodesState(flowNodes)
+  const [edges, setEdges] = useEdgesState(flowEdges)
 
   // flowNodesが変更されたらnodesを更新
   useEffect(() => {
     setNodes(flowNodes)
   }, [flowNodes, setNodes])
+
+  // flowEdgesが変更されたらedgesを更新
+  useEffect(() => {
+    setEdges(flowEdges)
+  }, [flowEdges, setEdges])
 
   // ノードの変更を処理
   const onNodesChange = useCallback((changes: NodeChange[]) => {
@@ -93,6 +128,45 @@ export function BoardCanvas() {
       }
     }
   }, [setNodes, updateNodePosition])
+
+  // エッジの変更を処理（削除など）
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
+    setEdges(eds => applyEdgeChanges(changes, eds))
+
+    // 削除された場合はストアに反映
+    for (const change of changes) {
+      if (change.type === 'remove') {
+        removeBoardEdge(change.id)
+      }
+    }
+  }, [setEdges, removeBoardEdge])
+
+  // 新しい接続（エッジ追加）
+  const onConnect = useCallback((connection: Connection) => {
+    if (!connection.source || !connection.target) return
+    // 自己接続を防ぐ
+    if (connection.source === connection.target) return
+
+    const newEdge: BoardEdge = {
+      id: `edge-${connection.source}-${connection.target}-${Date.now()}`,
+      source: connection.source,
+      target: connection.target,
+    }
+    addBoardEdge(newEdge)
+
+    // React Flowにも反映
+    setEdges(eds => rfAddEdge({
+      ...connection,
+      id: newEdge.id,
+      type: 'smoothstep',
+      animated: false,
+      style: { stroke: '#6b7280', strokeWidth: 2 },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: '#6b7280',
+      },
+    }, eds))
+  }, [addBoardEdge, setEdges])
 
   // リサイズ時のサイズ永続化
   const onNodesChangeWithResize = useCallback((changes: NodeChange[]) => {
@@ -135,8 +209,10 @@ export function BoardCanvas() {
     <div className="w-full h-full">
       <ReactFlow
         nodes={nodes}
-        edges={[]}
+        edges={edges}
         onNodesChange={onNodesChangeWithResize}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
         onMoveEnd={onMoveEnd}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
@@ -147,6 +223,7 @@ export function BoardCanvas() {
         fitViewOptions={{ padding: 0.2 }}
         snapToGrid
         snapGrid={[20, 20]}
+        deleteKeyCode={['Backspace', 'Delete']}
         proOptions={{ hideAttribution: true }}
         className="bg-surface-0"
       >

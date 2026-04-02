@@ -133,9 +133,18 @@ export interface BoardNodePosition {
   height: number
 }
 
+// ボードエッジ（ノード間の接続線）
+export interface BoardEdge {
+  id: string
+  source: string // ソースノードのsessionId
+  target: string // ターゲットノードのsessionId
+  label?: string // オプションのラベル
+}
+
 // ボードレイアウト永続化
 export interface BoardLayoutState {
   nodes: BoardNodePosition[]
+  edges: BoardEdge[]
   viewport: { x: number; y: number; zoom: number }
   savedAt: number
 }

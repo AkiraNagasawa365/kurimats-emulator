@@ -76,12 +76,16 @@ export class SessionStore {
       CREATE TABLE IF NOT EXISTS board_layout (
         id TEXT PRIMARY KEY DEFAULT 'default',
         nodes TEXT NOT NULL DEFAULT '[]',
+        edges TEXT NOT NULL DEFAULT '[]',
         viewport_x REAL NOT NULL DEFAULT 0,
         viewport_y REAL NOT NULL DEFAULT 0,
         viewport_zoom REAL NOT NULL DEFAULT 1,
         saved_at INTEGER NOT NULL DEFAULT 0
       );
     `)
+
+    // edgesカラム追加（既存DBの場合）
+    try { this.db.exec("ALTER TABLE board_layout ADD COLUMN edges TEXT NOT NULL DEFAULT '[]'") } catch { /* カラム既存 */ }
 
     // 既存テーブルへのカラム追加（既にあればスキップ）
     try { this.db.exec('ALTER TABLE sessions ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0') } catch { /* カラム既存 */ }
@@ -290,10 +294,11 @@ export class SessionStore {
    */
   saveBoardLayout(state: BoardLayoutState): void {
     this.db.prepare(`
-      INSERT OR REPLACE INTO board_layout (id, nodes, viewport_x, viewport_y, viewport_zoom, saved_at)
-      VALUES ('default', ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO board_layout (id, nodes, edges, viewport_x, viewport_y, viewport_zoom, saved_at)
+      VALUES ('default', ?, ?, ?, ?, ?, ?)
     `).run(
       JSON.stringify(state.nodes),
+      JSON.stringify(state.edges || []),
       state.viewport.x,
       state.viewport.y,
       state.viewport.zoom,
@@ -309,6 +314,7 @@ export class SessionStore {
     if (!row) return null
     return {
       nodes: JSON.parse(row.nodes as string),
+      edges: JSON.parse((row.edges as string) || '[]'),
       viewport: {
         x: row.viewport_x as number,
         y: row.viewport_y as number,

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { LayoutMode, AutoLayoutMode, BoardNodePosition } from '@kurimats/shared'
+import type { LayoutMode, AutoLayoutMode, BoardNodePosition, BoardEdge } from '@kurimats/shared'
 import { layoutApi } from '../lib/api'
 import { gridLayout, flowLayout, treeLayout, findOptimalPosition, type CardRect } from '../lib/layout-engine'
 
@@ -21,6 +21,7 @@ interface LayoutState {
 
   // ボードキャンバス用
   boardNodes: BoardNodePosition[]
+  boardEdges: BoardEdge[]
   activeSessionId: string | null
   viewport: { x: number; y: number; zoom: number }
 
@@ -42,6 +43,11 @@ interface LayoutState {
   removeBoardNode: (sessionId: string) => void
   setViewport: (viewport: { x: number; y: number; zoom: number }) => void
   setBoardNodes: (nodes: BoardNodePosition[]) => void
+
+  // エッジ（コネクター線）用アクション
+  addEdge: (edge: BoardEdge) => void
+  removeEdge: (edgeId: string) => void
+  setBoardEdges: (edges: BoardEdge[]) => void
 }
 
 const STORAGE_KEY = 'kurimats-layout'
@@ -84,8 +90,8 @@ function persistLayout(state: { mode: LayoutMode; panels: PanelInfo[]; activePan
 
 let boardSaveTimeout: ReturnType<typeof setTimeout> | null = null
 
-function persistBoardLayout(nodes: BoardNodePosition[], viewport: { x: number; y: number; zoom: number }) {
-  const data = { nodes, viewport, savedAt: Date.now() }
+function persistBoardLayout(nodes: BoardNodePosition[], edges: BoardEdge[], viewport: { x: number; y: number; zoom: number }) {
+  const data = { nodes, edges, viewport, savedAt: Date.now() }
   try {
     localStorage.setItem(BOARD_STORAGE_KEY, JSON.stringify(data))
   } catch {
@@ -117,12 +123,16 @@ function loadFromStorage(): Partial<LayoutState> | null {
   return null
 }
 
-function loadBoardFromStorage(): { nodes: BoardNodePosition[]; viewport: { x: number; y: number; zoom: number } } | null {
+function loadBoardFromStorage(): { nodes: BoardNodePosition[]; edges: BoardEdge[]; viewport: { x: number; y: number; zoom: number } } | null {
   try {
     const saved = localStorage.getItem(BOARD_STORAGE_KEY)
     if (saved) {
       const data = JSON.parse(saved)
-      return { nodes: data.nodes || [], viewport: data.viewport || { x: 0, y: 0, zoom: 1 } }
+      return {
+        nodes: data.nodes || [],
+        edges: data.edges || [],
+        viewport: data.viewport || { x: 0, y: 0, zoom: 1 },
+      }
     }
   } catch {
     // パースエラーは無視
@@ -143,6 +153,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
 
   // ボードキャンバス用
   boardNodes: savedBoardState?.nodes ?? [],
+  boardEdges: savedBoardState?.edges ?? [],
   activeSessionId: null,
   viewport: savedBoardState?.viewport ?? { x: 0, y: 0, zoom: 1 },
 
@@ -174,10 +185,11 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     set({ panels })
     persistLayout({ ...get(), panels })
 
-    // ボードノードも削除
+    // ボードノードも削除、関連エッジも削除
     const boardNodes = get().boardNodes.filter(n => n.sessionId !== sessionId)
-    set({ boardNodes })
-    persistBoardLayout(boardNodes, get().viewport)
+    const boardEdges = get().boardEdges.filter(e => e.source !== sessionId && e.target !== sessionId)
+    set({ boardNodes, boardEdges })
+    persistBoardLayout(boardNodes, boardEdges, get().viewport)
   },
 
   setActivePanel: (index) => {
@@ -212,7 +224,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       }
       const newBoardNodes = [...boardNodes, newNode]
       set({ boardNodes: newBoardNodes, activeSessionId: sessionId })
-      persistBoardLayout(newBoardNodes, get().viewport)
+      persistBoardLayout(newBoardNodes, get().boardEdges, get().viewport)
     } else {
       set({ activeSessionId: sessionId })
     }
@@ -275,6 +287,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
         if (serverBoard.savedAt > localBoardSavedAt) {
           set({
             boardNodes: serverBoard.nodes,
+            boardEdges: serverBoard.edges || [],
             viewport: serverBoard.viewport,
           })
         }
@@ -328,7 +341,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       n.sessionId === sessionId ? { ...n, x, y } : n
     )
     set({ boardNodes })
-    persistBoardLayout(boardNodes, get().viewport)
+    persistBoardLayout(boardNodes, get().boardEdges, get().viewport)
   },
 
   updateNodeSize: (sessionId, width, height) => {
@@ -336,7 +349,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       n.sessionId === sessionId ? { ...n, width, height } : n
     )
     set({ boardNodes })
-    persistBoardLayout(boardNodes, get().viewport)
+    persistBoardLayout(boardNodes, get().boardEdges, get().viewport)
   },
 
   addBoardNode: (sessionId) => {
@@ -364,25 +377,50 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     }
     const newBoardNodes = [...boardNodes, newNode]
     set({ boardNodes: newBoardNodes, activeSessionId: sessionId })
-    persistBoardLayout(newBoardNodes, get().viewport)
+    persistBoardLayout(newBoardNodes, get().boardEdges, get().viewport)
   },
 
   removeBoardNode: (sessionId) => {
     const boardNodes = get().boardNodes.filter(n => n.sessionId !== sessionId)
-    set({ boardNodes })
+    // 関連エッジも削除
+    const boardEdges = get().boardEdges.filter(e => e.source !== sessionId && e.target !== sessionId)
+    set({ boardNodes, boardEdges })
     if (get().activeSessionId === sessionId) {
       set({ activeSessionId: null })
     }
-    persistBoardLayout(boardNodes, get().viewport)
+    persistBoardLayout(boardNodes, boardEdges, get().viewport)
   },
 
   setViewport: (viewport) => {
     set({ viewport })
-    persistBoardLayout(get().boardNodes, viewport)
+    persistBoardLayout(get().boardNodes, get().boardEdges, viewport)
   },
 
   setBoardNodes: (nodes) => {
     set({ boardNodes: nodes })
-    persistBoardLayout(nodes, get().viewport)
+    persistBoardLayout(nodes, get().boardEdges, get().viewport)
+  },
+
+  // エッジ（コネクター線）用アクション
+  addEdge: (edge) => {
+    // 重複チェック（同じソース・ターゲットの接続は許可しない）
+    const existing = get().boardEdges.find(
+      e => e.source === edge.source && e.target === edge.target
+    )
+    if (existing) return
+    const boardEdges = [...get().boardEdges, edge]
+    set({ boardEdges })
+    persistBoardLayout(get().boardNodes, boardEdges, get().viewport)
+  },
+
+  removeEdge: (edgeId) => {
+    const boardEdges = get().boardEdges.filter(e => e.id !== edgeId)
+    set({ boardEdges })
+    persistBoardLayout(get().boardNodes, boardEdges, get().viewport)
+  },
+
+  setBoardEdges: (edges) => {
+    set({ boardEdges: edges })
+    persistBoardLayout(get().boardNodes, edges, get().viewport)
   },
 }))
