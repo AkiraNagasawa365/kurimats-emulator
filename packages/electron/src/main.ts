@@ -4,7 +4,9 @@
  */
 
 import { app, BrowserWindow, Menu, shell } from 'electron'
-import { spawn } from 'child_process'
+import { spawn, ChildProcess } from 'child_process'
+import * as path from 'path'
+import * as http from 'http'
 import Store from 'electron-store'
 import { loadWindowState, saveWindowState, extractWindowState } from './window-state'
 import { buildMenuTemplate } from './menu'
@@ -14,6 +16,77 @@ const APP_NAME = 'kurimats'
 const DEV_CLIENT_URL = 'http://localhost:5173'
 const SERVER_PORT = 3001
 const IS_DEV = !app.isPackaged
+
+let viteProcess: ChildProcess | null = null
+
+/**
+ * Vite devサーバーを起動し、準備完了を待つ
+ */
+function startViteDevServer(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const clientDir = path.resolve(__dirname, '../../client')
+    viteProcess = spawn('npx', ['vite', '--port', '5173'], {
+      cwd: clientDir,
+      stdio: 'pipe',
+      env: { ...process.env },
+    })
+
+    viteProcess.stdout?.on('data', (data: Buffer) => {
+      const output = data.toString()
+      console.log(`[vite] ${output.trim()}`)
+      // Viteの起動完了を検出
+      if (output.includes('Local:') || output.includes('localhost:5173')) {
+        resolve()
+      }
+    })
+
+    viteProcess.stderr?.on('data', (data: Buffer) => {
+      console.error(`[vite] ${data.toString().trim()}`)
+    })
+
+    viteProcess.on('error', (err) => {
+      console.error('Vite起動エラー:', err.message)
+      reject(err)
+    })
+
+    viteProcess.on('exit', (code) => {
+      console.log(`Viteが終了しました (コード: ${code})`)
+      viteProcess = null
+    })
+
+    // タイムアウト: 30秒待っても起動しなければポーリングで確認
+    setTimeout(() => {
+      waitForUrl(DEV_CLIENT_URL, 10, 1000).then(resolve).catch(reject)
+    }, 15000)
+  })
+}
+
+/**
+ * URLが応答するまでポーリングする
+ */
+function waitForUrl(url: string, retries: number, intervalMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let attempts = 0
+    const check = () => {
+      http.get(url, (res) => {
+        if (res.statusCode === 200) {
+          resolve()
+        } else if (++attempts < retries) {
+          setTimeout(check, intervalMs)
+        } else {
+          reject(new Error(`${url} が応答しません`))
+        }
+      }).on('error', () => {
+        if (++attempts < retries) {
+          setTimeout(check, intervalMs)
+        } else {
+          reject(new Error(`${url} に接続できません`))
+        }
+      })
+    }
+    check()
+  })
+}
 
 // 設定ストア
 const store = new Store()
@@ -99,9 +172,20 @@ function setupMenu(): void {
 }
 
 // アプリケーション起動
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // サーバーを自動起動
   serverManager.start(SERVER_PORT)
+
+  // dev時はViteクライアントも起動して準備完了を待つ
+  if (IS_DEV) {
+    console.log('Vite devサーバーを起動中...')
+    try {
+      await startViteDevServer()
+      console.log('Vite devサーバー準備完了')
+    } catch (err) {
+      console.error('Vite起動に失敗:', err)
+    }
+  }
 
   // メニューを構築
   setupMenu()
@@ -125,8 +209,12 @@ app.on('window-all-closed', () => {
   }
 })
 
-// アプリ終了前にサーバーを停止
+// アプリ終了前にサーバーとViteを停止
 app.on('before-quit', () => {
   console.log('アプリケーション終了中...')
   serverManager.stop()
+  if (viteProcess && !viteProcess.killed) {
+    viteProcess.kill('SIGTERM')
+    viteProcess = null
+  }
 })
