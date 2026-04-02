@@ -54,7 +54,7 @@ export class ServerProcessManager {
     try {
       this.process = this.spawnFn(
         'npx',
-        ['tsx', 'src/index.ts'],
+        ['tsx', 'watch', 'src/index.ts'],
         {
           cwd: this.serverDir,
           stdio: 'pipe',
