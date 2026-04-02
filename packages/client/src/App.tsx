@@ -8,6 +8,7 @@ import { FileTreeOverlay } from './components/overlays/FileTreeOverlay'
 import { CodeViewerOverlay } from './components/overlays/CodeViewerOverlay'
 import { MarkdownOverlay } from './components/overlays/MarkdownOverlay'
 import { NotificationToast } from './components/notifications/NotificationToast'
+import { FeedbackPanel } from './components/feedback/FeedbackPanel'
 import { useSessionStore } from './stores/session-store'
 import { useOverlayStore } from './stores/overlay-store'
 import { useCommandPaletteStore } from './stores/command-palette-store'
@@ -63,6 +64,9 @@ export default function App() {
           filePath={overlayProps.filePath as string | undefined}
           onClose={closeOverlay}
         />
+      )}
+      {activeOverlay === 'feedback' && (
+        <FeedbackPanel onClose={closeOverlay} />
       )}
 
       {/* 通知トースト */}

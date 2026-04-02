@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { mkdirSync } from 'fs'
 import { fileURLToPath } from 'url'
-import type { Session, CreateSessionParams, Project, CreateProjectParams, LayoutState, BoardLayoutState } from '@kurimats/shared'
+import type { Session, CreateSessionParams, Project, CreateProjectParams, LayoutState, BoardLayoutState, Feedback, CreateFeedbackParams } from '@kurimats/shared'
 import { v4 as uuidv4 } from 'uuid'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -88,6 +88,18 @@ export class SessionStore {
     try { this.db.exec('ALTER TABLE sessions ADD COLUMN project_id TEXT') } catch { /* カラム既存 */ }
     try { this.db.exec('ALTER TABLE sessions ADD COLUMN ssh_host TEXT') } catch { /* カラム既存 */ }
     try { this.db.exec('ALTER TABLE sessions ADD COLUMN is_remote INTEGER NOT NULL DEFAULT 0') } catch { /* カラム既存 */ }
+
+    // フィードバックテーブル
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS feedback (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT '',
+        category TEXT NOT NULL DEFAULT 'feature_request',
+        priority TEXT NOT NULL DEFAULT 'medium',
+        created_at INTEGER NOT NULL
+      );
+    `)
 
     // SSHホストテーブル
     this.db.exec(`
@@ -350,6 +362,59 @@ export class SessionStore {
       name: row.name as string,
       color: row.color as string,
       repoPath: row.repo_path as string,
+      createdAt: row.created_at as number,
+    }
+  }
+
+  // ==================== フィードバック ====================
+
+  /**
+   * フィードバック作成
+   */
+  createFeedback(params: CreateFeedbackParams): Feedback {
+    const feedback: Feedback = {
+      id: uuidv4(),
+      title: params.title,
+      detail: params.detail,
+      category: params.category,
+      priority: params.priority,
+      createdAt: Date.now(),
+    }
+
+    this.db.prepare(`
+      INSERT INTO feedback (id, title, detail, category, priority, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(feedback.id, feedback.title, feedback.detail, feedback.category, feedback.priority, feedback.createdAt)
+
+    return feedback
+  }
+
+  /**
+   * 全フィードバック取得
+   */
+  getAllFeedback(): Feedback[] {
+    return (this.db.prepare('SELECT * FROM feedback ORDER BY created_at DESC').all() as Record<string, unknown>[])
+      .map(this.mapFeedbackRow)
+  }
+
+  /**
+   * フィードバック削除
+   */
+  deleteFeedback(id: string): boolean {
+    const result = this.db.prepare('DELETE FROM feedback WHERE id = ?').run(id)
+    return result.changes > 0
+  }
+
+  /**
+   * DBの行をFeedback型にマッピング
+   */
+  private mapFeedbackRow(row: Record<string, unknown>): Feedback {
+    return {
+      id: row.id as string,
+      title: row.title as string,
+      detail: row.detail as string,
+      category: row.category as Feedback['category'],
+      priority: row.priority as Feedback['priority'],
       createdAt: row.created_at as number,
     }
   }

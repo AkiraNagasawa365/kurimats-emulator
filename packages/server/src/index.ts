@@ -15,6 +15,7 @@ import { createProjectsRouter } from './routes/projects.js'
 import { createLayoutRouter } from './routes/layout.js'
 import { createTabRouter } from './routes/tab.js'
 import { createSshRouter } from './routes/ssh.js'
+import { createFeedbackRouter } from './routes/feedback.js'
 
 const PORT = parseInt(process.env.PORT || '3001', 10)
 const HOST = process.env.HOST || 'localhost'
@@ -53,6 +54,7 @@ app.use('/api/projects', createProjectsRouter(sessionStore))
 app.use('/api/layout', createLayoutRouter(sessionStore))
 app.use('/api/tab', createTabRouter(sessionStore, ptyManager))
 app.use('/api/ssh', createSshRouter(sshManager))
+app.use('/api/feedback', createFeedbackRouter(sessionStore))
 
 // ヘルスチェック
 app.get('/api/health', (_req, res) => {
