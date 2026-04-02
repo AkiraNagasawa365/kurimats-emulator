@@ -166,8 +166,9 @@ export function createTabRouter(store: SessionStore, ptyManager: PtyManager): Ro
                 const sshArgs = buildRemoteSshArgs(bm.host, bm.directory, bm.name)
                 await ptyManager.spawn(session.id, process.env.HOME || '/tmp', 120, 30, 'ssh', sshArgs)
               } else {
-                // ローカル: claude を cwd 指定で起動
-                await ptyManager.spawn(session.id, bm.directory, 120, 30, 'claude', [])
+                // ローカル: シェルを cwd 指定で起動
+                const shell = process.env.SHELL || '/bin/zsh'
+                await ptyManager.spawn(session.id, bm.directory, 120, 30, shell, [])
               }
               createdSessions.push(session)
               existingSessionNames.add(bm.name)

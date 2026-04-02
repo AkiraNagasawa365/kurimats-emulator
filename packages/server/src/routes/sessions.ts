@@ -70,11 +70,17 @@ export function createSessionsRouter(
           [params.sshHost, '-t', shpoolCmd],
         )
       } else {
-        // ローカルPTYセッション: claude を起動
-        await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', [])
+        // ローカルPTYセッション: シェルを起動
+        const shell = process.env.SHELL || '/bin/zsh'
+        await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
       }
     } catch (e) {
-      store.delete(session.id)
+      console.error('PTY起動エラー:', e)
+      try {
+        store.delete(session.id)
+      } catch (deleteErr) {
+        console.error('セッション削除エラー:', deleteErr)
+      }
       res.status(500).json({ error: `${isRemote ? 'リモートシェル' : 'PTY'}起動エラー: ${e}` })
       return
     }
