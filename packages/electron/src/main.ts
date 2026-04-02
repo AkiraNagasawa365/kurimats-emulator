@@ -105,6 +105,10 @@ let mainWindow: BrowserWindow | null = null
 function createWindow(): void {
   const windowState = loadWindowState(store as any)
 
+  const iconPath = IS_DEV
+    ? path.resolve(__dirname, '../resources/icon.png')
+    : path.join(app.getAppPath(), 'resources', 'icon.png')
+
   mainWindow = new BrowserWindow({
     x: windowState.x,
     y: windowState.y,
@@ -113,6 +117,7 @@ function createWindow(): void {
     minWidth: 800,
     minHeight: 600,
     title: APP_NAME,
+    icon: iconPath,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
