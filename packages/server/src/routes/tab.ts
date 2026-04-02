@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { execSync } from 'child_process'
 import type { SessionStore } from '../services/session-store.js'
 import type { PtyManager } from '../services/pty-manager.js'
+import type { SshManager } from '../services/ssh-manager.js'
 import type { TabHost, TabProject, TabListResponse, TabSyncResponse, TabBookmark, Session } from '@kurimats/shared'
 import { PROJECT_COLORS } from '@kurimats/shared'
 import { parseBookmarksToml } from '../services/bookmarks-parser.js'
@@ -41,15 +42,7 @@ function parseTabListOutput(output: string): TabHost[] {
   return hosts
 }
 
-/**
- * リモートセッション用の SSH + shpool コマンドを構築
- */
-function buildRemoteSshArgs(host: string, directory: string, sessionName: string): string[] {
-  const shpoolCmd = `~/.cargo/bin/shpool attach -f -d ${directory} -c ~/.local/bin/claude-session ${sessionName}`
-  return [host, '-t', shpoolCmd]
-}
-
-export function createTabRouter(store: SessionStore, ptyManager: PtyManager): Router {
+export function createTabRouter(store: SessionStore, ptyManager: PtyManager, sshManager: SshManager): Router {
   const router = Router()
 
   // tab同期のmutex（同時実行防止）
@@ -159,12 +152,12 @@ export function createTabRouter(store: SessionStore, ptyManager: PtyManager): Ro
               projectId: project?.id || null,
             })
 
-            // PTY起動: Claude Code を起動するコマンドを構築
+            // セッション起動: リモートはSshManager、ローカルはPtyManager
             try {
               if (isRemote && bm.host) {
-                // リモート: ssh + shpool + claude-session
-                const sshArgs = buildRemoteSshArgs(bm.host, bm.directory, bm.name)
-                await ptyManager.spawn(session.id, process.env.HOME || '/tmp', 120, 30, 'ssh', sshArgs)
+                // リモート: SshManager経由で接続・シェル起動
+                await sshManager.connect(bm.host)
+                await sshManager.spawn(session.id, bm.host, bm.directory, 120, 30)
               } else {
                 // ローカル: シェルを cwd 指定で起動
                 const shell = process.env.SHELL || '/bin/zsh'
@@ -173,7 +166,7 @@ export function createTabRouter(store: SessionStore, ptyManager: PtyManager): Ro
               createdSessions.push(session)
               existingSessionNames.add(bm.name)
             } catch (e) {
-              console.error(`セッション ${bm.name} のPTY起動に失敗:`, e)
+              console.error(`セッション ${bm.name} の起動に失敗:`, e)
               store.delete(session.id)
             }
           }

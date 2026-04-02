@@ -1,8 +1,10 @@
+// SSHセッション修正に伴うテスト更新 (#41)
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import express from 'express'
 import { createServer, type Server } from 'http'
 import { SessionStore } from '../services/session-store.js'
 import { PtyManager } from '../services/pty-manager.js'
+import { SshManager } from '../services/ssh-manager.js'
 import { createTabRouter } from '../routes/tab.js'
 import { createLayoutRouter } from '../routes/layout.js'
 
@@ -11,14 +13,16 @@ describe('tabコマンドAPI', () => {
   let baseUrl: string
   let store: SessionStore
   let ptyManager: PtyManager
+  let sshManager: SshManager
 
   beforeEach(async () => {
     store = new SessionStore()
     ptyManager = new PtyManager()
+    sshManager = new SshManager()
 
     const app = express()
     app.use(express.json())
-    app.use('/api/tab', createTabRouter(store, ptyManager))
+    app.use('/api/tab', createTabRouter(store, ptyManager, sshManager))
     app.use('/api/layout', createLayoutRouter(store))
 
     server = createServer(app)

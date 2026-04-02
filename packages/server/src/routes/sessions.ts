@@ -59,29 +59,22 @@ export function createSessionsRouter(
 
     try {
       if (isRemote && params.sshHost) {
-        // リモートSSHセッション: PTY経由でssh + shpool + claude-session
-        const sessionName = params.name.replace(/\s+/g, '-').toLowerCase()
-        const shpoolCmd = `~/.cargo/bin/shpool attach -f -d ${cwd} -c ~/.local/bin/claude-session ${sessionName}`
-        await ptyManager.spawn(
-          session.id,
-          process.env.HOME || '/tmp',
-          120, 30,
-          'ssh',
-          [params.sshHost, '-t', shpoolCmd],
-        )
+        // リモートSSHセッション: SshManager経由で接続・シェル起動
+        await sshManager.connect(params.sshHost)
+        await sshManager.spawn(session.id, params.sshHost, cwd, 120, 30)
       } else {
         // ローカルPTYセッション: シェルを起動
         const shell = process.env.SHELL || '/bin/zsh'
         await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
       }
     } catch (e) {
-      console.error('PTY起動エラー:', e)
+      console.error(`${isRemote ? 'SSH接続/リモートシェル' : 'PTY'}起動エラー:`, e)
       try {
         store.delete(session.id)
       } catch (deleteErr) {
         console.error('セッション削除エラー:', deleteErr)
       }
-      res.status(500).json({ error: `${isRemote ? 'リモートシェル' : 'PTY'}起動エラー: ${e}` })
+      res.status(500).json({ error: `${isRemote ? 'SSH接続/リモートシェル' : 'PTY'}起動エラー: ${e}` })
       return
     }
 
@@ -106,8 +99,12 @@ export function createSessionsRouter(
       return
     }
 
-    // PTYマネージャーで終了（リモートもPTY経由のsshコマンド）
-    ptyManager.kill(session.id)
+    // リモートセッションはSshManager、ローカルはPtyManagerで終了
+    if (sshManager.hasSession(session.id)) {
+      sshManager.kill(session.id)
+    } else {
+      ptyManager.kill(session.id)
+    }
     store.updateStatus(session.id, 'terminated')
     res.json({ ok: true })
   })
@@ -127,7 +124,9 @@ export function createSessionsRouter(
     }
 
     const lines = parseInt(req.query.lines as string) || 5
-    const buffer = ptyManager.getBuffer(session.id)
+    const buffer = sshManager.hasSession(session.id)
+      ? sshManager.getBuffer(session.id)
+      : ptyManager.getBuffer(session.id)
 
     // ANSIエスケープシーケンスを除去して最新行を取得
     const cleanBuffer = buffer.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '')
