@@ -36,7 +36,7 @@ export function BoardCanvas() {
     setBoardNodes,
   } = useLayoutStore()
 
-  const { sessions, projects, deleteSession } = useSessionStore()
+  const { sessions, projects, deleteSession, toggleFavorite } = useSessionStore()
 
   // セッションからプロジェクトカラーを取得
   const getProjectColor = useCallback((projectId: string | null) => {
@@ -64,6 +64,7 @@ export function BoardCanvas() {
             removeBoardNode(session.id)
           },
           onFocus: () => setActiveSession(session.id),
+          onToggleFavorite: () => toggleFavorite(session.id),
         } as SessionNodeData,
         style: {
           width: node.width,
@@ -73,7 +74,7 @@ export function BoardCanvas() {
       })
     }
     return result
-  }, [boardNodes, sessions, activeSessionId, projects, getProjectColor, deleteSession, removeBoardNode, setActiveSession])
+  }, [boardNodes, sessions, activeSessionId, projects, getProjectColor, deleteSession, removeBoardNode, setActiveSession, toggleFavorite])
 
   const [nodes, setNodes] = useNodesState(flowNodes)
 

@@ -32,6 +32,8 @@ export const sessionsApi = {
       method: 'POST',
       body: JSON.stringify({ projectId }),
     }),
+  getPreview: (id: string, lines = 5) =>
+    request<{ sessionId: string; lines: string[] }>(`/sessions/${id}/preview?lines=${lines}`),
 }
 
 // ファイルAPI
