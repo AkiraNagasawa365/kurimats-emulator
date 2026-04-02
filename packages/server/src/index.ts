@@ -29,6 +29,15 @@ const sshManager = new SshManager()
 const worktreeService = new WorktreeService()
 const sessionStore = new SessionStore()
 
+// サーバー起動時: PTYが消失したactiveセッションをdisconnectedに変更
+const orphanedSessions = sessionStore.getAll().filter(s => s.status === 'active')
+if (orphanedSessions.length > 0) {
+  console.log(`⚠️  ${orphanedSessions.length}件のorphanedセッションをdisconnectedに変更`)
+  for (const s of orphanedSessions) {
+    sessionStore.updateStatus(s.id, 'disconnected')
+  }
+}
+
 // Express設定
 const app = express()
 app.use(cors())

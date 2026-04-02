@@ -20,7 +20,7 @@ import {
  * セッション一覧、お気に入り、プロジェクト管理、レイアウト変更
  */
 export function Sidebar() {
-  const { sessions, projects, createSession, toggleFavorite, assignProject, createProject, fetchProjects, fetchSessions } = useSessionStore()
+  const { sessions, projects, createSession, toggleFavorite, assignProject, createProject, fetchProjects, fetchSessions, reconnectSession } = useSessionStore()
   const { addPanel, setActiveSession, boardNodes } = useLayoutStore()
   const { hosts, fetchHosts, connectHost, disconnectHost } = useSshStore()
   const { openOverlay } = useOverlayStore()
@@ -288,6 +288,7 @@ export function Sidebar() {
                       projectColor={getProjectColor(session.projectId)}
                       onClick={() => handleSessionClick(session)}
                       onToggleFavorite={() => toggleFavorite(session.id)}
+                      onReconnect={() => reconnectSession(session.id).then(() => handleSessionClick(session)).catch(e => alert(`再接続エラー: ${e}`))}
                     />
                   </motion.div>
                 ))}
@@ -328,6 +329,7 @@ export function Sidebar() {
                         projectColor={getProjectColor(session.projectId)}
                         onClick={() => handleSessionClick(session)}
                         onToggleFavorite={() => toggleFavorite(session.id)}
+                        onReconnect={() => reconnectSession(session.id).then(() => handleSessionClick(session)).catch(e => alert(`再接続エラー: ${e}`))}
                       />
                     </motion.div>
                   )
@@ -476,35 +478,54 @@ function SessionItem({
   projectColor,
   onClick,
   onToggleFavorite,
+  onReconnect,
 }: {
   session: Session
   isOnBoard: boolean
   projectColor: string | null
   onClick: () => void
   onToggleFavorite: () => void
+  onReconnect?: () => void
 }) {
+  const isDisconnected = session.status === 'disconnected'
+
   return (
-    <button
-      onClick={onClick}
+    <div
       className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-surface-2 transition-colors group ${
         isOnBoard ? 'text-text-primary font-medium' : 'text-text-secondary'
-      }`}
+      } ${isDisconnected ? 'opacity-60' : ''}`}
     >
-      {/* ステータスドット */}
-      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-        session.status === 'active' ? 'bg-green-500' : 'bg-gray-400'
-      }`} />
+      {/* クリック領域 */}
+      <button onClick={onClick} className="flex items-center gap-2 flex-1 min-w-0">
+        {/* ステータスドット */}
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+          session.status === 'active' ? 'bg-green-500'
+            : session.status === 'disconnected' ? 'bg-yellow-500'
+            : 'bg-gray-400'
+        }`} />
 
-      {/* プロジェクトカラードット */}
-      {projectColor && (
-        <span
-          className="w-1.5 h-1.5 rounded-sm flex-shrink-0"
-          style={{ backgroundColor: projectColor }}
-        />
+        {/* プロジェクトカラードット */}
+        {projectColor && (
+          <span
+            className="w-1.5 h-1.5 rounded-sm flex-shrink-0"
+            style={{ backgroundColor: projectColor }}
+          />
+        )}
+
+        {/* セッション名 */}
+        <span className="truncate flex-1">{session.name}</span>
+      </button>
+
+      {/* disconnected時の再接続ボタン */}
+      {isDisconnected && onReconnect && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onReconnect() }}
+          className="text-[9px] px-1.5 py-0.5 bg-yellow-100 text-yellow-700 hover:bg-yellow-200 rounded flex-shrink-0 transition-colors"
+          title="再接続"
+        >
+          再接続
+        </button>
       )}
-
-      {/* セッション名 */}
-      <span className="truncate flex-1">{session.name}</span>
 
       {/* リモートバッジ */}
       {session.isRemote && (
@@ -523,7 +544,7 @@ function SessionItem({
         isFavorite={session.isFavorite}
         onToggle={onToggleFavorite}
       />
-    </button>
+    </div>
   )
 }
 

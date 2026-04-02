@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useEffect } from 'react'
 import {
   ReactFlow,
-  MiniMap,
   Background,
   BackgroundVariant,
   useNodesState,
@@ -21,12 +20,17 @@ import '@xyflow/react/dist/style.css'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useSessionStore } from '../../stores/session-store'
 import { SessionNode, type SessionNodeData } from './SessionNode'
+import { ProjectGroupNode, type ProjectGroupNodeData } from './ProjectGroupNode'
 import type { BoardEdge } from '@kurimats/shared'
 
 // カスタムノードタイプの登録
 const nodeTypes = {
   session: SessionNode,
+  projectGroup: ProjectGroupNode,
 }
+
+// プロジェクトグループの枠のパディング
+const GROUP_PADDING = 40
 
 /**
  * Miroライクなボードキャンバス
@@ -59,6 +63,59 @@ export function BoardCanvas() {
   // ボードノードをReact Flowノードに変換
   const flowNodes: Node[] = useMemo(() => {
     const result: Node[] = []
+
+    // プロジェクトごとにノードをグループ化してバウンディングボックスを計算
+    const projectGroups = new Map<string, { color: string; name: string; minX: number; minY: number; maxX: number; maxY: number }>()
+
+    for (const node of boardNodes) {
+      const session = sessions.find(s => s.id === node.sessionId)
+      if (!session || !session.projectId) continue
+
+      const project = projects.find(p => p.id === session.projectId)
+      if (!project) continue
+
+      const group = projectGroups.get(session.projectId)
+      if (group) {
+        group.minX = Math.min(group.minX, node.x)
+        group.minY = Math.min(group.minY, node.y)
+        group.maxX = Math.max(group.maxX, node.x + node.width)
+        group.maxY = Math.max(group.maxY, node.y + node.height)
+      } else {
+        projectGroups.set(session.projectId, {
+          color: project.color,
+          name: project.name,
+          minX: node.x,
+          minY: node.y,
+          maxX: node.x + node.width,
+          maxY: node.y + node.height,
+        })
+      }
+    }
+
+    // プロジェクトグループ枠ノードを追加（セッションノードの後ろに配置）
+    for (const [projectId, group] of projectGroups) {
+      result.push({
+        id: `group-${projectId}`,
+        type: 'projectGroup',
+        position: {
+          x: group.minX - GROUP_PADDING,
+          y: group.minY - GROUP_PADDING,
+        },
+        data: {
+          label: group.name,
+          color: group.color,
+        } as ProjectGroupNodeData,
+        style: {
+          width: group.maxX - group.minX + GROUP_PADDING * 2,
+          height: group.maxY - group.minY + GROUP_PADDING * 2,
+        },
+        selectable: false,
+        draggable: false,
+        zIndex: -1,
+      })
+    }
+
+    // セッションノードを追加
     for (const node of boardNodes) {
       const session = sessions.find(s => s.id === node.sessionId)
       if (!session) continue
@@ -83,6 +140,7 @@ export function BoardCanvas() {
           height: node.height,
         },
         dragHandle: '.drag-handle',
+        zIndex: 1,
       })
     }
     return result
@@ -195,16 +253,18 @@ export function BoardCanvas() {
     setViewport({ x: vp.x, y: vp.y, zoom: vp.zoom })
   }, [setViewport])
 
+  // ノードドラッグ開始時、他のノードの選択を解除（Shift未押下時）
+  const onNodeDragStart = useCallback((_event: unknown, node: Node) => {
+    setNodes(nds => nds.map(n => ({
+      ...n,
+      selected: n.id === node.id,
+    })))
+  }, [setNodes])
+
   // ペインクリック時にアクティブセッション解除
   const onPaneClick = useCallback(() => {
     setActiveSession(null)
   }, [setActiveSession])
-
-  // プロジェクトグループの背景色マップ（ミニマップ用）
-  const nodeColor = useCallback((node: Node) => {
-    const data = node.data as SessionNodeData
-    return data.projectColor || '#6b7280'
-  }, [])
 
   return (
     <div className="w-full h-full">
@@ -215,7 +275,9 @@ export function BoardCanvas() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onMoveEnd={onMoveEnd}
+        onNodeDragStart={onNodeDragStart}
         onPaneClick={onPaneClick}
+        multiSelectionKeyCode="Shift"
         nodeTypes={nodeTypes}
         defaultViewport={viewport}
         minZoom={0.1}
@@ -234,13 +296,7 @@ export function BoardCanvas() {
           size={1}
           color="#e5e7eb"
         />
-        <MiniMap
-          nodeColor={nodeColor}
-          nodeStrokeWidth={2}
-          pannable
-          zoomable
-          className="!bg-white !border-border"
-        />
+        {/* ミニマップは非表示（#48） */}
       </ReactFlow>
 
       {/* ボードが空の場合のプレースホルダー */}
