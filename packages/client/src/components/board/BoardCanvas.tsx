@@ -1,6 +1,8 @@
-import { useCallback, useMemo, useEffect } from 'react'
+import { useCallback, useMemo, useEffect, useRef } from 'react'
 import {
   ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
   Background,
   BackgroundVariant,
   useNodesState,
@@ -37,6 +39,17 @@ const GROUP_PADDING = 40
  * React Flowを使ってセッションノードを自由配置
  */
 export function BoardCanvas() {
+  return (
+    <ReactFlowProvider>
+      <BoardCanvasInner />
+    </ReactFlowProvider>
+  )
+}
+
+function BoardCanvasInner() {
+  const { fitView, setCenter } = useReactFlow()
+  const prevActiveSessionRef = useRef<string | null>(null)
+  const initialFitDone = useRef(false)
   const {
     boardNodes,
     boardEdges,
@@ -176,6 +189,32 @@ export function BoardCanvas() {
     setEdges(flowEdges)
   }, [flowEdges, setEdges])
 
+  // 初回ロード時に全ノードが見えるようにフィット
+  useEffect(() => {
+    if (!initialFitDone.current && boardNodes.length > 0) {
+      initialFitDone.current = true
+      // React Flowの初期化を待つ
+      setTimeout(() => {
+        fitView({ padding: 0.3, duration: 300 })
+      }, 100)
+    }
+  }, [boardNodes.length, fitView])
+
+  // activeSessionIdが変更されたらそのノードにフォーカス
+  useEffect(() => {
+    if (activeSessionId && activeSessionId !== prevActiveSessionRef.current) {
+      const node = boardNodes.find(n => n.sessionId === activeSessionId)
+      if (node) {
+        setCenter(
+          node.x + node.width / 2,
+          node.y + node.height / 2,
+          { zoom: 0.8, duration: 300 },
+        )
+      }
+    }
+    prevActiveSessionRef.current = activeSessionId
+  }, [activeSessionId, boardNodes, setCenter])
+
   // ノードの変更を処理
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes(nds => applyNodeChanges(changes, nds))
@@ -282,8 +321,7 @@ export function BoardCanvas() {
         defaultViewport={viewport}
         minZoom={0.1}
         maxZoom={2}
-        fitView={boardNodes.length > 0 && viewport.x === 0 && viewport.y === 0 && viewport.zoom === 1}
-        fitViewOptions={{ padding: 0.2 }}
+        fitView={false}
         snapToGrid
         snapGrid={[20, 20]}
         deleteKeyCode={['Backspace', 'Delete']}
