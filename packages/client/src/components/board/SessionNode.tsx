@@ -1,8 +1,9 @@
-import { memo } from 'react'
+import { memo, useEffect, useState, useCallback, useRef } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import type { Session } from '@kurimats/shared'
 import { TerminalComponent } from '../terminal/Terminal'
 import { TerminalHeader } from '../terminal/TerminalHeader'
+import { sessionsApi } from '../../lib/api'
 
 export interface SessionNodeData {
   session: Session
@@ -10,15 +11,42 @@ export interface SessionNodeData {
   projectColor: string | null
   onClose: () => void
   onFocus: () => void
+  onToggleFavorite: () => void
   [key: string]: unknown
 }
 
+/** プレビューの最大行数 */
+const PREVIEW_LINES = 5
+/** プレビュー更新間隔（ミリ秒） */
+const PREVIEW_INTERVAL = 3000
+
 /**
  * React Flowカスタムノード: セッションターミナルカード
- * ターミナルヘッダー + xterm.jsターミナルを内包
+ * ターミナルヘッダー + お気に入り★ + プレビュー + xterm.jsターミナルを内包
  */
 function SessionNodeComponent({ data }: NodeProps) {
-  const { session, isActive, projectColor, onClose, onFocus } = data as unknown as SessionNodeData
+  const { session, isActive, projectColor, onClose, onFocus, onToggleFavorite } = data as unknown as SessionNodeData
+  const [previewLines, setPreviewLines] = useState<string[]>([])
+  const intervalRef = useRef<ReturnType<typeof setInterval>>()
+
+  // プレビュー取得
+  const fetchPreview = useCallback(async () => {
+    try {
+      const result = await sessionsApi.getPreview(session.id, PREVIEW_LINES)
+      setPreviewLines(result.lines)
+    } catch {
+      // プレビュー取得失敗は静かに無視
+    }
+  }, [session.id])
+
+  // 定期的にプレビューを更新
+  useEffect(() => {
+    fetchPreview()
+    intervalRef.current = setInterval(fetchPreview, PREVIEW_INTERVAL)
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+    }
+  }, [fetchPreview])
 
   return (
     <div
@@ -35,11 +63,27 @@ function SessionNodeComponent({ data }: NodeProps) {
     >
       {/* ドラッグハンドル兼ヘッダー */}
       <div className="drag-handle cursor-grab active:cursor-grabbing">
-        <TerminalHeader
-          session={session}
-          isActive={isActive}
-          onClose={onClose}
-        />
+        <div className="flex items-center">
+          {/* お気に入り★ボタン */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
+            className={`flex-shrink-0 px-1.5 py-1.5 text-sm transition-colors hover:scale-110 ${
+              session.isFavorite
+                ? 'text-yellow-400 hover:text-yellow-300'
+                : 'text-gray-400 hover:text-yellow-400'
+            }`}
+            title={session.isFavorite ? 'お気に入り解除' : 'お気に入りに追加'}
+          >
+            {session.isFavorite ? '★' : '☆'}
+          </button>
+          <div className="flex-1 min-w-0">
+            <TerminalHeader
+              session={session}
+              isActive={isActive}
+              onClose={onClose}
+            />
+          </div>
+        </div>
         {/* プロジェクトカラーバー */}
         {projectColor && (
           <div
@@ -48,6 +92,16 @@ function SessionNodeComponent({ data }: NodeProps) {
           />
         )}
       </div>
+
+      {/* ターミナルプレビュー */}
+      {previewLines.length > 0 && (
+        <div className="bg-[#252526] border-b border-[#3c3c3c] px-2 py-1 max-h-24 overflow-hidden">
+          <div className="text-[10px] text-gray-500 mb-0.5">プレビュー</div>
+          <pre className="text-[11px] text-gray-300 font-mono leading-tight whitespace-pre-wrap break-all">
+            {previewLines.join('\n')}
+          </pre>
+        </div>
+      )}
 
       {/* ターミナル本体 */}
       <div className="flex-1 min-h-0 bg-[#1e1e1e]">
