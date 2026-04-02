@@ -52,6 +52,9 @@ function buildRemoteSshArgs(host: string, directory: string, sessionName: string
 export function createTabRouter(store: SessionStore, ptyManager: PtyManager): Router {
   const router = Router()
 
+  // tab同期のmutex（同時実行防止）
+  let isSyncing = false
+
   // tab listコマンド実行・パース
   router.get('/list', (_req, res) => {
     try {
@@ -76,6 +79,12 @@ export function createTabRouter(store: SessionStore, ptyManager: PtyManager): Ro
 
   // tab同期: bookmarks.toml → プロジェクト + セッション作成 + Claude起動
   router.post('/sync', async (_req, res) => {
+    // 同時実行防止
+    if (isSyncing) {
+      res.status(409).json({ error: '同期処理が実行中です。しばらくお待ちください。' })
+      return
+    }
+    isSyncing = true
     try {
       // bookmarks.toml からブックマーク一覧を取得
       const bookmarks = parseBookmarksToml()
@@ -97,9 +106,9 @@ export function createTabRouter(store: SessionStore, ptyManager: PtyManager): Ro
       const existingProjects = store.getAllProjects()
       const existingProjectNames = new Set(existingProjects.map(p => p.name))
       const existingSessions = store.getAll()
-      // active なセッションのみ重複チェック対象（terminated は再作成可能）
+      // 全ステータスのセッション名で重複チェック（起動のたびに増えるのを防止）
       const existingSessionNames = new Set(
-        existingSessions.filter(s => s.status === 'active').map(s => s.name)
+        existingSessions.map(s => s.name)
       )
 
       let created = 0
@@ -137,16 +146,10 @@ export function createTabRouter(store: SessionStore, ptyManager: PtyManager): Ro
             skipped++
           }
 
-          // セッション作成（active なものが無い場合のみ）
+          // セッション作成（同名セッションが存在しない場合のみ）
           if (!existingSessionNames.has(bm.name)) {
             const isRemote = !!bm.host
             const project = store.getAllProjects().find(p => p.name === bm.name)
-
-            // terminated な同名セッションがあれば削除
-            const oldSession = existingSessions.find(s => s.name === bm.name && s.status !== 'active')
-            if (oldSession) {
-              store.delete(oldSession.id)
-            }
 
             const session = store.create({
               name: bm.name,
@@ -216,6 +219,8 @@ export function createTabRouter(store: SessionStore, ptyManager: PtyManager): Ro
     } catch (e) {
       console.error('tab同期エラー:', e)
       res.status(500).json({ error: `tab同期に失敗: ${e}` })
+    } finally {
+      isSyncing = false
     }
   })
 
