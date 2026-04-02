@@ -3,7 +3,7 @@
  * kurimats - Claude Code並列実行エミュレータ
  */
 
-import { app, BrowserWindow, Menu, shell } from 'electron'
+import { app, BrowserWindow, Menu, shell, nativeImage } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import * as path from 'path'
 import * as http from 'http'
@@ -189,6 +189,17 @@ app.whenReady().then(async () => {
       console.log('Vite devサーバー準備完了')
     } catch (err) {
       console.error('Vite起動に失敗:', err)
+    }
+  }
+
+  // macOS Dockアイコンを設定
+  const iconPath = IS_DEV
+    ? path.resolve(__dirname, '../resources/icon.png')
+    : path.join(app.getAppPath(), 'resources', 'icon.png')
+  if (process.platform === 'darwin' && app.dock) {
+    const dockIcon = nativeImage.createFromPath(iconPath)
+    if (!dockIcon.isEmpty()) {
+      app.dock.setIcon(dockIcon)
     }
   }
 
