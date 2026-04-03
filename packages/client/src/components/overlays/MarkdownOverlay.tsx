@@ -9,13 +9,14 @@ import { OverlayContainer } from './OverlayContainer'
 interface Props {
   onClose: () => void
   filePath?: string
+  fullScreen?: boolean
 }
 
 /**
  * Markdownオーバーレイ
  * マークダウンファイルの編集・プレビュー
  */
-export function MarkdownOverlay({ onClose, filePath: initialPath }: Props) {
+export function MarkdownOverlay({ onClose, filePath: initialPath, fullScreen }: Props) {
   const { sessions } = useSessionStore()
   const { panels, activePanelIndex } = useLayoutStore()
   const [filePath, setFilePath] = useState(initialPath || '')
@@ -89,7 +90,7 @@ export function MarkdownOverlay({ onClose, filePath: initialPath }: Props) {
   }, [loadFile])
 
   return (
-    <OverlayContainer isOpen={true} onClose={onClose} title="Markdown プレビュー">
+    <OverlayContainer isOpen={true} onClose={onClose} title="Markdown プレビュー" fullScreen={fullScreen}>
       <div className="flex flex-col h-full">
         {/* ファイルパス入力 */}
         <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-surface-1">

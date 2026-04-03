@@ -51,7 +51,7 @@ export default function App() {
 
       {/* オーバーレイ */}
       {activeOverlay === 'file-tree' && (
-        <FileTreeOverlay onClose={closeOverlay} />
+        <FileTreeOverlay onClose={closeOverlay} sessionId={overlayProps.sessionId as string | undefined} />
       )}
       {activeOverlay === 'code-viewer' && (
         <CodeViewerOverlay
@@ -62,6 +62,7 @@ export default function App() {
       {activeOverlay === 'markdown' && (
         <MarkdownOverlay
           filePath={overlayProps.filePath as string | undefined}
+          fullScreen={overlayProps.fullScreen as boolean | undefined}
           onClose={closeOverlay}
         />
       )}

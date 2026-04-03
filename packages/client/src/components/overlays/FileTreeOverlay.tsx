@@ -8,13 +8,14 @@ import { OverlayContainer } from './OverlayContainer'
 
 interface Props {
   onClose: () => void
+  sessionId?: string
 }
 
 /**
  * ファイルツリーオーバーレイ
  * リポジトリのファイル構造を表示
  */
-export function FileTreeOverlay({ onClose }: Props) {
+export function FileTreeOverlay({ onClose, sessionId }: Props) {
   const { sessions } = useSessionStore()
   const { panels, activePanelIndex } = useLayoutStore()
   const { openOverlay } = useOverlayStore()
@@ -24,14 +25,21 @@ export function FileTreeOverlay({ onClose }: Props) {
   const [filter, setFilter] = useState('')
   const [workingDir, setWorkingDir] = useState('')
 
-  // アクティブなセッションのリポジトリパスを取得
+  // セッションのリポジトリパスを取得（sessionId指定時はそのセッション優先）
   useEffect(() => {
-    const activePanel = panels[activePanelIndex]
-    const activeSession = activePanel?.sessionId
-      ? sessions.find(s => s.id === activePanel.sessionId)
-      : sessions[0]
+    let activeSession
+    if (sessionId) {
+      activeSession = sessions.find(s => s.id === sessionId)
+    } else {
+      const activePanel = panels[activePanelIndex]
+      activeSession = activePanel?.sessionId
+        ? sessions.find(s => s.id === activePanel.sessionId)
+        : sessions[0]
+    }
 
-    const root = activeSession?.worktreePath || activeSession?.repoPath || ''
+    // ファイルツリーではrepoPath（元リポジトリ）を優先
+    // worktreePathはgit管理ファイルのみで不完全なため
+    const root = activeSession?.repoPath || ''
     setWorkingDir(root)
 
     if (!root) {
@@ -54,9 +62,9 @@ export function FileTreeOverlay({ onClose }: Props) {
   }, [sessions, panels, activePanelIndex])
 
   const handleFileClick = useCallback((path: string) => {
-    // Markdownファイルならmarkdownオーバーレイ、それ以外はコードビューア
+    // Markdownファイルなら全画面markdownオーバーレイ、それ以外はコードビューア
     if (path.endsWith('.md')) {
-      openOverlay('markdown', { filePath: path })
+      openOverlay('markdown', { filePath: path, fullScreen: true })
     } else {
       openOverlay('code-viewer', { filePath: path })
     }
