@@ -271,6 +271,22 @@ export const FEEDBACK_PRIORITY_LABELS: Record<FeedbackPriority, string> = {
   low: '低',
 } as const
 
+// ワークスペース（キャンバス配置の名前付き保存）
+export interface Workspace {
+  id: string
+  name: string
+  boardNodes: BoardNodePosition[]
+  fileTiles?: FileTilePosition[]
+  edges: BoardEdge[]
+  viewport: { x: number; y: number; zoom: number }
+  createdAt: number
+}
+
+// ワークスペース作成パラメータ
+export interface CreateWorkspaceParams {
+  name: string
+}
+
 // bookmarks.toml のブックマーク情報
 export interface TabBookmark {
   name: string

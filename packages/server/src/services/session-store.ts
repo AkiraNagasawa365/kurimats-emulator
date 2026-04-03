@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { mkdirSync } from 'fs'
 import { fileURLToPath } from 'url'
-import type { Session, CreateSessionParams, Project, CreateProjectParams, LayoutState, BoardLayoutState, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams } from '@kurimats/shared'
+import type { Session, CreateSessionParams, Project, CreateProjectParams, LayoutState, BoardLayoutState, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams, Workspace, CreateWorkspaceParams, BoardNodePosition, BoardEdge, FileTilePosition } from '@kurimats/shared'
 import { v4 as uuidv4 } from 'uuid'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -152,6 +152,21 @@ export class SessionStore {
     // プロジェクトにSSHプリセット・起動テンプレート紐付け
     try { this.db.exec('ALTER TABLE projects ADD COLUMN ssh_preset_id TEXT') } catch { /* カラム既存 */ }
     try { this.db.exec('ALTER TABLE projects ADD COLUMN startup_template_id TEXT') } catch { /* カラム既存 */ }
+
+    // ワークスペーステーブル
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS workspaces (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        board_nodes TEXT NOT NULL DEFAULT '[]',
+        file_tiles TEXT NOT NULL DEFAULT '[]',
+        edges TEXT NOT NULL DEFAULT '[]',
+        viewport_x REAL NOT NULL DEFAULT 0,
+        viewport_y REAL NOT NULL DEFAULT 0,
+        viewport_zoom REAL NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL
+      );
+    `)
   }
 
   // ==================== セッション ====================
@@ -595,6 +610,59 @@ export class SessionStore {
   /** プロジェクトに起動テンプレートを紐付け */
   setProjectStartupTemplate(projectId: string, startupTemplateId: string | null): void {
     this.db.prepare('UPDATE projects SET startup_template_id = ? WHERE id = ?').run(startupTemplateId, projectId)
+  }
+
+  // ==================== ワークスペース ====================
+
+  /** 現在のキャンバス状態をワークスペースとして保存 */
+  createWorkspace(params: CreateWorkspaceParams, boardNodes: BoardNodePosition[], fileTiles: FileTilePosition[], edges: BoardEdge[], viewport: { x: number; y: number; zoom: number }): Workspace {
+    const workspace: Workspace = {
+      id: uuidv4(),
+      name: params.name,
+      boardNodes,
+      fileTiles,
+      edges,
+      viewport,
+      createdAt: Date.now(),
+    }
+    this.db.prepare(`
+      INSERT INTO workspaces (id, name, board_nodes, file_tiles, edges, viewport_x, viewport_y, viewport_zoom, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(workspace.id, workspace.name, JSON.stringify(boardNodes), JSON.stringify(fileTiles), JSON.stringify(edges), viewport.x, viewport.y, viewport.zoom, workspace.createdAt)
+    return workspace
+  }
+
+  /** 全ワークスペース取得 */
+  getAllWorkspaces(): Workspace[] {
+    return (this.db.prepare('SELECT * FROM workspaces ORDER BY created_at DESC').all() as Record<string, unknown>[])
+      .map(this.mapWorkspaceRow)
+  }
+
+  /** ワークスペース取得 */
+  getWorkspace(id: string): Workspace | null {
+    const row = this.db.prepare('SELECT * FROM workspaces WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    return row ? this.mapWorkspaceRow(row) : null
+  }
+
+  /** ワークスペース削除 */
+  deleteWorkspace(id: string): boolean {
+    return this.db.prepare('DELETE FROM workspaces WHERE id = ?').run(id).changes > 0
+  }
+
+  private mapWorkspaceRow(row: Record<string, unknown>): Workspace {
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      boardNodes: JSON.parse((row.board_nodes as string) || '[]'),
+      fileTiles: JSON.parse((row.file_tiles as string) || '[]'),
+      edges: JSON.parse((row.edges as string) || '[]'),
+      viewport: {
+        x: row.viewport_x as number,
+        y: row.viewport_y as number,
+        zoom: row.viewport_zoom as number,
+      },
+      createdAt: row.created_at as number,
+    }
   }
 
   close(): void {

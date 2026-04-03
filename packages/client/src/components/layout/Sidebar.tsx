@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion'
-import type { Session } from '@kurimats/shared'
+import type { Session, Project } from '@kurimats/shared'
 import { PROJECT_COLORS } from '@kurimats/shared'
 import { useSessionStore } from '../../stores/session-store'
 import { useLayoutStore } from '../../stores/layout-store'
@@ -14,6 +14,7 @@ import {
   disperseVariants,
   fadeOutVariants,
 } from '../animations/FavoriteAnimations'
+import { ProjectSettingsPanel } from '../project/ProjectSettingsPanel'
 
 /**
  * サイドバー
@@ -22,7 +23,7 @@ import {
 export function Sidebar() {
   const { sessions, projects, createSession, toggleFavorite, assignProject, createProject, fetchProjects, fetchSessions, reconnectSession } = useSessionStore()
   const { addPanel, setActiveSession, boardNodes } = useLayoutStore()
-  const { hosts, fetchHosts, connectHost, disconnectHost } = useSshStore()
+  const { hosts, fetchHosts, connectHost, disconnectHost, fetchPresets } = useSshStore()
   const { openOverlay } = useOverlayStore()
   const [showNewForm, setShowNewForm] = useState(false)
   const [newName, setNewName] = useState('')
@@ -40,11 +41,13 @@ export function Sidebar() {
   const [tabSyncing, setTabSyncing] = useState(false)
   const [tabSyncResult, setTabSyncResult] = useState<string | null>(null)
   const [creatingProjectId, setCreatingProjectId] = useState<string | null>(null)
+  const [settingsProject, setSettingsProject] = useState<Project | null>(null)
 
-  // SSHホスト一覧を初回取得
+  // SSHホスト・プリセット一覧を初回取得
   useEffect(() => {
     fetchHosts()
-  }, [fetchHosts])
+    fetchPresets()
+  }, [fetchHosts, fetchPresets])
 
   // お気に入りセッション
   const favoriteSessions = useMemo(() =>
@@ -126,7 +129,7 @@ export function Sidebar() {
     }
   }
 
-  const handleProjectClick = async (project: { id: string; name: string; repoPath: string }) => {
+  const handleProjectClick = async (project: { id: string; name: string; repoPath: string; sshPresetId?: string | null }) => {
     if (creatingProjectId) return // 二重クリック防止
     // プロジェクトに紐づく既存セッションを探す
     const existing = sessions.find(s => s.projectId === project.id)
@@ -138,8 +141,8 @@ export function Sidebar() {
     await handleAddSessionToProject(project)
   }
 
-  // プロジェクトに新規セッションを追加（worktree自動分離）
-  const handleAddSessionToProject = async (project: { id: string; name: string; repoPath: string }) => {
+  // プロジェクトに新規セッションを追加（worktree自動分離、SSHプリセット自動適用）
+  const handleAddSessionToProject = async (project: { id: string; name: string; repoPath: string; sshPresetId?: string | null }) => {
     if (creatingProjectId) return
     setCreatingProjectId(project.id)
     try {
@@ -150,10 +153,21 @@ export function Sidebar() {
       const sessionName = siblings.length === 0
         ? project.name
         : `${project.name}-${siblings.length + 1}`
+
+      // SSHプリセットが紐付いている場合はSSHホスト名を取得
+      let sshHost: string | undefined
+      if (project.sshPresetId) {
+        const preset = useSshStore.getState().presets.find(p => p.id === project.sshPresetId)
+        if (preset) {
+          sshHost = preset.name || preset.hostname
+        }
+      }
+
       const session = await createSession({
         name: sessionName,
         repoPath: project.repoPath,
-        useWorktree: true,
+        useWorktree: !sshHost, // SSH時はworktree不要
+        sshHost,
       })
       await assignProject(session.id, project.id)
       // 兄弟ノードの隣に配置
@@ -347,7 +361,7 @@ export function Sidebar() {
                 if (!projectSessions || projectSessions.length === 0) return null
                 return (
                   <div key={project.id} className="mb-1">
-                    <div className="flex items-center px-3 py-1 hover:bg-surface-2 transition-colors">
+                    <div className="flex items-center px-3 py-1 hover:bg-surface-2 transition-colors group">
                       <span
                         className="w-2 h-2 rounded-sm flex-shrink-0 mr-1.5"
                         style={{ backgroundColor: project.color }}
@@ -357,8 +371,16 @@ export function Sidebar() {
                         onClick={() => handleProjectClick(project)}
                       >
                         {project.name}
+                        {project.sshPresetId && <span className="text-[8px] ml-1 text-blue-400">SSH</span>}
                         <span className="text-text-muted ml-1">{projectSessions.length}</span>
                       </span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSettingsProject(project) }}
+                        className="w-4 h-4 flex items-center justify-center text-text-muted hover:text-text-secondary text-[10px] rounded hover:bg-surface-3 transition-colors opacity-0 group-hover:opacity-100"
+                        title="プロジェクト設定"
+                      >
+                        ⚙
+                      </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleAddSessionToProject(project) }}
                         className="w-4 h-4 flex items-center justify-center text-text-muted hover:text-accent text-[10px] rounded hover:bg-surface-3 transition-colors"
@@ -527,6 +549,15 @@ export function Sidebar() {
           フィードバック
         </button>
       </div>
+
+      {/* プロジェクト設定パネル */}
+      {settingsProject && (
+        <ProjectSettingsPanel
+          project={settingsProject}
+          onClose={() => setSettingsProject(null)}
+          onUpdated={() => fetchProjects()}
+        />
+      )}
     </div>
   )
 }
