@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import type { SessionStore } from '../services/session-store.js'
 import type { CanvasStore } from '../services/canvas-store.js'
-import type { LayoutState, BoardLayoutState, CreateWorkspaceParams } from '@kurimats/shared'
+import type { LayoutState, BoardLayoutState, CreateWorkspaceParams, BoardNodePosition, FileTilePosition, BoardEdge } from '@kurimats/shared'
 
 export function createLayoutRouter(store: SessionStore, canvasStore?: CanvasStore): Router {
   const router = Router()
@@ -62,9 +62,9 @@ export function createLayoutRouter(store: SessionStore, canvasStore?: CanvasStor
     }
     const workspace = store.createWorkspace(
       { name },
-      (boardNodes || []) as any,
-      (fileTiles || []) as any,
-      (edges || []) as any,
+      (boardNodes || []) as BoardNodePosition[],
+      (fileTiles || []) as FileTilePosition[],
+      (edges || []) as BoardEdge[],
       viewport || { x: 0, y: 0, zoom: 1 },
     )
     res.status(201).json(workspace)

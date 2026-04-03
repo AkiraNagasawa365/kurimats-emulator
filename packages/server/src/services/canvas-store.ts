@@ -3,6 +3,14 @@ import path from 'path'
 import { homedir } from 'os'
 import type { BoardLayoutState } from '@kurimats/shared'
 
+/** ワークスペースIDがUUID形式であることを検証 */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+function validateWorkspaceId(id: string): void {
+  if (!UUID_REGEX.test(id)) {
+    throw new Error(`不正なワークスペースID: ${id}`)
+  }
+}
+
 const DEFAULT_DIR = path.join(homedir(), '.kurimats')
 const CANVAS_FILE = 'canvas.json'
 
@@ -47,6 +55,7 @@ export class CanvasStore {
    * ワークスペース用のキャンバス状態を保存
    */
   saveWorkspace(workspaceId: string, state: BoardLayoutState): void {
+    validateWorkspaceId(workspaceId)
     const wsPath = path.join(this.dir, `canvas-${workspaceId}.json`)
     writeFileSync(wsPath, JSON.stringify(state, null, 2), 'utf-8')
   }
@@ -55,6 +64,7 @@ export class CanvasStore {
    * ワークスペース用のキャンバス状態を読み込み
    */
   loadWorkspace(workspaceId: string): BoardLayoutState | null {
+    validateWorkspaceId(workspaceId)
     const wsPath = path.join(this.dir, `canvas-${workspaceId}.json`)
     if (!existsSync(wsPath)) return null
     try {

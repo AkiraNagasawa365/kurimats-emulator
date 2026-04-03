@@ -303,17 +303,18 @@ function BoardCanvasInner() {
     }
 
     // ドラッグ終了時に位置を永続化
+    const fileTileIds = new Set(fileTiles.map(t => t.id))
     for (const change of filteredChanges) {
       if (change.type === 'position' && change.dragging === false && change.position) {
-        // ファイルタイルかセッションノードかを判別
-        if (change.id.startsWith('file-')) {
+        // ファイルタイルかセッションノードかをIDセットで判別
+        if (fileTileIds.has(change.id)) {
           updateFileTilePosition(change.id, change.position.x, change.position.y)
         } else {
           updateNodePosition(change.id, change.position.x, change.position.y)
         }
       }
     }
-  }, [setNodes, updateNodePosition, updateFileTilePosition])
+  }, [setNodes, updateNodePosition, updateFileTilePosition, fileTiles])
 
   // エッジの変更を処理（削除など）
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
@@ -356,6 +357,7 @@ function BoardCanvasInner() {
 
   // リサイズ時のサイズ永続化
   const onNodesChangeWithResize = useCallback((changes: NodeChange[]) => {
+    const ftIds = new Set(fileTiles.map(t => t.id))
     // リサイズ中かどうかを検出
     for (const change of changes) {
       if (change.type === 'dimensions' && 'resizing' in change) {
@@ -365,7 +367,7 @@ function BoardCanvasInner() {
           isResizingRef.current = false
           // リサイズ完了時にサイズを永続化
           if (change.dimensions?.width && change.dimensions?.height) {
-            if (change.id.startsWith('file-')) {
+            if (ftIds.has(change.id)) {
               updateFileTileSize(change.id, change.dimensions.width, change.dimensions.height)
             } else {
               updateNodeSize(change.id, change.dimensions.width, change.dimensions.height)
@@ -376,7 +378,7 @@ function BoardCanvasInner() {
     }
 
     onNodesChange(changes)
-  }, [onNodesChange, updateNodeSize])
+  }, [onNodesChange, updateNodeSize, updateFileTileSize, fileTiles])
 
   // ビューポート変更を処理（ズームインジケーター付き）
   const onMoveEnd = useCallback((_event: unknown, vp: Viewport) => {

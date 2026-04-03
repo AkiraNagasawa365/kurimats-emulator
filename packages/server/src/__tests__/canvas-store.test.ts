@@ -82,11 +82,13 @@ describe('CanvasStore（JSONファイル永続化）', () => {
       savedAt: Date.now(),
     }
 
-    store.saveWorkspace('ws-a', stateA)
-    store.saveWorkspace('ws-b', stateB)
+    const wsIdA = '00000000-0000-0000-0000-000000000001'
+    const wsIdB = '00000000-0000-0000-0000-000000000002'
+    store.saveWorkspace(wsIdA, stateA)
+    store.saveWorkspace(wsIdB, stateB)
 
-    const loadedA = store.loadWorkspace('ws-a')
-    const loadedB = store.loadWorkspace('ws-b')
+    const loadedA = store.loadWorkspace(wsIdA)
+    const loadedB = store.loadWorkspace(wsIdB)
 
     expect(loadedA!.nodes[0].sessionId).toBe('a1')
     expect(loadedB!.nodes[0].sessionId).toBe('b1')
@@ -94,7 +96,12 @@ describe('CanvasStore（JSONファイル永続化）', () => {
   })
 
   it('存在しないワークスペースの読み込みはnullを返す', () => {
-    expect(store.loadWorkspace('nonexistent')).toBeNull()
+    expect(store.loadWorkspace('99999999-9999-9999-9999-999999999999')).toBeNull()
+  })
+
+  it('不正なワークスペースIDはエラーになる', () => {
+    expect(() => store.saveWorkspace('../../etc/passwd', {} as BoardLayoutState)).toThrow('不正なワークスペースID')
+    expect(() => store.loadWorkspace('invalid-id')).toThrow('不正なワークスペースID')
   })
 
   it('データディレクトリパスを取得できる', () => {
