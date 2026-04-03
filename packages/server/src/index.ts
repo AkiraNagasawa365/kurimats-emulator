@@ -16,6 +16,7 @@ import { createLayoutRouter } from './routes/layout.js'
 import { createTabRouter } from './routes/tab.js'
 import { createSshRouter } from './routes/ssh.js'
 import { createFeedbackRouter } from './routes/feedback.js'
+import { CanvasStore } from './services/canvas-store.js'
 
 const PORT = parseInt(process.env.PORT || '3001', 10)
 const HOST = process.env.HOST || 'localhost'
@@ -28,6 +29,7 @@ const ptyManager = new PtyManager()
 const sshManager = new SshManager()
 const worktreeService = new WorktreeService()
 const sessionStore = new SessionStore()
+const canvasStore = new CanvasStore()
 
 // サーバー起動時: PTYが消失したactiveセッションをdisconnectedに変更
 const orphanedSessions = sessionStore.getAll().filter(s => s.status === 'active')
@@ -64,7 +66,7 @@ app.use('/api/sessions', createSessionsRouter(sessionStore, ptyManager, sshManag
 app.use('/api/files', createFilesRouter())
 app.use('/api/worktrees', createWorktreesRouter(worktreeService))
 app.use('/api/projects', createProjectsRouter(sessionStore))
-app.use('/api/layout', createLayoutRouter(sessionStore))
+app.use('/api/layout', createLayoutRouter(sessionStore, canvasStore))
 app.use('/api/tab', createTabRouter(sessionStore, ptyManager, sshManager))
 app.use('/api/ssh', createSshRouter(sshManager, sessionStore))
 app.use('/api/feedback', createFeedbackRouter(sessionStore))
