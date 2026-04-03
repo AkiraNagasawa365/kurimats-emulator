@@ -188,6 +188,13 @@ export class SessionStore {
   }
 
   /**
+   * セッション名変更
+   */
+  rename(id: string, name: string): void {
+    this.db.prepare('UPDATE sessions SET name = ? WHERE id = ?').run(name, id)
+  }
+
+  /**
    * セッション削除
    */
   delete(id: string): void {

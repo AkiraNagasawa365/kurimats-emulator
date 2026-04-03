@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useEffect, useRef } from 'react'
+import { useCallback, useMemo, useEffect, useRef, useState } from 'react'
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -23,7 +23,8 @@ import { useLayoutStore } from '../../stores/layout-store'
 import { useSessionStore } from '../../stores/session-store'
 import { SessionNode, type SessionNodeData } from './SessionNode'
 import { ProjectGroupNode, type ProjectGroupNodeData } from './ProjectGroupNode'
-import type { BoardEdge } from '@kurimats/shared'
+import type { BoardEdge, Session } from '@kurimats/shared'
+import { NodeContextMenu, CanvasContextMenu } from './ContextMenu'
 
 // カスタムノードタイプの登録
 const nodeTypes = {
@@ -57,6 +58,7 @@ function BoardCanvasInner() {
     setActiveSession,
     updateNodePosition,
     removeBoardNode,
+    updateNodeSize,
     setViewport,
     setBoardNodes,
     addEdge: addBoardEdge,
@@ -64,7 +66,11 @@ function BoardCanvasInner() {
     setBoardEdges,
   } = useLayoutStore()
 
-  const { sessions, projects, deleteSession, toggleFavorite, reconnectSession } = useSessionStore()
+  const { sessions, projects, deleteSession, toggleFavorite, reconnectSession, assignProject, renameSession } = useSessionStore()
+
+  // コンテキストメニュー状態
+  const [nodeContextMenu, setNodeContextMenu] = useState<{ x: number; y: number; session: Session } | null>(null)
+  const [canvasContextMenu, setCanvasContextMenu] = useState<{ x: number; y: number } | null>(null)
 
   // セッションからプロジェクトカラーを取得
   const getProjectColor = useCallback((projectId: string | null) => {
@@ -104,8 +110,14 @@ function BoardCanvasInner() {
       }
     }
 
-    // プロジェクトグループ枠ノードを追加（セッションノードの後ろに配置）
+    // プロジェクトグループ枠ノードを追加（2セッション以上の場合のみ）
     for (const [projectId, group] of projectGroups) {
+      // 同プロジェクトのセッション数を数える
+      const memberCount = boardNodes.filter(n => {
+        const s = sessions.find(ss => ss.id === n.sessionId)
+        return s?.projectId === projectId
+      }).length
+      if (memberCount < 2) continue
       result.push({
         id: `group-${projectId}`,
         type: 'projectGroup',
@@ -116,13 +128,14 @@ function BoardCanvasInner() {
         data: {
           label: group.name,
           color: group.color,
+          projectId,
         } as ProjectGroupNodeData,
         style: {
           width: group.maxX - group.minX + GROUP_PADDING * 2,
           height: group.maxY - group.minY + GROUP_PADDING * 2,
         },
         selectable: false,
-        draggable: false,
+        draggable: true,
         zIndex: -1,
       })
     }
@@ -154,6 +167,7 @@ function BoardCanvasInner() {
           width: node.width,
           height: node.height,
         },
+        selected: node.sessionId === activeSessionId,
         dragHandle: '.drag-handle',
         zIndex: 1,
       })
@@ -181,9 +195,14 @@ function BoardCanvasInner() {
   const [nodes, setNodes] = useNodesState(flowNodes)
   const [edges, setEdges] = useEdgesState(flowEdges)
 
-  // flowNodesが変更されたらnodesを更新
+  // リサイズ中フラグ（useEffectのsync抑制用）
+  const isResizingRef = useRef(false)
+
+  // flowNodesが変更されたらnodesを更新（リサイズ中は抑制）
   useEffect(() => {
-    setNodes(flowNodes)
+    if (!isResizingRef.current) {
+      setNodes(flowNodes)
+    }
   }, [flowNodes, setNodes])
 
   // flowEdgesが変更されたらedgesを更新
@@ -215,12 +234,22 @@ function BoardCanvasInner() {
 
   // ノードの変更を処理（単一選択を強制）
   const onNodesChange = useCallback((changes: NodeChange[]) => {
+    // ドラッグ中は、ドラッグ対象ノード以外の位置変更を除外
+    const filteredChanges = draggingNodeRef.current
+      ? changes.filter(c => {
+          if (c.type === 'position' && 'id' in c && c.id !== draggingNodeRef.current) {
+            return false
+          }
+          return true
+        })
+      : changes
+
     // 選択変更を検出: 1つのノードが選択されたら他を非選択にする
-    const selectChanges = changes.filter((c): c is NodeChange & { type: 'select'; id: string; selected: boolean } => c.type === 'select' && 'selected' in c && (c as { selected?: boolean }).selected === true)
+    const selectChanges = filteredChanges.filter((c): c is NodeChange & { type: 'select'; id: string; selected: boolean } => c.type === 'select' && 'selected' in c && (c as { selected?: boolean }).selected === true)
     if (selectChanges.length === 1) {
       const selectedId = selectChanges[0].id
       setNodes(nds => {
-        const applied = applyNodeChanges(changes, nds)
+        const applied = applyNodeChanges(filteredChanges, nds)
         // 選択されたノード以外を非選択に
         return applied.map(n => ({
           ...n,
@@ -228,11 +257,11 @@ function BoardCanvasInner() {
         }))
       })
     } else {
-      setNodes(nds => applyNodeChanges(changes, nds))
+      setNodes(nds => applyNodeChanges(filteredChanges, nds))
     }
 
     // ドラッグ終了時に位置を永続化
-    for (const change of changes) {
+    for (const change of filteredChanges) {
       if (change.type === 'position' && change.dragging === false && change.position) {
         updateNodePosition(change.id, change.position.x, change.position.y)
       }
@@ -280,42 +309,146 @@ function BoardCanvasInner() {
 
   // リサイズ時のサイズ永続化
   const onNodesChangeWithResize = useCallback((changes: NodeChange[]) => {
-    onNodesChange(changes)
-
+    // リサイズ中かどうかを検出
     for (const change of changes) {
-      if (change.type === 'dimensions' && change.dimensions) {
-        // ボードノードのサイズを更新
-        const updatedNodes = [...boardNodes]
-        const nodeIndex = updatedNodes.findIndex(n => n.sessionId === change.id)
-        if (nodeIndex >= 0 && change.dimensions.width && change.dimensions.height) {
-          updatedNodes[nodeIndex] = {
-            ...updatedNodes[nodeIndex],
-            width: change.dimensions.width,
-            height: change.dimensions.height,
+      if (change.type === 'dimensions' && 'resizing' in change) {
+        if (change.resizing) {
+          isResizingRef.current = true
+        } else {
+          isResizingRef.current = false
+          // リサイズ完了時にサイズを永続化
+          if (change.dimensions?.width && change.dimensions?.height) {
+            updateNodeSize(change.id, change.dimensions.width, change.dimensions.height)
           }
-          setBoardNodes(updatedNodes)
         }
       }
     }
-  }, [onNodesChange, boardNodes, setBoardNodes])
+
+    onNodesChange(changes)
+  }, [onNodesChange, updateNodeSize])
 
   // ビューポート変更を処理
   const onMoveEnd = useCallback((_event: unknown, vp: Viewport) => {
     setViewport({ x: vp.x, y: vp.y, zoom: vp.zoom })
   }, [setViewport])
 
+  // ドラッグ中のノードIDを記録
+  const draggingNodeRef = useRef<string | null>(null)
+  // グループドラッグの開始位置を記録
+  const groupDragStartRef = useRef<{ x: number; y: number } | null>(null)
+
   // ノードドラッグ開始時、他のノードの選択を解除（Shift未押下時）
-  const onNodeDragStart = useCallback((_event: unknown, node: Node) => {
-    setNodes(nds => nds.map(n => ({
-      ...n,
-      selected: n.id === node.id,
-    })))
+  const onNodeDragStart = useCallback((_event: React.MouseEvent, node: Node) => {
+    draggingNodeRef.current = node.id
+    // プロジェクトグループのドラッグ開始位置を記録
+    if (node.id.startsWith('group-')) {
+      groupDragStartRef.current = { x: node.position.x, y: node.position.y }
+    }
+    // Shiftキーが押されていなければ単一選択を強制
+    if (!(_event as React.MouseEvent).shiftKey) {
+      setNodes(nds => nds.map(n => ({
+        ...n,
+        selected: n.id === node.id,
+      })))
+    }
   }, [setNodes])
+
+  const onNodeDragStop = useCallback((_event: React.MouseEvent, node: Node) => {
+    // プロジェクトグループのドラッグ完了 → 所属セッションノードを同じ量だけ移動
+    if (node.id.startsWith('group-') && groupDragStartRef.current) {
+      const dx = node.position.x - groupDragStartRef.current.x
+      const dy = node.position.y - groupDragStartRef.current.y
+      if (dx !== 0 || dy !== 0) {
+        const projectId = node.id.replace('group-', '')
+        // 所属セッションの位置を更新
+        for (const bn of boardNodes) {
+          const session = sessions.find(s => s.id === bn.sessionId)
+          if (session?.projectId === projectId) {
+            updateNodePosition(bn.sessionId, bn.x + dx, bn.y + dy)
+          }
+        }
+      }
+      groupDragStartRef.current = null
+    }
+    draggingNodeRef.current = null
+  }, [boardNodes, sessions, updateNodePosition])
 
   // ペインクリック時にアクティブセッション解除
   const onPaneClick = useCallback(() => {
     setActiveSession(null)
+    setNodeContextMenu(null)
+    setCanvasContextMenu(null)
   }, [setActiveSession])
+
+  // ノード右クリック
+  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
+    event.preventDefault()
+    // プロジェクトグループは対象外
+    if (node.id.startsWith('group-')) return
+    const session = sessions.find(s => s.id === node.id)
+    if (!session) return
+    setCanvasContextMenu(null)
+    setNodeContextMenu({ x: event.clientX, y: event.clientY, session })
+  }, [sessions])
+
+  // キャンバス右クリック
+  const onPaneContextMenu = useCallback((event: React.MouseEvent | MouseEvent) => {
+    event.preventDefault()
+    setNodeContextMenu(null)
+    setCanvasContextMenu({ x: (event as MouseEvent).clientX, y: (event as MouseEvent).clientY })
+  }, [])
+
+  // 自動整列（プロジェクト別にグループ化して配置）
+  const handleAutoLayout = useCallback(() => {
+    if (boardNodes.length === 0) return
+    const gap = 40
+    const groupGap = 80
+    const nodeW = 520
+    const nodeH = 620
+
+    // プロジェクト別にグループ化
+    const groups = new Map<string, string[]>() // projectId → sessionId[]
+    const unassigned: string[] = []
+    for (const n of boardNodes) {
+      const session = sessions.find(s => s.id === n.sessionId)
+      const pid = session?.projectId
+      if (pid) {
+        const list = groups.get(pid) || []
+        list.push(n.sessionId)
+        groups.set(pid, list)
+      } else {
+        unassigned.push(n.sessionId)
+      }
+    }
+
+    const posMap = new Map<string, { x: number; y: number }>()
+    let currentY = 0
+
+    // プロジェクト別に横に並べる
+    for (const [, memberIds] of groups) {
+      for (let i = 0; i < memberIds.length; i++) {
+        posMap.set(memberIds[i], {
+          x: i * (nodeW + gap),
+          y: currentY,
+        })
+      }
+      currentY += nodeH + groupGap
+    }
+    // 未割り当て
+    for (let i = 0; i < unassigned.length; i++) {
+      const cols = Math.ceil(Math.sqrt(unassigned.length))
+      posMap.set(unassigned[i], {
+        x: (i % cols) * (nodeW + gap),
+        y: currentY + Math.floor(i / cols) * (nodeH + gap),
+      })
+    }
+
+    const newNodes = boardNodes.map(n => {
+      const pos = posMap.get(n.sessionId)
+      return pos ? { ...n, x: pos.x, y: pos.y } : n
+    })
+    setBoardNodes(newNodes)
+  }, [boardNodes, sessions, setBoardNodes])
 
   return (
     <div className="w-full h-full">
@@ -327,7 +460,10 @@ function BoardCanvasInner() {
         onConnect={onConnect}
         onMoveEnd={onMoveEnd}
         onNodeDragStart={onNodeDragStart}
+        onNodeDragStop={onNodeDragStop}
         onPaneClick={onPaneClick}
+        onNodeContextMenu={onNodeContextMenu}
+        onPaneContextMenu={onPaneContextMenu}
         onInit={onInit}
         multiSelectionKeyCode="Shift"
         nodeTypes={nodeTypes}
@@ -343,8 +479,8 @@ function BoardCanvasInner() {
         <Background
           variant={BackgroundVariant.Dots}
           gap={20}
-          size={1}
-          color="#e5e7eb"
+          size={1.5}
+          color="#c0c4cc"
         />
         {/* ミニマップは非表示（#48） */}
       </ReactFlow>
@@ -357,6 +493,36 @@ function BoardCanvasInner() {
             <p className="text-sm mt-2">サイドバーからセッションを作成してください</p>
           </div>
         </div>
+      )}
+
+      {/* ノード右クリックコンテキストメニュー */}
+      {nodeContextMenu && (
+        <NodeContextMenu
+          position={{ x: nodeContextMenu.x, y: nodeContextMenu.y }}
+          session={nodeContextMenu.session}
+          projects={projects}
+          onClose={() => setNodeContextMenu(null)}
+          onDelete={() => {
+            deleteSession(nodeContextMenu.session.id)
+            removeBoardNode(nodeContextMenu.session.id)
+          }}
+          onToggleFavorite={() => toggleFavorite(nodeContextMenu.session.id)}
+          onAssignProject={(projectId) => assignProject(nodeContextMenu.session.id, projectId)}
+          onRename={(name) => renameSession(nodeContextMenu.session.id, name)}
+        />
+      )}
+
+      {/* キャンバス右クリックコンテキストメニュー */}
+      {canvasContextMenu && (
+        <CanvasContextMenu
+          position={{ x: canvasContextMenu.x, y: canvasContextMenu.y }}
+          onClose={() => setCanvasContextMenu(null)}
+          onCreateSession={() => {
+            // サイドバーの作成フォームにフォーカスさせるイベントを発火
+            window.dispatchEvent(new CustomEvent('focus-create-session'))
+          }}
+          onAutoLayout={handleAutoLayout}
+        />
       )}
     </div>
   )

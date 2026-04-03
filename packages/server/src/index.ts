@@ -32,10 +32,14 @@ const sessionStore = new SessionStore()
 // サーバー起動時: PTYが消失したactiveセッションをdisconnectedに変更
 const orphanedSessions = sessionStore.getAll().filter(s => s.status === 'active')
 if (orphanedSessions.length > 0) {
-  console.log(`⚠️  ${orphanedSessions.length}件のorphanedセッションをdisconnectedに変更`)
+  console.log(`⚠️  ${orphanedSessions.length}件のorphanedセッションを検出 → disconnectedに変更`)
   for (const s of orphanedSessions) {
     sessionStore.updateStatus(s.id, 'disconnected')
+    console.log(`   ↳ セッション "${s.name}" (${s.id.slice(0, 8)}...) → disconnected`)
   }
+  console.log('✅ orphanedセッションの復元処理完了。UIから再接続可能です。')
+} else {
+  console.log('✅ orphanedセッションなし')
 }
 
 // Express設定

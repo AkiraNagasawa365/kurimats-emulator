@@ -1,9 +1,58 @@
 import { Router } from 'express'
 import type { SessionStore } from '../services/session-store.js'
-import type { PtyManager } from '../services/pty-manager.js'
-import type { SshManager } from '../services/ssh-manager.js'
+import { type PtyManager } from '../services/pty-manager.js'
+import { type SshManager } from '../services/ssh-manager.js'
 import type { WorktreeService } from '../services/worktree-service.js'
 import type { CreateSessionParams } from '@kurimats/shared'
+
+/**
+ * シェルの初期化完了を検出してclaudeコマンドを送信する
+ * シェルのプロンプト出力（$ や % や > の末尾文字）を監視し、
+ * 表示されたらclaudeを実行する。最大5秒のタイムアウト付き。
+ */
+function waitForShellReady(
+  sessionId: string,
+  ptyManager: PtyManager,
+  sshManager: SshManager,
+  isRemote: boolean,
+): void {
+  const manager = isRemote ? sshManager : ptyManager
+  let resolved = false
+
+  const onData = (_sid: string, data: string) => {
+    if (_sid !== sessionId || resolved) return
+    // シェルプロンプトの一般的なパターン（$ % > #）を検出
+    const cleanData = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim()
+    if (cleanData.match(/[$%>#]\s*$/) || cleanData.includes('❯')) {
+      resolved = true
+      manager.removeListener('data', onData)
+      // プロンプト検出後、少し待ってからclaudeを送信
+      setTimeout(() => {
+        if (isRemote) {
+          sshManager.write(sessionId, 'claude\r')
+        } else {
+          ptyManager.write(sessionId, 'claude\r')
+        }
+      }, 100)
+    }
+  }
+
+  manager.on('data', onData)
+
+  // タイムアウト: 5秒以内にプロンプトが検出されなければ強制送信
+  setTimeout(() => {
+    if (!resolved) {
+      resolved = true
+      manager.removeListener('data', onData)
+      console.warn(`⚠️ セッション ${sessionId.slice(0, 8)}... のシェルプロンプト検出タイムアウト。claudeを強制送信します。`)
+      if (isRemote) {
+        sshManager.write(sessionId, 'claude\r')
+      } else {
+        ptyManager.write(sessionId, 'claude\r')
+      }
+    }
+  }, 5000)
+}
 
 export function createSessionsRouter(
   store: SessionStore,
@@ -62,18 +111,14 @@ export function createSessionsRouter(
         // リモートSSHセッション: SshManager経由で接続・シェル起動
         await sshManager.connect(params.sshHost)
         await sshManager.spawn(session.id, params.sshHost, cwd, 120, 30)
-        // リモートでもclaude起動
-        setTimeout(() => {
-          sshManager.write(session.id, 'claude\r')
-        }, 800)
+        // リモートでもclaude起動（シェル出力を監視して準備完了後に実行）
+        waitForShellReady(session.id, ptyManager, sshManager, true)
       } else {
         // ローカルPTYセッション: シェルを起動し、claudeを自動実行
         const shell = process.env.SHELL || '/bin/zsh'
         await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
-        // シェル初期化後にclaudeコマンドを送信
-        setTimeout(() => {
-          ptyManager.write(session.id, 'claude\r')
-        }, 800)
+        // シェル出力を監視して準備完了後にclaudeを実行
+        waitForShellReady(session.id, ptyManager, sshManager, false)
       }
     } catch (e) {
       console.error(`${isRemote ? 'SSH接続/リモートシェル' : 'PTY'}起動エラー:`, e)
@@ -113,6 +158,17 @@ export function createSessionsRouter(
     } else {
       ptyManager.kill(session.id)
     }
+
+    // worktreeのクリーンアップ
+    if (session.worktreePath && session.repoPath) {
+      try {
+        worktreeService.remove(session.repoPath, session.worktreePath)
+        console.log(`🗑️ worktree削除: ${session.worktreePath}`)
+      } catch (e) {
+        console.warn(`worktree削除エラー (無視): ${e}`)
+      }
+    }
+
     store.delete(session.id)
     res.json({ ok: true })
   })
@@ -136,23 +192,36 @@ export function createSessionsRouter(
       if (session.isRemote && session.sshHost) {
         await sshManager.connect(session.sshHost)
         await sshManager.spawn(session.id, session.sshHost, cwd, 120, 30)
-        setTimeout(() => {
-          sshManager.write(session.id, 'claude\r')
-        }, 800)
+        waitForShellReady(session.id, ptyManager, sshManager, true)
       } else {
         const shell = process.env.SHELL || '/bin/zsh'
         await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
-        setTimeout(() => {
-          ptyManager.write(session.id, 'claude\r')
-        }, 800)
+        waitForShellReady(session.id, ptyManager, sshManager, false)
       }
 
       store.updateStatus(session.id, 'active')
+      console.log(`🔄 セッション "${session.name}" (${session.id.slice(0, 8)}...) を再接続しました`)
       res.json({ ok: true, session: store.getById(session.id) })
     } catch (e) {
-      console.error('セッション再接続エラー:', e)
+      console.error(`セッション再接続エラー "${session.name}":`, e)
       res.status(500).json({ error: `再接続エラー: ${e}` })
     }
+  })
+
+  // セッション名変更
+  router.patch('/:id', (req, res) => {
+    const session = store.getById(req.params.id)
+    if (!session) {
+      res.status(404).json({ error: 'セッションが見つかりません' })
+      return
+    }
+    const { name } = req.body as { name?: string }
+    if (!name || !name.trim()) {
+      res.status(400).json({ error: '名前は必須です' })
+      return
+    }
+    store.rename(session.id, name.trim())
+    res.json({ ok: true, session: store.getById(session.id) })
   })
 
   // お気に入りトグル
