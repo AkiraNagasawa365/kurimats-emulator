@@ -34,7 +34,11 @@ export function useTerminalWs(sessionId: string | null, terminal: Terminal | nul
           terminal.write(`\r\n\x1b[33m[プロセス終了: コード ${msg.code}]\x1b[0m\r\n`)
           break
         case 'connected':
-          // 接続確認
+          // 接続確認 → 現在のターミナルサイズを送信（PTY側の初期サイズと同期）
+          if (terminal) {
+            const resizeMsg: ClientTerminalMessage = { type: 'resize', cols: terminal.cols, rows: terminal.rows }
+            ws.send(JSON.stringify(resizeMsg))
+          }
           break
         case 'error':
           terminal.write(`\r\n\x1b[31m[エラー: ${msg.message}]\x1b[0m\r\n`)
