@@ -12,6 +12,7 @@ export interface SessionNodeData {
   onClose: () => void
   onFocus: () => void
   onToggleFavorite: () => void
+  onReconnect?: () => void
   [key: string]: unknown
 }
 
@@ -25,7 +26,8 @@ const PREVIEW_INTERVAL = 3000
  * ターミナルヘッダー + お気に入り★ + プレビュー + xterm.jsターミナルを内包
  */
 function SessionNodeComponent({ data }: NodeProps) {
-  const { session, isActive, projectColor, onClose, onFocus, onToggleFavorite } = data as unknown as SessionNodeData
+  const { session, isActive, projectColor, onClose, onFocus, onToggleFavorite, onReconnect } = data as unknown as SessionNodeData
+  const isDisconnected = session.status === 'disconnected'
   const [previewLines, setPreviewLines] = useState<string[]>([])
   const intervalRef = useRef<ReturnType<typeof setInterval>>()
 
@@ -103,13 +105,28 @@ function SessionNodeComponent({ data }: NodeProps) {
         </div>
       )}
 
-      {/* ターミナル本体 */}
-      <div className="flex-1 min-h-0 bg-[#1e1e1e]">
-        <TerminalComponent
-          sessionId={session.id}
-          isActive={isActive}
-          onFocus={onFocus}
-        />
+      {/* ターミナル本体 or disconnectedオーバーレイ */}
+      <div className="flex-1 min-h-0 bg-[#1e1e1e] relative">
+        {isDisconnected ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#1e1e1e] text-gray-400 gap-3 nopan nodrag">
+            <div className="text-sm">切断済み</div>
+            {onReconnect && (
+              <button
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); onReconnect() }}
+                className="px-4 py-2 text-sm bg-yellow-600 hover:bg-yellow-500 text-white rounded transition-colors cursor-pointer"
+              >
+                再接続
+              </button>
+            )}
+          </div>
+        ) : (
+          <TerminalComponent
+            sessionId={session.id}
+            isActive={isActive}
+            onFocus={onFocus}
+          />
+        )}
       </div>
 
       {/* React Flow接続ハンドル */}

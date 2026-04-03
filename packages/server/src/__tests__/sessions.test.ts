@@ -14,7 +14,7 @@ describe('セッションAPI', () => {
   let ptyManager: PtyManager
 
   beforeEach(async () => {
-    store = new SessionStore()
+    store = new SessionStore(':memory:')
     ptyManager = new PtyManager()
     const sshManager = new SshManager()
     const worktreeService = new WorktreeService()

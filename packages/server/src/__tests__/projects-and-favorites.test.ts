@@ -16,7 +16,7 @@ describe('プロジェクト・お気に入り・レイアウトAPI', () => {
   let ptyManager: PtyManager
 
   beforeEach(async () => {
-    store = new SessionStore()
+    store = new SessionStore(':memory:')
     ptyManager = new PtyManager()
     const sshManager = new SshManager()
     const worktreeService = new WorktreeService()

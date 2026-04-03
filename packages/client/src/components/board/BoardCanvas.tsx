@@ -49,7 +49,6 @@ export function BoardCanvas() {
 function BoardCanvasInner() {
   const { fitView, setCenter } = useReactFlow()
   const prevActiveSessionRef = useRef<string | null>(null)
-  const initialFitDone = useRef(false)
   const {
     boardNodes,
     boardEdges,
@@ -65,7 +64,7 @@ function BoardCanvasInner() {
     setBoardEdges,
   } = useLayoutStore()
 
-  const { sessions, projects, deleteSession, toggleFavorite } = useSessionStore()
+  const { sessions, projects, deleteSession, toggleFavorite, reconnectSession } = useSessionStore()
 
   // セッションからプロジェクトカラーを取得
   const getProjectColor = useCallback((projectId: string | null) => {
@@ -147,6 +146,9 @@ function BoardCanvasInner() {
           },
           onFocus: () => setActiveSession(session.id),
           onToggleFavorite: () => toggleFavorite(session.id),
+          onReconnect: session.status === 'disconnected' ? () => {
+            reconnectSession(session.id).catch(e => console.error('再接続エラー:', e))
+          } : undefined,
         } as SessionNodeData,
         style: {
           width: node.width,
@@ -189,14 +191,10 @@ function BoardCanvasInner() {
     setEdges(flowEdges)
   }, [flowEdges, setEdges])
 
-  // 初回ロード時に全ノードが見えるようにフィット
-  useEffect(() => {
-    if (!initialFitDone.current && boardNodes.length > 0) {
-      initialFitDone.current = true
-      // React Flowの初期化を待つ
-      setTimeout(() => {
-        fitView({ padding: 0.3, duration: 300 })
-      }, 100)
+  // React Flow初期化完了時に全ノードをフィット
+  const onInit = useCallback(() => {
+    if (boardNodes.length > 0) {
+      fitView({ padding: 0.3, duration: 300 })
     }
   }, [boardNodes.length, fitView])
 
@@ -330,12 +328,12 @@ function BoardCanvasInner() {
         onMoveEnd={onMoveEnd}
         onNodeDragStart={onNodeDragStart}
         onPaneClick={onPaneClick}
+        onInit={onInit}
         multiSelectionKeyCode="Shift"
         nodeTypes={nodeTypes}
-        defaultViewport={viewport}
         minZoom={0.1}
         maxZoom={2}
-        fitView={false}
+        fitView
         snapToGrid
         snapGrid={[20, 20]}
         deleteKeyCode={['Backspace', 'Delete']}
