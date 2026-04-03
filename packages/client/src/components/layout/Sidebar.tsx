@@ -63,6 +63,22 @@ export function Sidebar() {
     )
   }, [sessions, searchQuery])
 
+  // プロジェクト別にセッションをグループ化
+  const sessionsByProject = useMemo(() => {
+    const grouped = new Map<string, Session[]>()
+    const unassigned: Session[] = []
+    for (const s of filteredSessions) {
+      if (s.projectId) {
+        const list = grouped.get(s.projectId) || []
+        list.push(s)
+        grouped.set(s.projectId, list)
+      } else {
+        unassigned.push(s)
+      }
+    }
+    return { grouped, unassigned }
+  }, [filteredSessions])
+
   const handleCreate = async () => {
     if (!newName.trim() || !newRepoPath.trim()) return
     try {
@@ -113,17 +129,29 @@ export function Sidebar() {
   const handleProjectClick = async (project: { id: string; name: string; repoPath: string }) => {
     if (creatingProjectId) return // 二重クリック防止
     // プロジェクトに紐づく既存セッションを探す
-    const existing = sessions.find(s => s.projectId === project.id && s.status === 'active')
+    const existing = sessions.find(s => s.projectId === project.id)
     if (existing) {
       handleSessionClick(existing)
       return
     }
     // 存在しなければ新規セッション作成
+    await handleAddSessionToProject(project)
+  }
+
+  // プロジェクトに新規セッションを追加（worktree自動分離）
+  const handleAddSessionToProject = async (project: { id: string; name: string; repoPath: string }) => {
+    if (creatingProjectId) return
     setCreatingProjectId(project.id)
     try {
+      // 同プロジェクトの既存セッション数から連番を生成
+      const existingCount = sessions.filter(s => s.projectId === project.id).length
+      const sessionName = existingCount === 0
+        ? project.name
+        : `${project.name}-${existingCount + 1}`
       const session = await createSession({
-        name: project.name,
+        name: sessionName,
         repoPath: project.repoPath,
+        useWorktree: true,
       })
       await assignProject(session.id, project.id)
       addPanel(session.id)
@@ -297,75 +325,106 @@ export function Sidebar() {
           </div>
         )}
 
-        {/* 全セッションセクション */}
+        {/* セッション一覧（プロジェクト別グループ化） */}
         <div>
           <div className="px-3 py-1.5 text-[10px] font-semibold text-text-secondary uppercase tracking-wider">
-            全セッション
+            セッション
             <span className="text-text-muted ml-1">{filteredSessions.length}</span>
           </div>
+
           {filteredSessions.length === 0 ? (
             <p className="px-3 py-4 text-xs text-text-muted text-center">
               {searchQuery ? '一致するセッションなし' : 'セッションなし'}
             </p>
           ) : (
-            <LayoutGroup>
-              <AnimatePresence mode="popLayout">
-                {filteredSessions.map(session => {
-                  // お気に入りフィルターON時、非お気に入りはフェードアウト
-                  const isVisible = !favoritesOnly || session.isFavorite
-                  if (!isVisible) return null
-                  return (
-                    <motion.div
-                      key={session.id}
-                      layout
-                      variants={favoritesOnly ? gatherVariants : fadeOutVariants}
-                      initial={favoritesOnly ? 'initial' : 'visible'}
-                      animate={favoritesOnly ? 'animate' : 'visible'}
-                      exit="hidden"
-                    >
+            <>
+              {/* プロジェクト別グループ */}
+              {projects.map(project => {
+                const projectSessions = sessionsByProject.grouped.get(project.id)
+                if (!projectSessions || projectSessions.length === 0) return null
+                return (
+                  <div key={project.id} className="mb-1">
+                    <div className="flex items-center px-3 py-1 hover:bg-surface-2 transition-colors">
+                      <span
+                        className="w-2 h-2 rounded-sm flex-shrink-0 mr-1.5"
+                        style={{ backgroundColor: project.color }}
+                      />
+                      <span
+                        className="text-[10px] font-semibold text-text-secondary flex-1 truncate cursor-pointer"
+                        onClick={() => handleProjectClick(project)}
+                      >
+                        {project.name}
+                        <span className="text-text-muted ml-1">{projectSessions.length}</span>
+                      </span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleAddSessionToProject(project) }}
+                        className="w-4 h-4 flex items-center justify-center text-text-muted hover:text-accent text-[10px] rounded hover:bg-surface-3 transition-colors"
+                        title={`${project.name} に新規セッション追加`}
+                      >
+                        +
+                      </button>
+                    </div>
+                    {projectSessions.map(session => {
+                      const isVisible = !favoritesOnly || session.isFavorite
+                      if (!isVisible) return null
+                      return (
+                        <div key={session.id} className="pl-3">
+                          <SessionItem
+                            session={session}
+                            isOnBoard={boardNodes.some(n => n.sessionId === session.id)}
+                            projectColor={project.color}
+                            onClick={() => handleSessionClick(session)}
+                            onToggleFavorite={() => toggleFavorite(session.id)}
+                            onReconnect={() => reconnectSession(session.id).then(() => handleSessionClick(session)).catch(e => alert(`再接続エラー: ${e}`))}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+
+              {/* プロジェクト未割り当て */}
+              {sessionsByProject.unassigned.length > 0 && (
+                <div className="mb-1">
+                  <div className="px-3 py-1 text-[10px] font-semibold text-text-muted">
+                    未割り当て
+                    <span className="ml-1">{sessionsByProject.unassigned.length}</span>
+                  </div>
+                  {sessionsByProject.unassigned.map(session => {
+                    const isVisible = !favoritesOnly || session.isFavorite
+                    if (!isVisible) return null
+                    return (
                       <SessionItem
+                        key={session.id}
                         session={session}
                         isOnBoard={boardNodes.some(n => n.sessionId === session.id)}
-                        projectColor={getProjectColor(session.projectId)}
+                        projectColor={null}
                         onClick={() => handleSessionClick(session)}
                         onToggleFavorite={() => toggleFavorite(session.id)}
                         onReconnect={() => reconnectSession(session.id).then(() => handleSessionClick(session)).catch(e => alert(`再接続エラー: ${e}`))}
                       />
-                    </motion.div>
-                  )
-                })}
-              </AnimatePresence>
-            </LayoutGroup>
+                    )
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
 
-        {/* プロジェクトセクション */}
+        {/* プロジェクト管理セクション */}
         <div className="border-t border-border mt-1">
-          <button
-            onClick={() => setProjectsCollapsed(!projectsCollapsed)}
-            className="w-full text-left px-3 py-1.5 text-[10px] font-semibold text-text-secondary uppercase tracking-wider hover:bg-surface-2 transition-colors flex items-center gap-1"
-          >
-            <span className="text-[8px]">{projectsCollapsed ? '▶' : '▼'}</span>
-            プロジェクト
-            <span className="text-text-muted ml-auto">{projects.length}</span>
-          </button>
+          <div className="flex items-center">
+            <button
+              onClick={() => setProjectsCollapsed(!projectsCollapsed)}
+              className="flex-1 text-left px-3 py-1.5 text-[10px] font-semibold text-text-secondary uppercase tracking-wider hover:bg-surface-2 transition-colors flex items-center gap-1"
+            >
+              <span className="text-[8px]">{projectsCollapsed ? '▶' : '▼'}</span>
+              プロジェクト管理
+            </button>
+          </div>
           {!projectsCollapsed && (
             <>
-              {projects.map(project => (
-                <div
-                  key={project.id}
-                  onClick={() => handleProjectClick(project)}
-                  className={`flex items-center gap-2 px-3 py-1.5 text-xs text-text-primary hover:bg-surface-2 transition-colors cursor-pointer ${creatingProjectId === project.id ? 'opacity-50' : ''}`}
-                >
-                  <span
-                    className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
-                    style={{ backgroundColor: project.color }}
-                  />
-                  <span className="truncate">
-                    {creatingProjectId === project.id ? `${project.name} (起動中...)` : project.name}
-                  </span>
-                </div>
-              ))}
               {/* tab同期ボタン */}
               <button
                 onClick={handleTabSync}
