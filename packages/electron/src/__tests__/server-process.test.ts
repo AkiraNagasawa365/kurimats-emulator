@@ -56,7 +56,7 @@ describe('ServerProcessManager', () => {
 
       expect(mockSpawn).toHaveBeenCalledWith(
         'npx',
-        ['tsx', 'src/index.ts'],
+        ['tsx', 'watch', 'src/index.ts'],
         expect.objectContaining({
           cwd: '/test/packages/server',
           stdio: 'pipe',
@@ -71,7 +71,7 @@ describe('ServerProcessManager', () => {
 
       expect(mockSpawn).toHaveBeenCalledWith(
         'npx',
-        ['tsx', 'src/index.ts'],
+        ['tsx', 'watch', 'src/index.ts'],
         expect.objectContaining({
           env: expect.objectContaining({ PORT: '3001' }),
         })
@@ -84,7 +84,7 @@ describe('ServerProcessManager', () => {
 
       expect(mockSpawn).toHaveBeenCalledWith(
         'npx',
-        ['tsx', 'src/index.ts'],
+        ['tsx', 'watch', 'src/index.ts'],
         expect.objectContaining({
           env: expect.objectContaining({ PORT: '4000' }),
         })
