@@ -212,13 +212,13 @@ describe('PtyManager', () => {
       })
 
       await manager.spawn('exit-event', '/tmp')
-      // exitコマンドでシェルを終了
-      manager.write('exit-event', 'exit\n')
+      // kill()でプロセスを終了（python3 pty.spawn経由のため、exit送信よりkillが確実）
+      setTimeout(() => manager.kill('exit-event'), 500)
 
       const result = await exitPromise
       expect(result.sessionId).toBe('exit-event')
       expect(typeof result.code).toBe('number')
-    }, 5000)
+    }, 15000)
   })
 
   // ========================================

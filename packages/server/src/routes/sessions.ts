@@ -117,7 +117,6 @@ export function createSessionsRouter(
         // ローカルPTYセッション: シェルを起動し、claudeを自動実行
         const shell = process.env.SHELL || '/bin/zsh'
         await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
-        // シェル出力を監視して準備完了後にclaudeを実行
         waitForShellReady(session.id, ptyManager, sshManager, false)
       }
     } catch (e) {

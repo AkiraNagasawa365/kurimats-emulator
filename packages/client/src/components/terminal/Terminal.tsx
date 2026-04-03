@@ -134,6 +134,7 @@ export function TerminalComponent({ sessionId, isActive, onFocus }: Props) {
     <div
       ref={containerRef}
       className="w-full h-full"
+      style={{ contain: 'strict' }}
       onClick={onFocus}
     />
   )

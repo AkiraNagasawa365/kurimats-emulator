@@ -204,8 +204,12 @@ export class PtyManager extends EventEmitter {
     args?: string[],
   ): void {
     const cmd = command || process.env.SHELL || '/bin/zsh'
-    const cmdArgs = args || (command ? [] : ['-i'])
-    const child = cpSpawn(cmd, cmdArgs, {
+    const cmdArgs = args || []
+
+    // python3のpty.spawnで擬似tty割り当て（node-pty利用不可時の代替）
+    // これにより、Claude Codeなどttyを要求するプログラムが正常動作する
+    const ptyScript = `import pty,sys,os;os.chdir(${JSON.stringify(cwd)});pty.spawn([${JSON.stringify(cmd)}${cmdArgs.map(a => ',' + JSON.stringify(a)).join('')}])`
+    const child = cpSpawn('python3', ['-c', ptyScript], {
       cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
