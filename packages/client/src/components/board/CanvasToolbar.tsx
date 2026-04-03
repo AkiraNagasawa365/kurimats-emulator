@@ -1,12 +1,8 @@
 import { useState } from 'react'
-import type { Project } from '@kurimats/shared'
+import type { Project, CanvasFilterCriteria } from '@kurimats/shared'
 
-/** キャンバスフィルタ状態 */
-export interface CanvasFilter {
-  favoritesOnly: boolean
-  status: 'all' | 'active' | 'disconnected' | 'terminated'
-  projectId: string | null
-}
+/** キャンバスフィルタ状態（sharedの型を再エクスポート） */
+export type CanvasFilter = CanvasFilterCriteria
 
 interface Props {
   filter: CanvasFilter

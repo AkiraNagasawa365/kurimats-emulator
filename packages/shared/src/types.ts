@@ -287,6 +287,24 @@ export interface CreateWorkspaceParams {
   name: string
 }
 
+// キャンバスフィルタ条件
+export interface CanvasFilterCriteria {
+  favoritesOnly: boolean
+  status: 'all' | SessionStatus
+  projectId: string | null
+}
+
+/** キャンバスフィルタにセッションが合致するか判定 */
+export function matchesCanvasFilter(
+  session: { isFavorite: boolean; status: string; projectId: string | null },
+  filter: CanvasFilterCriteria,
+): boolean {
+  if (filter.favoritesOnly && !session.isFavorite) return false
+  if (filter.status !== 'all' && session.status !== filter.status) return false
+  if (filter.projectId && session.projectId !== filter.projectId) return false
+  return true
+}
+
 // bookmarks.toml のブックマーク情報
 export interface TabBookmark {
   name: string

@@ -524,7 +524,11 @@ export class SessionStore {
   updateSshPreset(id: string, updates: Partial<CreateSshPresetParams>): SshPreset | null {
     const existing = this.getSshPreset(id)
     if (!existing) return null
-    const updated = { ...existing, ...updates }
+    // undefinedのフィールドは既存値を維持（スプレッドのundefined上書き防止）
+    const filtered = Object.fromEntries(
+      Object.entries(updates).filter(([, v]) => v !== undefined)
+    )
+    const updated = { ...existing, ...filtered }
     if (updates.envVars) updated.envVars = updates.envVars
     this.db.prepare(`
       UPDATE ssh_presets SET name=?, hostname=?, user=?, port=?, identity_file=?, default_cwd=?, startup_command=?, env_vars=?

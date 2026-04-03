@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, writeFile, mkdirSync, existsSync } from 'fs'
 import path from 'path'
 import { homedir } from 'os'
 import type { BoardLayoutState } from '@kurimats/shared'
@@ -31,11 +31,21 @@ export class CanvasStore {
   }
 
   /**
-   * キャンバス状態を保存（500msデバウンスはクライアント側で実施）
+   * キャンバス状態を保存（非同期、イベントループをブロックしない）
+   * 500msデバウンスはクライアント側で実施
    */
   save(state: BoardLayoutState): void {
     const data = JSON.stringify(state, null, 2)
-    writeFileSync(this.filePath, data, 'utf-8')
+    writeFile(this.filePath, data, 'utf-8', (err) => {
+      if (err) console.error('キャンバス状態保存エラー:', err)
+    })
+  }
+
+  /**
+   * キャンバス状態を同期保存（テスト用）
+   */
+  saveSync(state: BoardLayoutState): void {
+    writeFileSync(this.filePath, JSON.stringify(state, null, 2), 'utf-8')
   }
 
   /**

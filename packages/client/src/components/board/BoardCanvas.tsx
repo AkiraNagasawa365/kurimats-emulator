@@ -25,6 +25,7 @@ import { useSessionStore } from '../../stores/session-store'
 import { SessionNode, type SessionNodeData } from './SessionNode'
 import { ProjectGroupNode, type ProjectGroupNodeData } from './ProjectGroupNode'
 import { FileNode, type FileNodeData } from './FileNode'
+import { matchesCanvasFilter } from '@kurimats/shared'
 import type { BoardEdge, Session, FileTilePosition } from '@kurimats/shared'
 import { NodeContextMenu, CanvasContextMenu } from './ContextMenu'
 import { CanvasToolbar, type CanvasFilter } from './CanvasToolbar'
@@ -162,9 +163,7 @@ function BoardCanvasInner() {
       if (!session) continue
 
       // フィルタ適用: 条件に合わないノードはスキップ
-      if (canvasFilter.favoritesOnly && !session.isFavorite) continue
-      if (canvasFilter.status !== 'all' && session.status !== canvasFilter.status) continue
-      if (canvasFilter.projectId && session.projectId !== canvasFilter.projectId) continue
+      if (!matchesCanvasFilter(session, canvasFilter)) continue
 
       result.push({
         id: node.sessionId,

@@ -34,7 +34,7 @@ describe('CanvasStore（JSONファイル永続化）', () => {
       savedAt: Date.now(),
     }
 
-    store.save(state)
+    store.saveSync(state)
     const loaded = store.load()
 
     expect(loaded).not.toBeNull()
@@ -46,14 +46,14 @@ describe('CanvasStore（JSONファイル永続化）', () => {
   })
 
   it('上書き保存が正しく動作する', () => {
-    store.save({
+    store.saveSync({
       nodes: [{ sessionId: 's1', x: 0, y: 0, width: 520, height: 620 }],
       edges: [],
       viewport: { x: 0, y: 0, zoom: 1 },
       savedAt: Date.now(),
     })
 
-    store.save({
+    store.saveSync({
       nodes: [
         { sessionId: 's1', x: 100, y: 200, width: 520, height: 620 },
         { sessionId: 's2', x: 600, y: 200, width: 520, height: 620 },

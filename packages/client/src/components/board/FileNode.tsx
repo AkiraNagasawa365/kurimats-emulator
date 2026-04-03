@@ -1,6 +1,7 @@
-import { memo, useState, useEffect, useCallback } from 'react'
+import { memo, useState, useEffect, useCallback, useRef } from 'react'
 import { Handle, Position, NodeResizer, type NodeProps } from '@xyflow/react'
-import Editor from '@monaco-editor/react'
+import Editor, { type OnMount } from '@monaco-editor/react'
+import type { editor } from 'monaco-editor'
 import { filesApi } from '../../lib/api'
 
 export interface FileNodeData {
@@ -20,6 +21,30 @@ function FileNodeComponent({ data, selected }: NodeProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [modified, setModified] = useState(false)
+  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
+
+  // Monaco Editorインスタンスのdispose（メモリリーク防止）
+  useEffect(() => {
+    return () => {
+      editorRef.current?.dispose()
+    }
+  }, [])
+
+  const handleEditorMount: OnMount = useCallback((editorInstance) => {
+    editorRef.current = editorInstance
+    // Cmd+S でファイル保存
+    editorInstance.addCommand(
+      // eslint-disable-next-line no-bitwise
+      2048 | 49, // KeyMod.CtrlCmd | KeyCode.KeyS
+      () => {
+        if (modified) {
+          filesApi.save(filePath, editorInstance.getValue())
+            .then(() => setModified(false))
+            .catch(e => console.error('保存エラー:', e))
+        }
+      }
+    )
+  }, [filePath, modified])
 
   const fileName = filePath.split('/').pop() || filePath
 
@@ -116,6 +141,7 @@ function FileNodeComponent({ data, selected }: NodeProps) {
               value={content}
               language={language}
               onChange={handleEditorChange}
+              onMount={handleEditorMount}
               theme="vs-dark"
               options={{
                 readOnly: false,
