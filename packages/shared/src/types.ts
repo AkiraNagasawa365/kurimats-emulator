@@ -124,9 +124,23 @@ export interface FileNode {
   children?: FileNode[]
 }
 
+// ボードタイルの種別
+export type BoardTileType = 'session' | 'file'
+
 // ボードノード位置情報（React Flow用）
 export interface BoardNodePosition {
   sessionId: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+// ファイルタイル（キャンバス上にMonaco Editorでファイルを表示）
+export interface FileTilePosition {
+  id: string
+  filePath: string
+  language: string
   x: number
   y: number
   width: number
@@ -144,6 +158,7 @@ export interface BoardEdge {
 // ボードレイアウト永続化
 export interface BoardLayoutState {
   nodes: BoardNodePosition[]
+  fileTiles: FileTilePosition[]
   edges: BoardEdge[]
   viewport: { x: number; y: number; zoom: number }
   savedAt: number

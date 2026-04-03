@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { LayoutMode, AutoLayoutMode, BoardNodePosition, BoardEdge } from '@kurimats/shared'
+import type { LayoutMode, AutoLayoutMode, BoardNodePosition, BoardEdge, FileTilePosition } from '@kurimats/shared'
 import { layoutApi } from '../lib/api'
 import { gridLayout, flowLayout, treeLayout, findOptimalPosition, type CardRect } from '../lib/layout-engine'
 
@@ -12,6 +12,10 @@ interface PanelInfo {
 const DEFAULT_NODE_WIDTH = 520
 const DEFAULT_NODE_HEIGHT = 620
 
+// ファイルタイルのデフォルトサイズ
+const DEFAULT_FILE_TILE_WIDTH = 500
+const DEFAULT_FILE_TILE_HEIGHT = 400
+
 interface LayoutState {
   mode: LayoutMode
   panels: PanelInfo[]
@@ -22,6 +26,7 @@ interface LayoutState {
   // ボードキャンバス用
   boardNodes: BoardNodePosition[]
   boardEdges: BoardEdge[]
+  fileTiles: FileTilePosition[]
   activeSessionId: string | null
   viewport: { x: number; y: number; zoom: number }
 
@@ -48,6 +53,12 @@ interface LayoutState {
   addEdge: (edge: BoardEdge) => void
   removeEdge: (edgeId: string) => void
   setBoardEdges: (edges: BoardEdge[]) => void
+
+  // ファイルタイル用アクション
+  addFileTile: (filePath: string, language: string) => void
+  removeFileTile: (id: string) => void
+  updateFileTilePosition: (id: string, x: number, y: number) => void
+  updateFileTileSize: (id: string, width: number, height: number) => void
 }
 
 const STORAGE_KEY = 'kurimats-layout'
@@ -90,8 +101,8 @@ function persistLayout(state: { mode: LayoutMode; panels: PanelInfo[]; activePan
 
 let boardSaveTimeout: ReturnType<typeof setTimeout> | null = null
 
-function persistBoardLayout(nodes: BoardNodePosition[], edges: BoardEdge[], viewport: { x: number; y: number; zoom: number }) {
-  const data = { nodes, edges, viewport, savedAt: Date.now() }
+function persistBoardLayout(nodes: BoardNodePosition[], edges: BoardEdge[], viewport: { x: number; y: number; zoom: number }, fileTiles?: FileTilePosition[]) {
+  const data = { nodes, edges, fileTiles: fileTiles || [], viewport, savedAt: Date.now() }
   try {
     localStorage.setItem(BOARD_STORAGE_KEY, JSON.stringify(data))
   } catch {
@@ -123,7 +134,7 @@ function loadFromStorage(): Partial<LayoutState> | null {
   return null
 }
 
-function loadBoardFromStorage(): { nodes: BoardNodePosition[]; edges: BoardEdge[]; viewport: { x: number; y: number; zoom: number } } | null {
+function loadBoardFromStorage(): { nodes: BoardNodePosition[]; edges: BoardEdge[]; fileTiles: FileTilePosition[]; viewport: { x: number; y: number; zoom: number } } | null {
   try {
     const saved = localStorage.getItem(BOARD_STORAGE_KEY)
     if (saved) {
@@ -131,6 +142,7 @@ function loadBoardFromStorage(): { nodes: BoardNodePosition[]; edges: BoardEdge[
       return {
         nodes: data.nodes || [],
         edges: data.edges || [],
+        fileTiles: data.fileTiles || [],
         viewport: data.viewport || { x: 0, y: 0, zoom: 1 },
       }
     }
@@ -154,6 +166,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   // ボードキャンバス用
   boardNodes: savedBoardState?.nodes ?? [],
   boardEdges: savedBoardState?.edges ?? [],
+  fileTiles: savedBoardState?.fileTiles ?? [],
   activeSessionId: null,
   viewport: savedBoardState?.viewport ?? { x: 0, y: 0, zoom: 1 },
 
@@ -416,6 +429,51 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
 
   setBoardEdges: (edges) => {
     set({ boardEdges: edges })
-    persistBoardLayout(get().boardNodes, edges, get().viewport)
+    persistBoardLayout(get().boardNodes, edges, get().viewport, get().fileTiles)
+  },
+
+  // ファイルタイル用アクション
+  addFileTile: (filePath, language) => {
+    const { fileTiles, boardNodes } = get()
+    // 同じファイルが既に開かれている場合は追加しない
+    if (fileTiles.find(t => t.filePath === filePath)) return
+
+    // 既存タイル（セッション + ファイル）を考慮した位置計算
+    const allCards: { id: string; x: number; y: number; width: number; height: number }[] = [
+      ...boardNodes.map(n => ({ id: n.sessionId, x: n.x, y: n.y, width: n.width, height: n.height })),
+      ...fileTiles.map(t => ({ id: t.id, x: t.x, y: t.y, width: t.width, height: t.height })),
+    ]
+    const pos = findOptimalPosition(allCards, { width: DEFAULT_FILE_TILE_WIDTH, height: DEFAULT_FILE_TILE_HEIGHT }, 3000, 3000)
+
+    const newTile: FileTilePosition = {
+      id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      filePath,
+      language,
+      x: pos.x,
+      y: pos.y,
+      width: DEFAULT_FILE_TILE_WIDTH,
+      height: DEFAULT_FILE_TILE_HEIGHT,
+    }
+    const newFileTiles = [...fileTiles, newTile]
+    set({ fileTiles: newFileTiles })
+    persistBoardLayout(get().boardNodes, get().boardEdges, get().viewport, newFileTiles)
+  },
+
+  removeFileTile: (id) => {
+    const fileTiles = get().fileTiles.filter(t => t.id !== id)
+    set({ fileTiles })
+    persistBoardLayout(get().boardNodes, get().boardEdges, get().viewport, fileTiles)
+  },
+
+  updateFileTilePosition: (id, x, y) => {
+    const fileTiles = get().fileTiles.map(t => t.id === id ? { ...t, x, y } : t)
+    set({ fileTiles })
+    persistBoardLayout(get().boardNodes, get().boardEdges, get().viewport, fileTiles)
+  },
+
+  updateFileTileSize: (id, width, height) => {
+    const fileTiles = get().fileTiles.map(t => t.id === id ? { ...t, width, height } : t)
+    set({ fileTiles })
+    persistBoardLayout(get().boardNodes, get().boardEdges, get().viewport, fileTiles)
   },
 }))
