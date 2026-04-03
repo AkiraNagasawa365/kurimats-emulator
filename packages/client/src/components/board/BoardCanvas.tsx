@@ -161,6 +161,7 @@ function BoardCanvasInner() {
           width: node.width,
           height: node.height,
         },
+        selected: node.sessionId === activeSessionId,
         dragHandle: '.drag-handle',
         zIndex: 1,
       })
@@ -188,9 +189,14 @@ function BoardCanvasInner() {
   const [nodes, setNodes] = useNodesState(flowNodes)
   const [edges, setEdges] = useEdgesState(flowEdges)
 
-  // flowNodesが変更されたらnodesを更新
+  // リサイズ中フラグ（useEffectのsync抑制用）
+  const isResizingRef = useRef(false)
+
+  // flowNodesが変更されたらnodesを更新（リサイズ中は抑制）
   useEffect(() => {
-    setNodes(flowNodes)
+    if (!isResizingRef.current) {
+      setNodes(flowNodes)
+    }
   }, [flowNodes, setNodes])
 
   // flowEdgesが変更されたらedgesを更新
@@ -297,16 +303,22 @@ function BoardCanvasInner() {
 
   // リサイズ時のサイズ永続化
   const onNodesChangeWithResize = useCallback((changes: NodeChange[]) => {
-    onNodesChange(changes)
-
+    // リサイズ中かどうかを検出
     for (const change of changes) {
-      if (change.type === 'dimensions' && change.dimensions && change.dimensions.width && change.dimensions.height) {
-        // リサイズによるサイズ変更を永続化（resizing完了時のみ）
-        if ('resizing' in change && change.resizing === false) {
-          updateNodeSize(change.id, change.dimensions.width, change.dimensions.height)
+      if (change.type === 'dimensions' && 'resizing' in change) {
+        if (change.resizing) {
+          isResizingRef.current = true
+        } else {
+          isResizingRef.current = false
+          // リサイズ完了時にサイズを永続化
+          if (change.dimensions?.width && change.dimensions?.height) {
+            updateNodeSize(change.id, change.dimensions.width, change.dimensions.height)
+          }
         }
       }
     }
+
+    onNodesChange(changes)
   }, [onNodesChange, updateNodeSize])
 
   // ビューポート変更を処理

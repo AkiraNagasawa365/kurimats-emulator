@@ -26,19 +26,8 @@ function SessionNodeComponent({ data }: NodeProps) {
   const { openOverlay } = useOverlayStore()
 
   return (
-    <div
-      className={`flex flex-col rounded-lg overflow-hidden shadow-lg border-2 transition-shadow ${
-        isActive ? 'border-accent shadow-accent/20' : 'border-border shadow-md'
-      }`}
-      style={{
-        width: '100%',
-        height: '100%',
-        // プロジェクトカラーの枠線
-        ...(projectColor ? { borderColor: projectColor, borderWidth: '2px' } : {}),
-      }}
-      onClick={onFocus}
-    >
-      {/* リサイズハンドル */}
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      {/* リサイズハンドル（overflow-hiddenの外に配置） */}
       <NodeResizer
         minWidth={300}
         minHeight={200}
@@ -46,6 +35,18 @@ function SessionNodeComponent({ data }: NodeProps) {
         handleClassName="!w-2.5 !h-2.5 !bg-accent !border-2 !border-white !rounded-sm"
         isVisible={isActive}
       />
+      <div
+        className={`flex flex-col rounded-lg overflow-hidden shadow-lg border-2 transition-shadow ${
+          isActive ? 'border-accent shadow-accent/20' : 'border-border shadow-md'
+        }`}
+        style={{
+          width: '100%',
+          height: '100%',
+          // プロジェクトカラーの枠線
+          ...(projectColor ? { borderColor: projectColor, borderWidth: '2px' } : {}),
+        }}
+        onClick={onFocus}
+      >
       {/* ドラッグハンドル兼ヘッダー */}
       <div className="drag-handle cursor-grab active:cursor-grabbing">
         <div className="flex items-center">
@@ -133,6 +134,7 @@ function SessionNodeComponent({ data }: NodeProps) {
         id="top"
         className="!w-3 !h-3 !bg-accent !border-2 !border-white hover:!bg-blue-400 !transition-colors"
       />
+      </div>
     </div>
   )
 }
