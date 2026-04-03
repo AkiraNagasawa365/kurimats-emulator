@@ -13,6 +13,7 @@ interface SessionState {
   deleteSession: (id: string) => Promise<void>
   toggleFavorite: (id: string) => Promise<void>
   assignProject: (sessionId: string, projectId: string | null) => Promise<void>
+  renameSession: (id: string, name: string) => Promise<void>
 
   reconnectSession: (id: string) => Promise<void>
 
@@ -71,6 +72,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       })
     } catch (e) {
       console.error('プロジェクト割り当てエラー:', e)
+    }
+  },
+
+  renameSession: async (id, name) => {
+    try {
+      const { session } = await sessionsApi.rename(id, name)
+      set({
+        sessions: get().sessions.map(s =>
+          s.id === id ? session : s
+        ),
+      })
+    } catch (e) {
+      console.error('セッション名変更エラー:', e)
     }
   },
 

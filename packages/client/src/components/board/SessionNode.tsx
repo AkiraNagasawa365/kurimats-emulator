@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { Handle, Position, type NodeProps } from '@xyflow/react'
+import { Handle, Position, NodeResizer, type NodeProps } from '@xyflow/react'
 import type { Session } from '@kurimats/shared'
 import { TerminalComponent } from '../terminal/Terminal'
 import { TerminalHeader } from '../terminal/TerminalHeader'
@@ -38,6 +38,14 @@ function SessionNodeComponent({ data }: NodeProps) {
       }}
       onClick={onFocus}
     >
+      {/* リサイズハンドル */}
+      <NodeResizer
+        minWidth={300}
+        minHeight={200}
+        lineClassName="!border-accent/30 hover:!border-accent"
+        handleClassName="!w-2.5 !h-2.5 !bg-accent !border-2 !border-white !rounded-sm"
+        isVisible={isActive}
+      />
       {/* ドラッグハンドル兼ヘッダー */}
       <div className="drag-handle cursor-grab active:cursor-grabbing">
         <div className="flex items-center">

@@ -36,6 +36,11 @@ export const sessionsApi = {
     request<{ sessionId: string; lines: string[] }>(`/sessions/${id}/preview?lines=${lines}`),
   reconnect: (id: string) =>
     request<{ ok: boolean; session: Session }>(`/sessions/${id}/reconnect`, { method: 'POST' }),
+  rename: (id: string, name: string) =>
+    request<{ ok: boolean; session: Session }>(`/sessions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
 }
 
 // ファイルAPI
