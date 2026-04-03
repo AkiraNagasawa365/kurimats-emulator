@@ -126,11 +126,11 @@ export function CommandPalette() {
       onClick={close}
     >
       {/* 背景オーバーレイ */}
-      <div className="absolute inset-0 bg-black/10" />
+      <div className="absolute inset-0 bg-black/40" />
 
       {/* パレット本体 */}
       <div
-        className="relative w-full max-w-[600px] bg-white rounded-lg shadow-2xl border border-border overflow-hidden animate-slide-down"
+        className="relative w-full max-w-[600px] bg-surface-1 rounded-lg shadow-2xl border border-border overflow-hidden animate-slide-down"
         style={{ maxHeight: '60vh' }}
         onClick={e => e.stopPropagation()}
       >

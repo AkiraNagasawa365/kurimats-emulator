@@ -32,7 +32,7 @@ function SessionNodeComponent({ data }: NodeProps) {
         minWidth={300}
         minHeight={200}
         lineClassName="!border-accent/30 hover:!border-accent"
-        handleClassName="!w-2.5 !h-2.5 !bg-accent !border-2 !border-white !rounded-sm"
+        handleClassName="!w-2.5 !h-2.5 !bg-accent !border-2 !border-surface-0 !rounded-sm"
         isVisible={isActive}
       />
       <div
@@ -96,7 +96,7 @@ function SessionNodeComponent({ data }: NodeProps) {
               <button
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => { e.stopPropagation(); onReconnect() }}
-                className="px-4 py-2 text-sm bg-yellow-600 hover:bg-yellow-500 text-white rounded transition-colors cursor-pointer"
+                className="px-4 py-2 text-sm bg-yellow-600 hover:bg-yellow-500 text-surface-0 rounded transition-colors cursor-pointer"
               >
                 再接続
               </button>
@@ -115,24 +115,24 @@ function SessionNodeComponent({ data }: NodeProps) {
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-3 !h-3 !bg-accent !border-2 !border-white hover:!bg-blue-400 !transition-colors"
+        className="!w-3 !h-3 !bg-accent !border-2 !border-surface-0 hover:!bg-blue-400 !transition-colors"
       />
       <Handle
         type="target"
         position={Position.Left}
-        className="!w-3 !h-3 !bg-accent !border-2 !border-white hover:!bg-blue-400 !transition-colors"
+        className="!w-3 !h-3 !bg-accent !border-2 !border-surface-0 hover:!bg-blue-400 !transition-colors"
       />
       <Handle
         type="source"
         position={Position.Bottom}
         id="bottom"
-        className="!w-3 !h-3 !bg-accent !border-2 !border-white hover:!bg-blue-400 !transition-colors"
+        className="!w-3 !h-3 !bg-accent !border-2 !border-surface-0 hover:!bg-blue-400 !transition-colors"
       />
       <Handle
         type="target"
         position={Position.Top}
         id="top"
-        className="!w-3 !h-3 !bg-accent !border-2 !border-white hover:!bg-blue-400 !transition-colors"
+        className="!w-3 !h-3 !bg-accent !border-2 !border-surface-0 hover:!bg-blue-400 !transition-colors"
       />
       </div>
     </div>

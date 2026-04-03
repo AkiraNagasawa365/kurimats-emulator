@@ -10,7 +10,7 @@ export function StatusBar() {
   const activeSessions = sessions.filter(s => s.status === 'active')
 
   return (
-    <div className="h-7 bg-white border-t border-border flex items-center px-3 text-[11px] text-text-secondary gap-4">
+    <div className="h-7 bg-surface-1 border-t border-border flex items-center px-3 text-[11px] text-text-secondary gap-4">
       <span className="font-medium text-text-primary">Kurimats Emulator</span>
       <span>セッション: {activeSessions.length}/{sessions.length}</span>
       <span>レイアウト: {mode}</span>

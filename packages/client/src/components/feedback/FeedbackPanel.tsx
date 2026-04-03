@@ -50,9 +50,9 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
 
   const priorityColor = (p: FeedbackPriority) => {
     switch (p) {
-      case 'high': return 'bg-red-100 text-red-700'
-      case 'medium': return 'bg-yellow-100 text-yellow-700'
-      case 'low': return 'bg-green-100 text-green-700'
+      case 'high': return 'bg-red-900/30 text-red-400'
+      case 'medium': return 'bg-yellow-900/30 text-yellow-400'
+      case 'low': return 'bg-green-900/30 text-green-400'
     }
   }
 
@@ -67,7 +67,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-white rounded-lg shadow-xl w-[640px] max-h-[80vh] flex flex-col"
+        className="bg-surface-1 rounded-lg shadow-xl w-[640px] max-h-[80vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* ヘッダー */}
@@ -88,7 +88,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
             placeholder="タイトル"
             value={title}
             onChange={e => setTitle(e.target.value)}
-            className="w-full px-3 py-2 text-sm bg-white border border-border rounded text-text-primary placeholder-text-muted focus:border-accent outline-none"
+            className="w-full px-3 py-2 text-sm bg-surface-2 border border-border rounded text-text-primary placeholder-text-muted focus:border-accent outline-none"
             data-testid="feedback-title-input"
             autoFocus
           />
@@ -97,7 +97,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
             value={detail}
             onChange={e => setDetail(e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 text-sm bg-white border border-border rounded text-text-primary placeholder-text-muted focus:border-accent outline-none resize-none"
+            className="w-full px-3 py-2 text-sm bg-surface-2 border border-border rounded text-text-primary placeholder-text-muted focus:border-accent outline-none resize-none"
             data-testid="feedback-detail-input"
           />
           <div className="flex gap-3">
@@ -109,7 +109,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
               <select
                 value={category}
                 onChange={e => setCategory(e.target.value as FeedbackCategory)}
-                className="w-full px-2.5 py-1.5 text-xs bg-white border border-border rounded text-text-primary outline-none focus:border-accent"
+                className="w-full px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary outline-none focus:border-accent"
                 data-testid="feedback-category-select"
               >
                 {(Object.entries(FEEDBACK_CATEGORY_LABELS) as [FeedbackCategory, string][]).map(([value, label]) => (
@@ -125,7 +125,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
               <select
                 value={priority}
                 onChange={e => setPriority(e.target.value as FeedbackPriority)}
-                className="w-full px-2.5 py-1.5 text-xs bg-white border border-border rounded text-text-primary outline-none focus:border-accent"
+                className="w-full px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary outline-none focus:border-accent"
                 data-testid="feedback-priority-select"
               >
                 {(Object.entries(FEEDBACK_PRIORITY_LABELS) as [FeedbackPriority, string][]).map(([value, label]) => (
@@ -138,7 +138,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="w-full px-3 py-2 text-sm bg-accent hover:bg-accent-hover text-white rounded transition-colors font-medium disabled:opacity-50"
+            className="w-full px-3 py-2 text-sm bg-accent hover:bg-accent-hover text-surface-0 rounded transition-colors font-medium disabled:opacity-50"
             data-testid="feedback-submit-button"
           >
             {submitting ? '送信中...' : '送信'}

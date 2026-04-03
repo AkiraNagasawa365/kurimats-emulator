@@ -27,7 +27,8 @@ import type { BoardEdge, Session } from '@kurimats/shared'
 import { NodeContextMenu, CanvasContextMenu } from './ContextMenu'
 
 // カスタムノードタイプの登録
-const nodeTypes = {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const nodeTypes: Record<string, any> = {
   session: SessionNode,
   projectGroup: ProjectGroupNode,
 }
@@ -184,10 +185,10 @@ function BoardCanvasInner() {
       label: edge.label || '',
       type: 'smoothstep',
       animated: false,
-      style: { stroke: '#6b7280', strokeWidth: 2 },
+      style: { stroke: '#2dd4bf', strokeWidth: 2 },
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        color: '#6b7280',
+        color: '#2dd4bf',
       },
     }))
   }, [boardEdges])
@@ -299,10 +300,10 @@ function BoardCanvasInner() {
       id: newEdge.id,
       type: 'smoothstep',
       animated: false,
-      style: { stroke: '#6b7280', strokeWidth: 2 },
+      style: { stroke: '#2dd4bf', strokeWidth: 2 },
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        color: '#6b7280',
+        color: '#2dd4bf',
       },
     }, eds))
   }, [addBoardEdge, setEdges])
@@ -327,9 +328,13 @@ function BoardCanvasInner() {
     onNodesChange(changes)
   }, [onNodesChange, updateNodeSize])
 
-  // ビューポート変更を処理
+  // ビューポート変更を処理（ズームインジケーター付き）
   const onMoveEnd = useCallback((_event: unknown, vp: Viewport) => {
     setViewport({ x: vp.x, y: vp.y, zoom: vp.zoom })
+    // ズームインジケーター表示
+    setZoomIndicator(Math.round(vp.zoom * 100))
+    if (zoomTimerRef.current) clearTimeout(zoomTimerRef.current)
+    zoomTimerRef.current = setTimeout(() => setZoomIndicator(null), 1500)
   }, [setViewport])
 
   // ドラッグ中のノードIDを記録
@@ -373,12 +378,21 @@ function BoardCanvasInner() {
     draggingNodeRef.current = null
   }, [boardNodes, sessions, updateNodePosition])
 
+  // ズームインジケーター
+  const [zoomIndicator, setZoomIndicator] = useState<number | null>(null)
+  const zoomTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
   // ペインクリック時にアクティブセッション解除
   const onPaneClick = useCallback(() => {
     setActiveSession(null)
     setNodeContextMenu(null)
     setCanvasContextMenu(null)
   }, [setActiveSession])
+
+  // ダブルクリック→新規セッション作成フォーム表示（Collaboratorスタイル）
+  const onPaneDoubleClick = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('focus-create-session'))
+  }, [])
 
   // ノード右クリック
   const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
@@ -462,25 +476,26 @@ function BoardCanvasInner() {
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onPaneClick={onPaneClick}
+        onDoubleClick={onPaneDoubleClick}
         onNodeContextMenu={onNodeContextMenu}
         onPaneContextMenu={onPaneContextMenu}
         onInit={onInit}
         multiSelectionKeyCode="Shift"
         nodeTypes={nodeTypes}
-        minZoom={0.1}
-        maxZoom={2}
+        minZoom={0.33}
+        maxZoom={1}
         fitView
         snapToGrid
         snapGrid={[20, 20]}
         deleteKeyCode={['Backspace', 'Delete']}
         proOptions={{ hideAttribution: true }}
-        className="bg-surface-0"
+        className="bg-surface-0 [&_.react-flow__pane]:bg-surface-0"
       >
         <Background
           variant={BackgroundVariant.Dots}
           gap={20}
           size={1.5}
-          color="#c0c4cc"
+          color="#1e2d3d"
         />
         {/* ミニマップは非表示（#48） */}
       </ReactFlow>
@@ -488,10 +503,18 @@ function BoardCanvasInner() {
       {/* ボードが空の場合のプレースホルダー */}
       {boardNodes.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="text-center text-text-muted">
-            <p className="text-lg font-medium">ボードキャンバス</p>
-            <p className="text-sm mt-2">サイドバーからセッションを作成してください</p>
+          <div className="text-center text-text-muted space-y-3">
+            <p className="text-2xl font-bold text-text-secondary">Kurimats</p>
+            <p className="text-sm">ダブルクリックでターミナルを作成</p>
+            <p className="text-xs text-text-muted">または右クリックでメニューを開く</p>
           </div>
+        </div>
+      )}
+
+      {/* ズームインジケーター */}
+      {zoomIndicator !== null && (
+        <div className="absolute bottom-4 right-4 px-3 py-1.5 bg-surface-1/90 border border-border rounded-lg text-xs text-text-secondary font-mono animate-fade-in pointer-events-none z-10">
+          {zoomIndicator}%
         </div>
       )}
 
