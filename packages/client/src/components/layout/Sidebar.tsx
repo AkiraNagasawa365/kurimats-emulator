@@ -143,18 +143,21 @@ export function Sidebar() {
     if (creatingProjectId) return
     setCreatingProjectId(project.id)
     try {
-      // 同プロジェクトの既存セッション数から連番を生成
-      const existingCount = sessions.filter(s => s.projectId === project.id).length
-      const sessionName = existingCount === 0
+      // 同プロジェクトの既存セッションIDを取得（ボード配置の兄弟ノード用）
+      const siblings = sessions.filter(s => s.projectId === project.id)
+      const siblingIds = siblings.map(s => s.id)
+      // 連番を生成
+      const sessionName = siblings.length === 0
         ? project.name
-        : `${project.name}-${existingCount + 1}`
+        : `${project.name}-${siblings.length + 1}`
       const session = await createSession({
         name: sessionName,
         repoPath: project.repoPath,
         useWorktree: true,
       })
       await assignProject(session.id, project.id)
-      addPanel(session.id)
+      // 兄弟ノードの隣に配置
+      addPanel(session.id, siblingIds)
     } catch (e) {
       alert(`セッション作成エラー: ${e}`)
     } finally {

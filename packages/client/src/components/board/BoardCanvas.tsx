@@ -110,8 +110,14 @@ function BoardCanvasInner() {
       }
     }
 
-    // プロジェクトグループ枠ノードを追加（セッションノードの後ろに配置）
+    // プロジェクトグループ枠ノードを追加（2セッション以上の場合のみ）
     for (const [projectId, group] of projectGroups) {
+      // 同プロジェクトのセッション数を数える
+      const memberCount = boardNodes.filter(n => {
+        const s = sessions.find(ss => ss.id === n.sessionId)
+        return s?.projectId === projectId
+      }).length
+      if (memberCount < 2) continue
       result.push({
         id: `group-${projectId}`,
         type: 'projectGroup',
@@ -392,21 +398,57 @@ function BoardCanvasInner() {
     setCanvasContextMenu({ x: (event as MouseEvent).clientX, y: (event as MouseEvent).clientY })
   }, [])
 
-  // 自動整列
+  // 自動整列（プロジェクト別にグループ化して配置）
   const handleAutoLayout = useCallback(() => {
     if (boardNodes.length === 0) return
-    const nodeCount = boardNodes.length
-    const cols = Math.ceil(Math.sqrt(nodeCount))
     const gap = 40
+    const groupGap = 80
     const nodeW = 520
     const nodeH = 620
-    const newNodes = boardNodes.map((n, i) => ({
-      ...n,
-      x: (i % cols) * (nodeW + gap),
-      y: Math.floor(i / cols) * (nodeH + gap),
-    }))
+
+    // プロジェクト別にグループ化
+    const groups = new Map<string, string[]>() // projectId → sessionId[]
+    const unassigned: string[] = []
+    for (const n of boardNodes) {
+      const session = sessions.find(s => s.id === n.sessionId)
+      const pid = session?.projectId
+      if (pid) {
+        const list = groups.get(pid) || []
+        list.push(n.sessionId)
+        groups.set(pid, list)
+      } else {
+        unassigned.push(n.sessionId)
+      }
+    }
+
+    const posMap = new Map<string, { x: number; y: number }>()
+    let currentY = 0
+
+    // プロジェクト別に横に並べる
+    for (const [, memberIds] of groups) {
+      for (let i = 0; i < memberIds.length; i++) {
+        posMap.set(memberIds[i], {
+          x: i * (nodeW + gap),
+          y: currentY,
+        })
+      }
+      currentY += nodeH + groupGap
+    }
+    // 未割り当て
+    for (let i = 0; i < unassigned.length; i++) {
+      const cols = Math.ceil(Math.sqrt(unassigned.length))
+      posMap.set(unassigned[i], {
+        x: (i % cols) * (nodeW + gap),
+        y: currentY + Math.floor(i / cols) * (nodeH + gap),
+      })
+    }
+
+    const newNodes = boardNodes.map(n => {
+      const pos = posMap.get(n.sessionId)
+      return pos ? { ...n, x: pos.x, y: pos.y } : n
+    })
     setBoardNodes(newNodes)
-  }, [boardNodes, setBoardNodes])
+  }, [boardNodes, sessions, setBoardNodes])
 
   return (
     <div className="w-full h-full">

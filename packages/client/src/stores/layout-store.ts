@@ -29,7 +29,7 @@ interface LayoutState {
   assignSession: (panelIndex: number, sessionId: string) => void
   removeSession: (sessionId: string) => void
   setActivePanel: (index: number) => void
-  addPanel: (sessionId: string) => void
+  addPanel: (sessionId: string, siblingSessionIds?: string[]) => void
   loadSavedLayout: () => Promise<void>
   setAutoLayoutMode: (mode: AutoLayoutMode) => void
   autoArrange: (containerWidth: number, containerHeight: number) => CardRect[]
@@ -39,7 +39,7 @@ interface LayoutState {
   setActiveSession: (sessionId: string | null) => void
   updateNodePosition: (sessionId: string, x: number, y: number) => void
   updateNodeSize: (sessionId: string, width: number, height: number) => void
-  addBoardNode: (sessionId: string) => void
+  addBoardNode: (sessionId: string, siblingSessionIds?: string[]) => void
   removeBoardNode: (sessionId: string) => void
   setViewport: (viewport: { x: number; y: number; zoom: number }) => void
   setBoardNodes: (nodes: BoardNodePosition[]) => void
@@ -197,34 +197,12 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     persistLayout({ ...get(), activePanelIndex: index })
   },
 
-  addPanel: (sessionId) => {
+  addPanel: (sessionId, siblingSessionIds?: string[]) => {
     const { panels, mode, boardNodes } = get()
 
-    // ボードノードも追加
+    // ボードノードも追加（兄弟ノード指定があれば近くに配置）
     if (!boardNodes.find(n => n.sessionId === sessionId)) {
-      const existingCards: CardRect[] = boardNodes.map(n => ({
-        id: n.sessionId,
-        x: n.x,
-        y: n.y,
-        width: n.width,
-        height: n.height,
-      }))
-      const pos = findOptimalPosition(
-        existingCards,
-        { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT },
-        3000, // 仮想キャンバス幅
-        3000, // 仮想キャンバス高さ
-      )
-      const newNode: BoardNodePosition = {
-        sessionId,
-        x: pos.x,
-        y: pos.y,
-        width: DEFAULT_NODE_WIDTH,
-        height: DEFAULT_NODE_HEIGHT,
-      }
-      const newBoardNodes = [...boardNodes, newNode]
-      set({ boardNodes: newBoardNodes, activeSessionId: sessionId })
-      persistBoardLayout(newBoardNodes, get().boardEdges, get().viewport)
+      get().addBoardNode(sessionId, siblingSessionIds)
     } else {
       set({ activeSessionId: sessionId })
     }
@@ -352,9 +330,11 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     persistBoardLayout(boardNodes, get().boardEdges, get().viewport)
   },
 
-  addBoardNode: (sessionId) => {
+  addBoardNode: (sessionId, siblingSessionIds?: string[]) => {
     const { boardNodes } = get()
     if (boardNodes.find(n => n.sessionId === sessionId)) return
+
+    let pos: { x: number; y: number }
     const existingCards: CardRect[] = boardNodes.map(n => ({
       id: n.sessionId,
       x: n.x,
@@ -362,12 +342,27 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       width: n.width,
       height: n.height,
     }))
-    const pos = findOptimalPosition(
-      existingCards,
-      { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT },
-      3000,
-      3000,
-    )
+
+    // 兄弟ノードがある場合、一番右のノードの隣に配置
+    const siblings = siblingSessionIds
+      ? boardNodes.filter(n => siblingSessionIds.includes(n.sessionId))
+      : []
+    if (siblings.length > 0) {
+      const rightmost = siblings.reduce((r, n) => n.x + n.width > r.x + r.width ? n : r)
+      const candidateX = rightmost.x + rightmost.width + 40
+      const candidateY = rightmost.y
+      // 候補位置が他ノードと重なっていないか簡易チェック
+      const overlaps = existingCards.some(c =>
+        candidateX < c.x + c.width && candidateX + DEFAULT_NODE_WIDTH > c.x &&
+        candidateY < c.y + c.height && candidateY + DEFAULT_NODE_HEIGHT > c.y
+      )
+      pos = overlaps
+        ? findOptimalPosition(existingCards, { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT }, 3000, 3000)
+        : { x: candidateX, y: candidateY }
+    } else {
+      pos = findOptimalPosition(existingCards, { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT }, 3000, 3000)
+    }
+
     const newNode: BoardNodePosition = {
       sessionId,
       x: pos.x,
