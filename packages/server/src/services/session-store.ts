@@ -6,20 +6,24 @@ import type { Session, CreateSessionParams, Project, CreateProjectParams, Layout
 import { v4 as uuidv4 } from 'uuid'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DB_PATH = path.join(__dirname, '..', '..', 'data', 'sessions.db')
+const DEFAULT_DB_PATH = path.join(__dirname, '..', '..', 'data', 'sessions.db')
 
 /**
  * SQLiteベースのセッション永続化
+ * @param dbPath DBファイルパス（省略時はdata/sessions.db、':memory:'でインメモリ）
  */
 export class SessionStore {
   private db: Database.Database
 
-  constructor() {
-    // dataディレクトリを確保
-    const dir = path.dirname(DB_PATH)
-    mkdirSync(dir, { recursive: true })
+  constructor(dbPath?: string) {
+    const resolvedPath = dbPath ?? DEFAULT_DB_PATH
 
-    this.db = new Database(DB_PATH)
+    if (resolvedPath !== ':memory:') {
+      const dir = path.dirname(resolvedPath)
+      mkdirSync(dir, { recursive: true })
+    }
+
+    this.db = new Database(resolvedPath)
     this.db.pragma('journal_mode = WAL')
     this.migrate()
   }

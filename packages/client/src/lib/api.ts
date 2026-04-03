@@ -34,6 +34,8 @@ export const sessionsApi = {
     }),
   getPreview: (id: string, lines = 5) =>
     request<{ sessionId: string; lines: string[] }>(`/sessions/${id}/preview?lines=${lines}`),
+  reconnect: (id: string) =>
+    request<{ ok: boolean; session: Session }>(`/sessions/${id}/reconnect`, { method: 'POST' }),
 }
 
 // ファイルAPI

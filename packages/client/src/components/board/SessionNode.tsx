@@ -1,9 +1,9 @@
-import { memo, useEffect, useState, useCallback, useRef } from 'react'
+import { memo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import type { Session } from '@kurimats/shared'
 import { TerminalComponent } from '../terminal/Terminal'
 import { TerminalHeader } from '../terminal/TerminalHeader'
-import { sessionsApi } from '../../lib/api'
+import { useOverlayStore } from '../../stores/overlay-store'
 
 export interface SessionNodeData {
   session: Session
@@ -12,41 +12,18 @@ export interface SessionNodeData {
   onClose: () => void
   onFocus: () => void
   onToggleFavorite: () => void
+  onReconnect?: () => void
   [key: string]: unknown
 }
 
-/** プレビューの最大行数 */
-const PREVIEW_LINES = 5
-/** プレビュー更新間隔（ミリ秒） */
-const PREVIEW_INTERVAL = 3000
-
 /**
  * React Flowカスタムノード: セッションターミナルカード
- * ターミナルヘッダー + お気に入り★ + プレビュー + xterm.jsターミナルを内包
+ * ターミナルヘッダー + お気に入り★ + xterm.jsターミナルを内包
  */
 function SessionNodeComponent({ data }: NodeProps) {
-  const { session, isActive, projectColor, onClose, onFocus, onToggleFavorite } = data as unknown as SessionNodeData
-  const [previewLines, setPreviewLines] = useState<string[]>([])
-  const intervalRef = useRef<ReturnType<typeof setInterval>>()
-
-  // プレビュー取得
-  const fetchPreview = useCallback(async () => {
-    try {
-      const result = await sessionsApi.getPreview(session.id, PREVIEW_LINES)
-      setPreviewLines(result.lines)
-    } catch {
-      // プレビュー取得失敗は静かに無視
-    }
-  }, [session.id])
-
-  // 定期的にプレビューを更新
-  useEffect(() => {
-    fetchPreview()
-    intervalRef.current = setInterval(fetchPreview, PREVIEW_INTERVAL)
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
-  }, [fetchPreview])
+  const { session, isActive, projectColor, onClose, onFocus, onToggleFavorite, onReconnect } = data as unknown as SessionNodeData
+  const isDisconnected = session.status === 'disconnected'
+  const { openOverlay } = useOverlayStore()
 
   return (
     <div
@@ -76,6 +53,14 @@ function SessionNodeComponent({ data }: NodeProps) {
           >
             {session.isFavorite ? '★' : '☆'}
           </button>
+          {/* ファイルツリー📁ボタン */}
+          <button
+            onClick={(e) => { e.stopPropagation(); openOverlay('file-tree', { sessionId: session.id }) }}
+            className="flex-shrink-0 px-1.5 py-1.5 text-sm text-gray-400 hover:text-blue-400 transition-colors hover:scale-110"
+            title="ファイルツリーを開く"
+          >
+            📁
+          </button>
           <div className="flex-1 min-w-0">
             <TerminalHeader
               session={session}
@@ -93,23 +78,28 @@ function SessionNodeComponent({ data }: NodeProps) {
         )}
       </div>
 
-      {/* ターミナルプレビュー */}
-      {previewLines.length > 0 && (
-        <div className="bg-[#252526] border-b border-[#3c3c3c] px-2 py-1 max-h-24 overflow-hidden">
-          <div className="text-[10px] text-gray-500 mb-0.5">プレビュー</div>
-          <pre className="text-[11px] text-gray-300 font-mono leading-tight whitespace-pre-wrap break-all">
-            {previewLines.join('\n')}
-          </pre>
-        </div>
-      )}
-
-      {/* ターミナル本体 */}
-      <div className="flex-1 min-h-0 bg-[#1e1e1e]">
-        <TerminalComponent
-          sessionId={session.id}
-          isActive={isActive}
-          onFocus={onFocus}
-        />
+      {/* ターミナル本体 or disconnectedオーバーレイ */}
+      <div className="flex-1 min-h-0 bg-[#1e1e1e] relative">
+        {isDisconnected ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#1e1e1e] text-gray-400 gap-3 nopan nodrag">
+            <div className="text-sm">切断済み</div>
+            {onReconnect && (
+              <button
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); onReconnect() }}
+                className="px-4 py-2 text-sm bg-yellow-600 hover:bg-yellow-500 text-white rounded transition-colors cursor-pointer"
+              >
+                再接続
+              </button>
+            )}
+          </div>
+        ) : (
+          <TerminalComponent
+            sessionId={session.id}
+            isActive={isActive}
+            onFocus={onFocus}
+          />
+        )}
       </div>
 
       {/* React Flow接続ハンドル */}

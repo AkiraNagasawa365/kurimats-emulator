@@ -62,10 +62,18 @@ export function createSessionsRouter(
         // リモートSSHセッション: SshManager経由で接続・シェル起動
         await sshManager.connect(params.sshHost)
         await sshManager.spawn(session.id, params.sshHost, cwd, 120, 30)
+        // リモートでもclaude起動
+        setTimeout(() => {
+          sshManager.write(session.id, 'claude\r')
+        }, 800)
       } else {
-        // ローカルPTYセッション: シェルを起動
+        // ローカルPTYセッション: シェルを起動し、claudeを自動実行
         const shell = process.env.SHELL || '/bin/zsh'
         await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
+        // シェル初期化後にclaudeコマンドを送信
+        setTimeout(() => {
+          ptyManager.write(session.id, 'claude\r')
+        }, 800)
       }
     } catch (e) {
       console.error(`${isRemote ? 'SSH接続/リモートシェル' : 'PTY'}起動エラー:`, e)
@@ -109,6 +117,44 @@ export function createSessionsRouter(
     res.json({ ok: true })
   })
 
+  // セッション再接続（PTY再spawn）
+  router.post('/:id/reconnect', async (req, res) => {
+    const session = store.getById(req.params.id)
+    if (!session) {
+      res.status(404).json({ error: 'セッションが見つかりません' })
+      return
+    }
+
+    if (session.status !== 'disconnected') {
+      res.status(400).json({ error: '再接続はdisconnectedセッションのみ可能です' })
+      return
+    }
+
+    const cwd = session.worktreePath || session.repoPath
+
+    try {
+      if (session.isRemote && session.sshHost) {
+        await sshManager.connect(session.sshHost)
+        await sshManager.spawn(session.id, session.sshHost, cwd, 120, 30)
+        setTimeout(() => {
+          sshManager.write(session.id, 'claude\r')
+        }, 800)
+      } else {
+        const shell = process.env.SHELL || '/bin/zsh'
+        await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
+        setTimeout(() => {
+          ptyManager.write(session.id, 'claude\r')
+        }, 800)
+      }
+
+      store.updateStatus(session.id, 'active')
+      res.json({ ok: true, session: store.getById(session.id) })
+    } catch (e) {
+      console.error('セッション再接続エラー:', e)
+      res.status(500).json({ error: `再接続エラー: ${e}` })
+    }
+  })
+
   // お気に入りトグル
   router.post('/:id/favorite', (req, res) => {
     const isFavorite = store.toggleFavorite(req.params.id)
@@ -129,7 +175,13 @@ export function createSessionsRouter(
       : ptyManager.getBuffer(session.id)
 
     // ANSIエスケープシーケンスを除去して最新行を取得
-    const cleanBuffer = buffer.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '')
+    const cleanBuffer = buffer
+      .replace(/\x1b\[[?>=<]*[0-9;]*[a-zA-Z]/g, '')  // CSI: 標準 + プライベートモード (\x1b[?2026h 等)
+      .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')  // OSC: \x1b]...\x07 or \x1b]...\x1b\\
+      .replace(/\x1b[PX^_][^\x1b]*\x1b\\/g, '')  // DCS/SOS/PM/APC
+      .replace(/\x1b[()][A-Z0-9]/g, '')  // 文字セット指定
+      .replace(/\x1b[#%][0-9A-Z]/g, '')  // その他2バイトシーケンス
+      .replace(/[\x00-\x08\x0e-\x1f]/g, '')  // 制御文字（タブ・改行以外）
     const allLines = cleanBuffer.split('\n').filter(l => l.trim().length > 0)
     const previewLines = allLines.slice(-lines)
 

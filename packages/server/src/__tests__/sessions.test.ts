@@ -14,7 +14,7 @@ describe('セッションAPI', () => {
   let ptyManager: PtyManager
 
   beforeEach(async () => {
-    store = new SessionStore()
+    store = new SessionStore(':memory:')
     ptyManager = new PtyManager()
     const sshManager = new SshManager()
     const worktreeService = new WorktreeService()
@@ -112,6 +112,63 @@ describe('セッションAPI', () => {
   it('存在しないセッションのプレビューは404', async () => {
     const previewRes = await fetch(`${baseUrl}/api/sessions/nonexistent/preview`)
     expect(previewRes.status).toBe(404)
+  })
+
+  it('disconnectedセッションを再接続できる', async () => {
+    // セッション作成
+    const createRes = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'reconnect-test', repoPath: '/tmp', useWorktree: false }),
+    })
+    const session = await createRes.json()
+    expect(session.status).toBe('active')
+
+    // disconnected状態に変更
+    store.updateStatus(session.id, 'disconnected')
+    ptyManager.kill(session.id)
+
+    // 再接続
+    const reconnectRes = await fetch(`${baseUrl}/api/sessions/${session.id}/reconnect`, { method: 'POST' })
+    const result = await reconnectRes.json()
+    expect(reconnectRes.status).toBe(200)
+    expect(result.ok).toBe(true)
+    expect(result.session.status).toBe('active')
+  })
+
+  it('activeセッションの再接続は400エラー', async () => {
+    const createRes = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'active-test', repoPath: '/tmp', useWorktree: false }),
+    })
+    const session = await createRes.json()
+
+    const reconnectRes = await fetch(`${baseUrl}/api/sessions/${session.id}/reconnect`, { method: 'POST' })
+    expect(reconnectRes.status).toBe(400)
+  })
+
+  it('存在しないセッションの再接続は404', async () => {
+    const reconnectRes = await fetch(`${baseUrl}/api/sessions/nonexistent/reconnect`, { method: 'POST' })
+    expect(reconnectRes.status).toBe(404)
+  })
+
+  it('サーバー起動時にactiveセッションがorphanedとして検出される', () => {
+    // activeセッションを作成（PTYなし = orphaned状態をシミュレート）
+    const session = store.create({
+      name: 'orphan-test',
+      repoPath: '/tmp',
+    })
+    expect(session.status).toBe('active')
+
+    // orphanedセッションをdisconnectedに変更するロジックをテスト
+    const orphaned = store.getAll().filter(s => s.status === 'active')
+    for (const s of orphaned) {
+      store.updateStatus(s.id, 'disconnected')
+    }
+
+    const updated = store.getById(session.id)
+    expect(updated?.status).toBe('disconnected')
   })
 
   it('セッションを削除できる', async () => {

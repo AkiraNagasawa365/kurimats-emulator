@@ -10,7 +10,7 @@ describe('フィードバックAPI', () => {
   let store: SessionStore
 
   beforeEach(async () => {
-    store = new SessionStore()
+    store = new SessionStore(':memory:')
     // テスト前にフィードバックをクリア
     for (const fb of store.getAllFeedback()) {
       store.deleteFeedback(fb.id)

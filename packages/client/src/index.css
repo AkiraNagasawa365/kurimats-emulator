@@ -57,6 +57,11 @@ html, body, #root {
   animation: fadeIn 0.15s ease-out;
 }
 
+/* React Flowノードのvisibility:hidden上書き（全ノード常時表示） */
+.react-flow__node {
+  visibility: visible !important;
+}
+
 /* カスタムスクロールバー（白テーマ用） */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;

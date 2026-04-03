@@ -1,5 +1,5 @@
 // SSHセッション修正に伴うテスト更新 (#41)
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import express from 'express'
 import { createServer, type Server } from 'http'
 import { SessionStore } from '../services/session-store.js'
@@ -7,6 +7,14 @@ import { PtyManager } from '../services/pty-manager.js'
 import { SshManager } from '../services/ssh-manager.js'
 import { createTabRouter } from '../routes/tab.js'
 import { createLayoutRouter } from '../routes/layout.js'
+
+// bookmarks-parserをモック化してSSH接続を回避
+vi.mock('../services/bookmarks-parser.js', () => ({
+  parseBookmarksToml: vi.fn(() => [
+    { name: 'test-local-project', directory: '/tmp/test-project' },
+    { name: 'test-remote-project', directory: '/home/user/project', host: 'test-host' },
+  ]),
+}))
 
 describe('tabコマンドAPI', () => {
   let server: Server
@@ -16,9 +24,14 @@ describe('tabコマンドAPI', () => {
   let sshManager: SshManager
 
   beforeEach(async () => {
-    store = new SessionStore()
+    store = new SessionStore(':memory:')
     ptyManager = new PtyManager()
     sshManager = new SshManager()
+
+    // PtyManager/SshManagerのspawnをモック化
+    vi.spyOn(ptyManager, 'spawn').mockResolvedValue()
+    vi.spyOn(sshManager, 'connect').mockResolvedValue()
+    vi.spyOn(sshManager, 'spawn').mockResolvedValue()
 
     const app = express()
     app.use(express.json())
@@ -35,7 +48,7 @@ describe('tabコマンドAPI', () => {
   })
 
   afterEach(() => {
-    ptyManager.killAll()
+    vi.restoreAllMocks()
     store.close()
     server.close()
   })
@@ -59,7 +72,10 @@ describe('tabコマンドAPI', () => {
     expect(typeof data.created).toBe('number')
     expect(typeof data.skipped).toBe('number')
     expect(Array.isArray(data.sessions)).toBe(true)
+    // モックデータから2プロジェクト作成されるはず
+    expect(data.created).toBe(2)
   })
+
 })
 
 describe('ボードレイアウトAPI', () => {
@@ -68,7 +84,7 @@ describe('ボードレイアウトAPI', () => {
   let store: SessionStore
 
   beforeEach(async () => {
-    store = new SessionStore()
+    store = new SessionStore(':memory:')
 
     const app = express()
     app.use(express.json())
@@ -154,7 +170,7 @@ describe('SessionStore ボードレイアウト', () => {
   let store: SessionStore
 
   beforeEach(() => {
-    store = new SessionStore()
+    store = new SessionStore(':memory:')
   })
 
   afterEach(() => {
