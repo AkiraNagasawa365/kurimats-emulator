@@ -66,7 +66,7 @@ app.use('/api/worktrees', createWorktreesRouter(worktreeService))
 app.use('/api/projects', createProjectsRouter(sessionStore))
 app.use('/api/layout', createLayoutRouter(sessionStore))
 app.use('/api/tab', createTabRouter(sessionStore, ptyManager, sshManager))
-app.use('/api/ssh', createSshRouter(sshManager))
+app.use('/api/ssh', createSshRouter(sshManager, sessionStore))
 app.use('/api/feedback', createFeedbackRouter(sessionStore))
 
 // ヘルスチェック

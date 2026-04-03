@@ -70,6 +70,8 @@ export interface Project {
   name: string
   color: string // hex color like '#3b82f6'
   repoPath: string
+  sshPresetId?: string | null
+  startupTemplateId?: string | null
   createdAt: number
 }
 
@@ -106,6 +108,50 @@ export interface SshHost {
 
 // SSH接続ステータス
 export type SshConnectionStatus = 'online' | 'offline' | 'reconnecting'
+
+// SSHプリセット（プロジェクトに紐付くSSH接続設定）
+export interface SshPreset {
+  id: string
+  name: string
+  hostname: string
+  user: string
+  port: number
+  identityFile: string | null
+  defaultCwd: string
+  startupCommand: string | null
+  envVars: Record<string, string>
+  createdAt: number
+}
+
+// SSHプリセット作成パラメータ
+export interface CreateSshPresetParams {
+  name: string
+  hostname: string
+  user: string
+  port?: number
+  identityFile?: string
+  defaultCwd: string
+  startupCommand?: string
+  envVars?: Record<string, string>
+}
+
+// 起動テンプレート
+export interface StartupTemplate {
+  id: string
+  name: string
+  sshPresetId: string | null
+  commands: string[]
+  envVars: Record<string, string>
+  createdAt: number
+}
+
+// 起動テンプレート作成パラメータ
+export interface CreateStartupTemplateParams {
+  name: string
+  sshPresetId?: string
+  commands: string[]
+  envVars?: Record<string, string>
+}
 
 // Claude通知
 export interface ClaudeNotification {
@@ -158,7 +204,7 @@ export interface BoardEdge {
 // ボードレイアウト永続化
 export interface BoardLayoutState {
   nodes: BoardNodePosition[]
-  fileTiles: FileTilePosition[]
+  fileTiles?: FileTilePosition[]
   edges: BoardEdge[]
   viewport: { x: number; y: number; zoom: number }
   savedAt: number

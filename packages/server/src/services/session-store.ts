@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { mkdirSync } from 'fs'
 import { fileURLToPath } from 'url'
-import type { Session, CreateSessionParams, Project, CreateProjectParams, LayoutState, BoardLayoutState, Feedback, CreateFeedbackParams } from '@kurimats/shared'
+import type { Session, CreateSessionParams, Project, CreateProjectParams, LayoutState, BoardLayoutState, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams } from '@kurimats/shared'
 import { v4 as uuidv4 } from 'uuid'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -120,6 +120,38 @@ export class SessionStore {
         last_connected INTEGER
       );
     `)
+
+    // SSHプリセットテーブル
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS ssh_presets (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        hostname TEXT NOT NULL,
+        user TEXT NOT NULL DEFAULT 'root',
+        port INTEGER NOT NULL DEFAULT 22,
+        identity_file TEXT,
+        default_cwd TEXT NOT NULL DEFAULT '~',
+        startup_command TEXT,
+        env_vars TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL
+      );
+    `)
+
+    // 起動テンプレートテーブル
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS startup_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        ssh_preset_id TEXT,
+        commands TEXT NOT NULL DEFAULT '[]',
+        env_vars TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL
+      );
+    `)
+
+    // プロジェクトにSSHプリセット・起動テンプレート紐付け
+    try { this.db.exec('ALTER TABLE projects ADD COLUMN ssh_preset_id TEXT') } catch { /* カラム既存 */ }
+    try { this.db.exec('ALTER TABLE projects ADD COLUMN startup_template_id TEXT') } catch { /* カラム既存 */ }
   }
 
   // ==================== セッション ====================
@@ -379,6 +411,8 @@ export class SessionStore {
       name: row.name as string,
       color: row.color as string,
       repoPath: row.repo_path as string,
+      sshPresetId: (row.ssh_preset_id as string | null) ?? null,
+      startupTemplateId: (row.startup_template_id as string | null) ?? null,
       createdAt: row.created_at as number,
     }
   }
@@ -434,6 +468,133 @@ export class SessionStore {
       priority: row.priority as Feedback['priority'],
       createdAt: row.created_at as number,
     }
+  }
+
+  // ==================== SSHプリセット ====================
+
+  /** SSHプリセット作成 */
+  createSshPreset(params: CreateSshPresetParams): SshPreset {
+    const preset: SshPreset = {
+      id: uuidv4(),
+      name: params.name,
+      hostname: params.hostname,
+      user: params.user,
+      port: params.port ?? 22,
+      identityFile: params.identityFile ?? null,
+      defaultCwd: params.defaultCwd,
+      startupCommand: params.startupCommand ?? null,
+      envVars: params.envVars ?? {},
+      createdAt: Date.now(),
+    }
+    this.db.prepare(`
+      INSERT INTO ssh_presets (id, name, hostname, user, port, identity_file, default_cwd, startup_command, env_vars, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(preset.id, preset.name, preset.hostname, preset.user, preset.port, preset.identityFile, preset.defaultCwd, preset.startupCommand, JSON.stringify(preset.envVars), preset.createdAt)
+    return preset
+  }
+
+  /** 全SSHプリセット取得 */
+  getAllSshPresets(): SshPreset[] {
+    return (this.db.prepare('SELECT * FROM ssh_presets ORDER BY created_at DESC').all() as Record<string, unknown>[])
+      .map(this.mapSshPresetRow)
+  }
+
+  /** SSHプリセット取得 */
+  getSshPreset(id: string): SshPreset | null {
+    const row = this.db.prepare('SELECT * FROM ssh_presets WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    return row ? this.mapSshPresetRow(row) : null
+  }
+
+  /** SSHプリセット更新 */
+  updateSshPreset(id: string, updates: Partial<CreateSshPresetParams>): SshPreset | null {
+    const existing = this.getSshPreset(id)
+    if (!existing) return null
+    const updated = { ...existing, ...updates }
+    if (updates.envVars) updated.envVars = updates.envVars
+    this.db.prepare(`
+      UPDATE ssh_presets SET name=?, hostname=?, user=?, port=?, identity_file=?, default_cwd=?, startup_command=?, env_vars=?
+      WHERE id=?
+    `).run(updated.name, updated.hostname, updated.user, updated.port, updated.identityFile, updated.defaultCwd, updated.startupCommand, JSON.stringify(updated.envVars), id)
+    return this.getSshPreset(id)
+  }
+
+  /** SSHプリセット削除 */
+  deleteSshPreset(id: string): boolean {
+    return this.db.prepare('DELETE FROM ssh_presets WHERE id = ?').run(id).changes > 0
+  }
+
+  private mapSshPresetRow(row: Record<string, unknown>): SshPreset {
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      hostname: row.hostname as string,
+      user: row.user as string,
+      port: row.port as number,
+      identityFile: row.identity_file as string | null,
+      defaultCwd: row.default_cwd as string,
+      startupCommand: row.startup_command as string | null,
+      envVars: JSON.parse((row.env_vars as string) || '{}'),
+      createdAt: row.created_at as number,
+    }
+  }
+
+  // ==================== 起動テンプレート ====================
+
+  /** 起動テンプレート作成 */
+  createStartupTemplate(params: CreateStartupTemplateParams): StartupTemplate {
+    const template: StartupTemplate = {
+      id: uuidv4(),
+      name: params.name,
+      sshPresetId: params.sshPresetId ?? null,
+      commands: params.commands,
+      envVars: params.envVars ?? {},
+      createdAt: Date.now(),
+    }
+    this.db.prepare(`
+      INSERT INTO startup_templates (id, name, ssh_preset_id, commands, env_vars, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(template.id, template.name, template.sshPresetId, JSON.stringify(template.commands), JSON.stringify(template.envVars), template.createdAt)
+    return template
+  }
+
+  /** 全起動テンプレート取得 */
+  getAllStartupTemplates(): StartupTemplate[] {
+    return (this.db.prepare('SELECT * FROM startup_templates ORDER BY created_at DESC').all() as Record<string, unknown>[])
+      .map(this.mapStartupTemplateRow)
+  }
+
+  /** 起動テンプレート取得 */
+  getStartupTemplate(id: string): StartupTemplate | null {
+    const row = this.db.prepare('SELECT * FROM startup_templates WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    return row ? this.mapStartupTemplateRow(row) : null
+  }
+
+  /** 起動テンプレート削除 */
+  deleteStartupTemplate(id: string): boolean {
+    return this.db.prepare('DELETE FROM startup_templates WHERE id = ?').run(id).changes > 0
+  }
+
+  private mapStartupTemplateRow(row: Record<string, unknown>): StartupTemplate {
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      sshPresetId: row.ssh_preset_id as string | null,
+      commands: JSON.parse((row.commands as string) || '[]'),
+      envVars: JSON.parse((row.env_vars as string) || '{}'),
+      createdAt: row.created_at as number,
+    }
+  }
+
+  // ==================== プロジェクトSSH紐付け ====================
+
+  /** プロジェクトにSSHプリセットを紐付け */
+  setProjectSshPreset(projectId: string, sshPresetId: string | null): void {
+    this.db.prepare('UPDATE projects SET ssh_preset_id = ? WHERE id = ?').run(sshPresetId, projectId)
+  }
+
+  /** プロジェクトに起動テンプレートを紐付け */
+  setProjectStartupTemplate(projectId: string, startupTemplateId: string | null): void {
+    this.db.prepare('UPDATE projects SET startup_template_id = ? WHERE id = ?').run(startupTemplateId, projectId)
   }
 
   close(): void {

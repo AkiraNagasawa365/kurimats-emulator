@@ -1,11 +1,13 @@
 import { create } from 'zustand'
-import type { SshHost, SshConnectionStatus, ClaudeNotification } from '@kurimats/shared'
+import type { SshHost, SshConnectionStatus, ClaudeNotification, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams } from '@kurimats/shared'
 import { sshApi } from '../lib/api'
 
 interface SshState {
   hosts: SshHost[]
   statuses: Record<string, SshConnectionStatus>
   notifications: ClaudeNotification[]
+  presets: SshPreset[]
+  templates: StartupTemplate[]
   loading: boolean
   error: string | null
 
@@ -14,6 +16,17 @@ interface SshState {
   disconnectHost: (hostName: string) => Promise<void>
   fetchStatuses: () => Promise<void>
   refreshHosts: () => Promise<void>
+
+  // SSHプリセット管理
+  fetchPresets: () => Promise<void>
+  createPreset: (params: CreateSshPresetParams) => Promise<SshPreset>
+  updatePreset: (id: string, params: Partial<CreateSshPresetParams>) => Promise<void>
+  deletePreset: (id: string) => Promise<void>
+
+  // 起動テンプレート管理
+  fetchTemplates: () => Promise<void>
+  createTemplate: (params: CreateStartupTemplateParams) => Promise<StartupTemplate>
+  deleteTemplate: (id: string) => Promise<void>
 
   // 通知管理
   addNotification: (notification: ClaudeNotification) => void
@@ -28,6 +41,8 @@ export const useSshStore = create<SshState>((set, get) => ({
   hosts: [],
   statuses: {},
   notifications: [],
+  presets: [],
+  templates: [],
   loading: false,
   error: null,
 
@@ -95,6 +110,53 @@ export const useSshStore = create<SshState>((set, get) => ({
 
   clearNotifications: () => {
     set({ notifications: [] })
+  },
+
+  // SSHプリセット管理
+  fetchPresets: async () => {
+    try {
+      const presets = await sshApi.presets.list()
+      set({ presets })
+    } catch (e) {
+      console.error('SSHプリセット取得エラー:', e)
+    }
+  },
+
+  createPreset: async (params) => {
+    const preset = await sshApi.presets.create(params)
+    set({ presets: [preset, ...get().presets] })
+    return preset
+  },
+
+  updatePreset: async (id, params) => {
+    const updated = await sshApi.presets.update(id, params)
+    set({ presets: get().presets.map(p => p.id === id ? updated : p) })
+  },
+
+  deletePreset: async (id) => {
+    await sshApi.presets.delete(id)
+    set({ presets: get().presets.filter(p => p.id !== id) })
+  },
+
+  // 起動テンプレート管理
+  fetchTemplates: async () => {
+    try {
+      const templates = await sshApi.templates.list()
+      set({ templates })
+    } catch (e) {
+      console.error('起動テンプレート取得エラー:', e)
+    }
+  },
+
+  createTemplate: async (params) => {
+    const template = await sshApi.templates.create(params)
+    set({ templates: [template, ...get().templates] })
+    return template
+  },
+
+  deleteTemplate: async (id) => {
+    await sshApi.templates.delete(id)
+    set({ templates: get().templates.filter(t => t.id !== id) })
   },
 
   updateConnectionStatus: (host, status) => {
