@@ -5,6 +5,7 @@ import {
   useReactFlow,
   Background,
   BackgroundVariant,
+  MiniMap,
   useNodesState,
   useEdgesState,
   addEdge as rfAddEdge,
@@ -26,6 +27,7 @@ import { ProjectGroupNode, type ProjectGroupNodeData } from './ProjectGroupNode'
 import { FileNode, type FileNodeData } from './FileNode'
 import type { BoardEdge, Session, FileTilePosition } from '@kurimats/shared'
 import { NodeContextMenu, CanvasContextMenu } from './ContextMenu'
+import { CanvasToolbar, type CanvasFilter } from './CanvasToolbar'
 
 // カスタムノードタイプの登録
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -51,7 +53,7 @@ export function BoardCanvas() {
 }
 
 function BoardCanvasInner() {
-  const { fitView, setCenter } = useReactFlow()
+  const { fitView, setCenter, zoomIn: rfZoomIn, zoomOut: rfZoomOut } = useReactFlow()
   const prevActiveSessionRef = useRef<string | null>(null)
   const {
     boardNodes,
@@ -78,6 +80,13 @@ function BoardCanvasInner() {
   // コンテキストメニュー状態
   const [nodeContextMenu, setNodeContextMenu] = useState<{ x: number; y: number; session: Session } | null>(null)
   const [canvasContextMenu, setCanvasContextMenu] = useState<{ x: number; y: number } | null>(null)
+
+  // キャンバスフィルタ
+  const [canvasFilter, setCanvasFilter] = useState<CanvasFilter>({
+    favoritesOnly: false,
+    status: 'all',
+    projectId: null,
+  })
 
   // セッションからプロジェクトカラーを取得
   const getProjectColor = useCallback((projectId: string | null) => {
@@ -147,10 +156,15 @@ function BoardCanvasInner() {
       })
     }
 
-    // セッションノードを追加
+    // セッションノードを追加（フィルタ適用）
     for (const node of boardNodes) {
       const session = sessions.find(s => s.id === node.sessionId)
       if (!session) continue
+
+      // フィルタ適用: 条件に合わないノードはスキップ
+      if (canvasFilter.favoritesOnly && !session.isFavorite) continue
+      if (canvasFilter.status !== 'all' && session.status !== canvasFilter.status) continue
+      if (canvasFilter.projectId && session.projectId !== canvasFilter.projectId) continue
 
       result.push({
         id: node.sessionId,
@@ -201,7 +215,7 @@ function BoardCanvasInner() {
     }
 
     return result
-  }, [boardNodes, sessions, activeSessionId, projects, getProjectColor, deleteSession, removeBoardNode, setActiveSession, toggleFavorite, fileTiles, removeFileTile])
+  }, [boardNodes, sessions, activeSessionId, projects, getProjectColor, deleteSession, removeBoardNode, setActiveSession, toggleFavorite, fileTiles, removeFileTile, canvasFilter])
 
   // ボードエッジをReact Flowエッジに変換
   const flowEdges: Edge[] = useMemo(() => {
@@ -430,6 +444,23 @@ function BoardCanvasInner() {
     window.dispatchEvent(new CustomEvent('focus-create-session'))
   }, [])
 
+  // ズーム操作
+  const handleZoomIn = useCallback(() => {
+    rfZoomIn({ duration: 200 })
+  }, [rfZoomIn])
+
+  const handleZoomOut = useCallback(() => {
+    rfZoomOut({ duration: 200 })
+  }, [rfZoomOut])
+
+  const handleZoomReset = useCallback(() => {
+    fitView({ padding: 0.3, duration: 300 })
+  }, [fitView])
+
+  const handleFitView = useCallback(() => {
+    fitView({ padding: 0.3, duration: 300 })
+  }, [fitView])
+
   // ノード右クリック
   const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
     event.preventDefault()
@@ -500,8 +531,26 @@ function BoardCanvasInner() {
     setBoardNodes(newNodes)
   }, [boardNodes, sessions, setBoardNodes])
 
+  // 現在のズーム値（ツールバー表示用）
+  const currentZoom = viewport?.zoom ?? 1
+
   return (
     <div className="w-full h-full">
+      {/* キャンバスツールバー */}
+      <CanvasToolbar
+        filter={canvasFilter}
+        onFilterChange={setCanvasFilter}
+        zoom={currentZoom}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onZoomReset={handleZoomReset}
+        onFitView={handleFitView}
+        onAutoLayout={handleAutoLayout}
+        projects={projects}
+        sessionCount={boardNodes.length}
+        fileTileCount={fileTiles.length}
+      />
+
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -533,7 +582,18 @@ function BoardCanvasInner() {
           size={1.5}
           color="#1e2d3d"
         />
-        {/* ミニマップは非表示（#48） */}
+        <MiniMap
+          style={{ background: '#0b0f13' }}
+          maskColor="rgba(15, 20, 25, 0.7)"
+          nodeColor={(node) => {
+            if (node.type === 'file') return '#2dd4bf'
+            if (node.type === 'projectGroup') return 'transparent'
+            return '#94a3b8'
+          }}
+          nodeStrokeColor="#1e2d3d"
+          pannable
+          zoomable
+        />
       </ReactFlow>
 
       {/* ボードが空の場合のプレースホルダー */}
