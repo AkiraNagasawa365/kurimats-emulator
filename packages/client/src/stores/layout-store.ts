@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { LayoutMode, AutoLayoutMode, BoardNodePosition, BoardEdge, FileTilePosition } from '@kurimats/shared'
 import { layoutApi } from '../lib/api'
-import { gridLayout, flowLayout, treeLayout, findOptimalPosition, type CardRect } from '../lib/layout-engine'
+import { gridLayout, flowLayout, treeLayout, findOptimalPosition, detectOverlaps, resolveOverlaps, type CardRect } from '../lib/layout-engine'
 
 interface PanelInfo {
   sessionId: string | null
@@ -285,6 +285,29 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       }
     } catch {
       // サーバー取得失敗は無視
+    }
+
+    // 重なりを検出・自動解消
+    const currentNodes = get().boardNodes
+    if (currentNodes.length > 1) {
+      const cards: CardRect[] = currentNodes.map(n => ({
+        id: n.sessionId,
+        x: n.x,
+        y: n.y,
+        width: n.width,
+        height: n.height,
+      }))
+      const overlaps = detectOverlaps(cards)
+      if (overlaps.length > 0) {
+        console.log(`⚠️ ${overlaps.length}件の重なりを検出、自動解消します`)
+        const resolved = resolveOverlaps(cards, 6000)
+        const newNodes = currentNodes.map(n => {
+          const r = resolved.find(c => c.id === n.sessionId)
+          return r ? { ...n, x: r.x, y: r.y } : n
+        })
+        set({ boardNodes: newNodes })
+        persistBoardLayout(newNodes, get().boardEdges, get().viewport, get().fileTiles)
+      }
     }
   },
 

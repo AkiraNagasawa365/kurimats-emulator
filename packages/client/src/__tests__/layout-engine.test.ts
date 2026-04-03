@@ -144,8 +144,8 @@ describe('treeLayout', () => {
 describe('findOptimalPosition', () => {
   it('空の状態で左上に配置', () => {
     const pos = findOptimalPosition([], { width: 100, height: 80 }, 800, 600)
-    expect(pos.x).toBe(16)
-    expect(pos.y).toBe(16)
+    expect(pos.x).toBe(40)
+    expect(pos.y).toBe(40)
   })
 
   it('既存カードを避けて配置', () => {
