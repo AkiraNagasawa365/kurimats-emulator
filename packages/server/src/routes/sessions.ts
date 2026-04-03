@@ -175,7 +175,13 @@ export function createSessionsRouter(
       : ptyManager.getBuffer(session.id)
 
     // ANSIエスケープシーケンスを除去して最新行を取得
-    const cleanBuffer = buffer.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '')
+    const cleanBuffer = buffer
+      .replace(/\x1b\[[?>=<]*[0-9;]*[a-zA-Z]/g, '')  // CSI: 標準 + プライベートモード (\x1b[?2026h 等)
+      .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')  // OSC: \x1b]...\x07 or \x1b]...\x1b\\
+      .replace(/\x1b[PX^_][^\x1b]*\x1b\\/g, '')  // DCS/SOS/PM/APC
+      .replace(/\x1b[()][A-Z0-9]/g, '')  // 文字セット指定
+      .replace(/\x1b[#%][0-9A-Z]/g, '')  // その他2バイトシーケンス
+      .replace(/[\x00-\x08\x0e-\x1f]/g, '')  // 制御文字（タブ・改行以外）
     const allLines = cleanBuffer.split('\n').filter(l => l.trim().length > 0)
     const previewLines = allLines.slice(-lines)
 
