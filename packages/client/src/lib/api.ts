@@ -1,4 +1,4 @@
-import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, LayoutState, BoardLayoutState, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus, Feedback, CreateFeedbackParams } from '@kurimats/shared'
+import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, LayoutState, BoardLayoutState, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams } from '@kurimats/shared'
 
 const BASE = '/api'
 
@@ -108,4 +108,24 @@ export const sshApi = {
     }),
   status: () => request<Record<string, SshConnectionStatus>>('/ssh/status'),
   refresh: () => request<SshHost[]>('/ssh/refresh', { method: 'POST' }),
+
+  // SSHプリセット
+  presets: {
+    list: () => request<SshPreset[]>('/ssh/presets'),
+    create: (params: CreateSshPresetParams) =>
+      request<SshPreset>('/ssh/presets', { method: 'POST', body: JSON.stringify(params) }),
+    update: (id: string, params: Partial<CreateSshPresetParams>) =>
+      request<SshPreset>(`/ssh/presets/${id}`, { method: 'PATCH', body: JSON.stringify(params) }),
+    delete: (id: string) =>
+      request<{ ok: boolean }>(`/ssh/presets/${id}`, { method: 'DELETE' }),
+  },
+
+  // 起動テンプレート
+  templates: {
+    list: () => request<StartupTemplate[]>('/ssh/templates'),
+    create: (params: CreateStartupTemplateParams) =>
+      request<StartupTemplate>('/ssh/templates', { method: 'POST', body: JSON.stringify(params) }),
+    delete: (id: string) =>
+      request<{ ok: boolean }>(`/ssh/templates/${id}`, { method: 'DELETE' }),
+  },
 }
