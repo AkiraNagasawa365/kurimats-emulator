@@ -88,7 +88,7 @@ function SessionNodeComponent({ data }: NodeProps) {
       </div>
 
       {/* ターミナル本体 or disconnectedオーバーレイ */}
-      <div className="flex-1 min-h-0 bg-[#1e1e1e] relative">
+      <div className="flex-1 min-h-0 bg-[#1e1e1e] relative nopan nodrag nowheel">
         {isDisconnected ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#1e1e1e] text-gray-400 gap-3 nopan nodrag">
             <div className="text-sm">切断済み</div>
