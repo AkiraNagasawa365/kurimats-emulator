@@ -24,8 +24,16 @@ export function createProjectsRouter(store: SessionStore): Router {
 
   // プロジェクト更新
   router.patch('/:id', (req, res) => {
-    const updates = req.body as Partial<CreateProjectParams>
-    store.updateProject(req.params.id, updates)
+    const { sshPresetId, startupTemplateId, ...updates } = req.body as Partial<CreateProjectParams> & { sshPresetId?: string | null; startupTemplateId?: string | null }
+    if (Object.keys(updates).length > 0) {
+      store.updateProject(req.params.id, updates)
+    }
+    if (sshPresetId !== undefined) {
+      store.setProjectSshPreset(req.params.id, sshPresetId)
+    }
+    if (startupTemplateId !== undefined) {
+      store.setProjectStartupTemplate(req.params.id, startupTemplateId)
+    }
     res.json({ ok: true })
   })
 
