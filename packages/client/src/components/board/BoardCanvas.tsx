@@ -23,7 +23,8 @@ import { useLayoutStore } from '../../stores/layout-store'
 import { useSessionStore } from '../../stores/session-store'
 import { SessionNode, type SessionNodeData } from './SessionNode'
 import { ProjectGroupNode, type ProjectGroupNodeData } from './ProjectGroupNode'
-import type { BoardEdge, Session } from '@kurimats/shared'
+import { FileNode, type FileNodeData } from './FileNode'
+import type { BoardEdge, Session, FileTilePosition } from '@kurimats/shared'
 import { NodeContextMenu, CanvasContextMenu } from './ContextMenu'
 
 // カスタムノードタイプの登録
@@ -31,6 +32,7 @@ import { NodeContextMenu, CanvasContextMenu } from './ContextMenu'
 const nodeTypes: Record<string, any> = {
   session: SessionNode,
   projectGroup: ProjectGroupNode,
+  file: FileNode,
 }
 
 // プロジェクトグループの枠のパディング
@@ -65,6 +67,10 @@ function BoardCanvasInner() {
     addEdge: addBoardEdge,
     removeEdge: removeBoardEdge,
     setBoardEdges,
+    fileTiles,
+    removeFileTile,
+    updateFileTilePosition,
+    updateFileTileSize,
   } = useLayoutStore()
 
   const { sessions, projects, deleteSession, toggleFavorite, reconnectSession, assignProject, renameSession } = useSessionStore()
@@ -173,8 +179,29 @@ function BoardCanvasInner() {
         zIndex: 1,
       })
     }
+
+    // ファイルタイルノードを追加
+    for (const tile of fileTiles) {
+      result.push({
+        id: tile.id,
+        type: 'file',
+        position: { x: tile.x, y: tile.y },
+        data: {
+          filePath: tile.filePath,
+          language: tile.language,
+          onClose: () => removeFileTile(tile.id),
+        } as FileNodeData,
+        style: {
+          width: tile.width,
+          height: tile.height,
+        },
+        dragHandle: '.drag-handle',
+        zIndex: 2,
+      })
+    }
+
     return result
-  }, [boardNodes, sessions, activeSessionId, projects, getProjectColor, deleteSession, removeBoardNode, setActiveSession, toggleFavorite])
+  }, [boardNodes, sessions, activeSessionId, projects, getProjectColor, deleteSession, removeBoardNode, setActiveSession, toggleFavorite, fileTiles, removeFileTile])
 
   // ボードエッジをReact Flowエッジに変換
   const flowEdges: Edge[] = useMemo(() => {
@@ -264,10 +291,15 @@ function BoardCanvasInner() {
     // ドラッグ終了時に位置を永続化
     for (const change of filteredChanges) {
       if (change.type === 'position' && change.dragging === false && change.position) {
-        updateNodePosition(change.id, change.position.x, change.position.y)
+        // ファイルタイルかセッションノードかを判別
+        if (change.id.startsWith('file-')) {
+          updateFileTilePosition(change.id, change.position.x, change.position.y)
+        } else {
+          updateNodePosition(change.id, change.position.x, change.position.y)
+        }
       }
     }
-  }, [setNodes, updateNodePosition])
+  }, [setNodes, updateNodePosition, updateFileTilePosition])
 
   // エッジの変更を処理（削除など）
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
@@ -319,7 +351,11 @@ function BoardCanvasInner() {
           isResizingRef.current = false
           // リサイズ完了時にサイズを永続化
           if (change.dimensions?.width && change.dimensions?.height) {
-            updateNodeSize(change.id, change.dimensions.width, change.dimensions.height)
+            if (change.id.startsWith('file-')) {
+              updateFileTileSize(change.id, change.dimensions.width, change.dimensions.height)
+            } else {
+              updateNodeSize(change.id, change.dimensions.width, change.dimensions.height)
+            }
           }
         }
       }
