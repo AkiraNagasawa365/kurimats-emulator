@@ -194,6 +194,12 @@ describe('closeLeaf', () => {
     expect(result.kind).toBe('split')
     if (result.kind === 'split') {
       expect(result.ratio).toBe(0.5)
+      // 昇格した子leafのratioも0.5にリセット
+      for (const child of result.children) {
+        if (child.kind === 'leaf') {
+          expect(child.ratio).toBe(0.5)
+        }
+      }
     }
   })
 
