@@ -78,14 +78,29 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   createWorkspace: async (params) => {
-    const workspace = await workspacesApi.create(params)
-    const newWorkspaces = [workspace, ...get().workspaces]
-    set({
-      workspaces: newWorkspaces,
-      workspaceOrder: sortWorkspaceOrder(newWorkspaces),
-      activeWorkspaceId: workspace.id,
-    })
-    return workspace
+    try {
+      const workspace = await workspacesApi.create(params)
+      const newWorkspaces = [workspace, ...get().workspaces]
+      set({
+        workspaces: newWorkspaces,
+        workspaceOrder: sortWorkspaceOrder(newWorkspaces),
+        activeWorkspaceId: workspace.id,
+      })
+      return workspace
+    } catch (e: unknown) {
+      // 重複エラー: 既存WSに切り替え
+      const msg = String(e)
+      if (msg.includes('既に存在')) {
+        const existingWs = get().workspaces.find(w =>
+          w.repoPath === params.repoPath && (w.sshHost ?? null) === (params.sshHost ?? null),
+        )
+        if (existingWs) {
+          set({ activeWorkspaceId: existingWs.id })
+          return existingWs
+        }
+      }
+      throw e
+    }
   },
 
   deleteWorkspace: async (id) => {

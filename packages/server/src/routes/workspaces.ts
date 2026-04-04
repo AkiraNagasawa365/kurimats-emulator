@@ -131,6 +131,15 @@ export function createWorkspacesRouter(
     // 名前が未指定ならパスの末尾をデフォルト名にする
     const name = req.body.name || repoPath.split('/').filter(Boolean).pop() || 'workspace'
 
+    // 同じrepoPath+sshHostの既存WSがあれば重複エラー
+    const existing = store.getAllCmuxWorkspaces().find(
+      w => w.repoPath === repoPath && (w.sshHost ?? null) === (sshHost ?? null),
+    )
+    if (existing) {
+      res.status(409).json({ error: '同じプロジェクトのワークスペースが既に存在します', existingId: existing.id })
+      return
+    }
+
     try {
       // 仮のワークスペースIDを先に生成
       const tempWsId = genId('ws')
