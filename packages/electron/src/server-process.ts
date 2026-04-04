@@ -3,7 +3,7 @@
  * packages/server をバックグラウンドで起動・停止する
  */
 
-import { ChildProcess } from 'child_process'
+import { ChildProcess, execSync } from 'child_process'
 import * as path from 'path'
 
 /** サーバープロセスの状態 */
@@ -65,10 +65,21 @@ export class ServerProcessManager {
       const currentPath = process.env.PATH || ''
       const augmentedPath = [...nodePaths, currentPath].join(':')
 
+      // SSH_AUTH_SOCKがない場合はlaunchctlから取得（Finder起動時に必要）
+      let sshAuthSock = process.env.SSH_AUTH_SOCK
+      if (!sshAuthSock) {
+        try {
+          sshAuthSock = execSync('launchctl getenv SSH_AUTH_SOCK', { encoding: 'utf-8' }).trim()
+        } catch {
+          // 取得失敗時は無視
+        }
+      }
+
       const env: Record<string, string | undefined> = {
         ...process.env,
         PATH: augmentedPath,
         PORT: String(port),
+        ...(sshAuthSock ? { SSH_AUTH_SOCK: sshAuthSock } : {}),
       }
       if (!this.isDev && this.clientDir) {
         env.STATIC_DIR = this.clientDir

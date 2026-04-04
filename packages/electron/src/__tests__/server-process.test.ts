@@ -228,6 +228,15 @@ describe('ServerProcessManager', () => {
       expect(envArg.PATH).toContain('/opt/homebrew/bin')
       expect(envArg.PATH).toContain('/usr/local/bin')
     })
+
+    it('SSH_AUTH_SOCKが環境変数に含まれる', () => {
+      const manager = createProdManager()
+      manager.start(13001)
+
+      const envArg = mockSpawn.mock.calls[0][2].env
+      // process.envにSSH_AUTH_SOCKがあればそれが渡される、なければlaunchctl経由
+      expect(envArg).toHaveProperty('SSH_AUTH_SOCK')
+    })
   })
 
   describe('spawnFnエラーハンドリング', () => {
