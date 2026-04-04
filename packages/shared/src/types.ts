@@ -112,6 +112,10 @@ export interface CreateCmuxWorkspaceParams {
 export interface SplitPaneRequest {
   paneId: string
   direction: SplitDirection
+  /** WSのデフォルトと異なるSSHホストで分割する場合 */
+  sshHost?: string | null
+  /** WSのデフォルトと異なるリポパスで分割する場合 */
+  repoPath?: string | null
 }
 
 /** ペイン分割レスポンス（サーバーが新セッション+worktreeを作成） */

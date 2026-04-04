@@ -172,8 +172,14 @@ export function createWorkspacesRouter(
   })
 
   // ペイン分割（新セッション+worktree+Claude Code自動作成）
+  // sshHost/repoPath を指定すると、WSのデフォルトを上書きできる（異なるホスト/パスで分割）
   router.post('/:id/split-pane', async (req, res) => {
-    const { paneId, direction } = req.body as { paneId: string; direction: SplitDirection }
+    const { paneId, direction, sshHost: overrideSshHost, repoPath: overrideRepoPath } = req.body as {
+      paneId: string
+      direction: SplitDirection
+      sshHost?: string | null
+      repoPath?: string | null
+    }
     if (!paneId || !direction) {
       res.status(400).json({ error: 'paneId と direction は必須です' })
       return
@@ -185,6 +191,11 @@ export function createWorkspacesRouter(
       return
     }
 
+    // 指定があればオーバーライド、なければWSのデフォルト
+    const effectiveSshHost = overrideSshHost !== undefined ? overrideSshHost : workspace.sshHost
+    const effectiveRepoPath = overrideRepoPath || workspace.repoPath
+    const isRemotePane = !!effectiveSshHost
+
     try {
       // ペイン数をカウントしてユニーク名を作成
       const paneCount = countLeaves(workspace.paneTree)
@@ -195,9 +206,9 @@ export function createWorkspacesRouter(
         store, ptyManager, sshManager, worktreeService,
         {
           name: sessionName,
-          repoPath: workspace.repoPath,
-          sshHost: workspace.sshHost,
-          useWorktree: true,
+          repoPath: effectiveRepoPath,
+          sshHost: effectiveSshHost,
+          useWorktree: !isRemotePane, // リモートの場合はworktree不要
           workspaceId: workspace.id,
         },
       )

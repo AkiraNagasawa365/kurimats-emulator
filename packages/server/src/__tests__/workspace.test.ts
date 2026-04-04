@@ -96,6 +96,36 @@ describe('cmuxワークスペース', () => {
     expect(store.deleteCmuxWorkspace('nonexistent')).toBe(false)
   })
 
+  it('repoPathを保持して作成できる', () => {
+    const ws = store.createCmuxWorkspace({ name: 'repo-test', repoPath: '/home/user/myrepo' }, defaultPaneTree())
+    expect(ws.repoPath).toBe('/home/user/myrepo')
+    expect(ws.sshHost).toBeNull()
+
+    const fetched = store.getCmuxWorkspace(ws.id)
+    expect(fetched!.repoPath).toBe('/home/user/myrepo')
+  })
+
+  it('sshHost付きで作成できる', () => {
+    const ws = store.createCmuxWorkspace(
+      { name: 'ssh-test', repoPath: '/data1/project', sshHost: 'elith-remote' },
+      defaultPaneTree(),
+    )
+    expect(ws.repoPath).toBe('/data1/project')
+    expect(ws.sshHost).toBe('elith-remote')
+
+    const fetched = store.getCmuxWorkspace(ws.id)
+    expect(fetched!.sshHost).toBe('elith-remote')
+  })
+
+  it('assignWorkspaceでセッションのworkspace_idを更新できる', () => {
+    const ws = store.createCmuxWorkspace({ name: 'assign-test', repoPath: '/tmp/test' }, defaultPaneTree())
+    const session = store.create({ name: 'sess', repoPath: '/tmp/test' })
+    expect(store.getById(session.id)!.workspaceId).toBeNull()
+
+    store.assignWorkspace(session.id, ws.id)
+    expect(store.getById(session.id)!.workspaceId).toBe(ws.id)
+  })
+
   it('ワークスペース削除時にセッションのworkspace_idがnullになる', () => {
     const ws = store.createCmuxWorkspace({ name: 'WS', repoPath: '/tmp/test-repo' }, defaultPaneTree())
     const session = store.create({

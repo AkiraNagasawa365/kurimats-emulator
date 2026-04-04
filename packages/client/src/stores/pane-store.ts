@@ -22,7 +22,7 @@ interface PaneState {
   attentionRings: Map<string, boolean>
 
   // ペイン操作（アクティブワークスペースのツリーを操作）
-  splitPane: (paneId: string, direction: SplitDirection) => Promise<void>
+  splitPane: (paneId: string, direction: SplitDirection, opts?: { sshHost?: string; repoPath?: string }) => Promise<void>
   closePane: (paneId: string) => void
   zoomPane: (paneId: string) => void
   unzoom: () => void
@@ -62,14 +62,14 @@ export const usePaneStore = create<PaneState>((set, get) => ({
   zoomedPaneId: null,
   attentionRings: new Map(),
 
-  splitPane: async (paneId, direction) => {
+  splitPane: async (paneId, direction, opts) => {
     const wsStore = useWorkspaceStore.getState()
     const workspace = wsStore.workspaces.find(w => w.id === wsStore.activeWorkspaceId)
     if (!workspace) return
 
     try {
       // サーバーAPIで新セッション+worktree+Claude Code起動
-      const result = await workspacesApi.splitPane(workspace.id, { paneId, direction })
+      const result = await workspacesApi.splitPane(workspace.id, { paneId, direction, ...opts })
       // サーバーが返した新しいペインツリーをストアに反映
       wsStore.updatePaneTree(workspace.id, result.paneTree, result.activePaneId)
     } catch (e) {
