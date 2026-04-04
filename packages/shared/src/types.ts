@@ -68,6 +68,8 @@ export interface PaneLeaf {
 export interface PaneSplit {
   kind: 'split'
   id: string
+  /** 親スプリット内での割合（0-1）。ネストされたスプリットのサイズ計算用 */
+  ratio: number
   direction: SplitDirection
   children: [PaneNode, PaneNode]
 }

@@ -18,9 +18,9 @@ export function PaneSplitView({ split, children }: PaneSplitViewProps) {
 
   const isVertical = split.direction === 'vertical'
 
-  // 最初の子の比率を取得
+  // 最初の子の比率を取得（リーフでもスプリットでもratioフィールドを持つ）
   const firstChild = split.children[0]
-  const ratio = firstChild.kind === 'leaf' ? firstChild.ratio : 0.5
+  const ratio = firstChild.ratio ?? 0.5
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()

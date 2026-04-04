@@ -61,6 +61,32 @@ export function firstLeaf(tree: PaneNode): PaneLeaf {
   return firstLeaf(tree.children[0])
 }
 
+/**
+ * ツリー内の全ペインが等分になるようratioを再計算する
+ * 各スプリットの子のratioを、その子が持つリーフ数に比例して配分
+ * 例: 左に1リーフ、右に2リーフ → 左ratio=1/3, 右ratio=2/3
+ */
+export function rebalanceRatios(tree: PaneNode): PaneNode {
+  if (tree.kind === 'leaf') return tree
+
+  const [first, second] = tree.children
+  const firstCount = countLeaves(first)
+  const secondCount = countLeaves(second)
+  const total = firstCount + secondCount
+  const firstRatio = firstCount / total
+
+  const newFirst = rebalanceRatios(first)
+  const newSecond = rebalanceRatios(second)
+
+  return {
+    ...tree,
+    children: [
+      { ...newFirst, ratio: firstRatio },
+      { ...newSecond, ratio: 1 - firstRatio },
+    ],
+  } as PaneNode
+}
+
 // ========== バウンディングレクト計算 ==========
 
 export interface PaneRect {

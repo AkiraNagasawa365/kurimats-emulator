@@ -233,11 +233,14 @@ export function createWorkspacesRouter(
         ratio: 0.5,
       }
 
-      const newTree = splitLeafInTree(workspace.paneTree, paneId, direction, newLeaf)
-      if (!newTree) {
+      const splitTree = splitLeafInTree(workspace.paneTree, paneId, direction, newLeaf)
+      if (!splitTree) {
         res.status(400).json({ error: '指定されたペインが見つかりません' })
         return
       }
+
+      // 全ペインが等分になるようratioを再計算
+      const newTree = rebalanceRatios(splitTree)
 
       // DB更新
       store.updateCmuxPaneTree(workspace.id, newTree, newPaneId)
@@ -304,6 +307,24 @@ export function createWorkspacesRouter(
 
 // ========== ペインツリー操作ヘルパー ==========
 
+/** 全ペインが等分になるようratioを再計算 */
+function rebalanceRatios(tree: PaneNode): PaneNode {
+  if (tree.kind === 'leaf') return tree
+  const [first, second] = tree.children
+  const firstCount = countLeaves(first)
+  const total = firstCount + countLeaves(second)
+  const firstRatio = firstCount / total
+  const newFirst = rebalanceRatios(first)
+  const newSecond = rebalanceRatios(second)
+  return {
+    ...tree,
+    children: [
+      { ...newFirst, ratio: firstRatio },
+      { ...newSecond, ratio: 1 - firstRatio },
+    ],
+  } as PaneNode
+}
+
 /** ツリー内のリーフ数をカウント */
 function countLeaves(node: PaneNode): number {
   if (node.kind === 'leaf') return 1
@@ -323,6 +344,7 @@ function splitLeafInTree(
         kind: 'split',
         id: genId('split'),
         direction,
+        ratio: 0.5,
         children: [{ ...tree, ratio: 0.5 }, newLeaf],
       }
     }
