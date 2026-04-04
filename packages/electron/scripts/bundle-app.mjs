@@ -2,7 +2,7 @@
  * Electronビルド用バンドルスクリプト
  * クライアント・サーバーのビルド成果物を app-content/ にコピーする
  */
-import { cpSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync, lstatSync } from 'fs'
+import { cpSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync, lstatSync, chmodSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -98,6 +98,13 @@ function copyDependencyTree(depName, visited = new Set()) {
 const visited = new Set()
 for (const dep of topDeps) {
   copyDependencyTree(dep, visited)
+}
+
+// node-ptyのspawn-helperに実行権限を付与（posix_spawnp失敗防止）
+const spawnHelperPath = resolve(serverModules, 'node-pty', 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper')
+if (existsSync(spawnHelperPath)) {
+  chmodSync(spawnHelperPath, 0o755)
+  console.log('  実行権限付与: node-pty/spawn-helper')
 }
 
 // @kurimats/shared をnode_modulesにコピーし、mainをdistに書き換え
