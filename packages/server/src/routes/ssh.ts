@@ -1,10 +1,24 @@
 import { Router } from 'express'
+import path from 'path'
+import { homedir } from 'os'
 import type { SshManager } from '../services/ssh-manager.js'
+import type { SessionStore } from '../services/session-store.js'
+import type { CreateSshPresetParams, CreateStartupTemplateParams } from '@kurimats/shared'
+
+/** identityFileパスが安全か検証（~/.ssh/配下のみ許可） */
+function validateIdentityFile(filePath: string | undefined | null): boolean {
+  if (!filePath) return true
+  const resolved = filePath.startsWith('~')
+    ? path.join(homedir(), filePath.slice(1))
+    : path.resolve(filePath)
+  const sshDir = path.join(homedir(), '.ssh')
+  return resolved.startsWith(sshDir + path.sep) || resolved === sshDir
+}
 
 /**
  * SSH関連のRESTルーター
  */
-export function createSshRouter(sshManager: SshManager): Router {
+export function createSshRouter(sshManager: SshManager, store?: SessionStore): Router {
   const router = Router()
 
   /**
@@ -64,6 +78,82 @@ export function createSshRouter(sshManager: SshManager): Router {
     const hosts = sshManager.getHosts()
     res.json(hosts)
   })
+
+  // ==================== SSHプリセット ====================
+
+  if (store) {
+    /** SSHプリセット一覧 */
+    router.get('/presets', (_req, res) => {
+      res.json(store.getAllSshPresets())
+    })
+
+    /** SSHプリセット作成 */
+    router.post('/presets', (req, res) => {
+      const params = req.body as CreateSshPresetParams
+      if (!params.name || !params.hostname || !params.defaultCwd) {
+        res.status(400).json({ error: 'name, hostname, defaultCwd は必須です' })
+        return
+      }
+      if (!validateIdentityFile(params.identityFile)) {
+        res.status(400).json({ error: 'identityFile は ~/.ssh/ 配下のファイルのみ指定できます' })
+        return
+      }
+      const preset = store.createSshPreset(params)
+      res.status(201).json(preset)
+    })
+
+    /** SSHプリセット更新 */
+    router.patch('/presets/:id', (req, res) => {
+      if (req.body.identityFile !== undefined && !validateIdentityFile(req.body.identityFile)) {
+        res.status(400).json({ error: 'identityFile は ~/.ssh/ 配下のファイルのみ指定できます' })
+        return
+      }
+      const updated = store.updateSshPreset(req.params.id, req.body)
+      if (!updated) {
+        res.status(404).json({ error: 'プリセットが見つかりません' })
+        return
+      }
+      res.json(updated)
+    })
+
+    /** SSHプリセット削除 */
+    router.delete('/presets/:id', (req, res) => {
+      const deleted = store.deleteSshPreset(req.params.id)
+      if (!deleted) {
+        res.status(404).json({ error: 'プリセットが見つかりません' })
+        return
+      }
+      res.json({ ok: true })
+    })
+
+    // ==================== 起動テンプレート ====================
+
+    /** 起動テンプレート一覧 */
+    router.get('/templates', (_req, res) => {
+      res.json(store.getAllStartupTemplates())
+    })
+
+    /** 起動テンプレート作成 */
+    router.post('/templates', (req, res) => {
+      const params = req.body as CreateStartupTemplateParams
+      if (!params.name || !params.commands?.length) {
+        res.status(400).json({ error: 'name, commands は必須です' })
+        return
+      }
+      const template = store.createStartupTemplate(params)
+      res.status(201).json(template)
+    })
+
+    /** 起動テンプレート削除 */
+    router.delete('/templates/:id', (req, res) => {
+      const deleted = store.deleteStartupTemplate(req.params.id)
+      if (!deleted) {
+        res.status(404).json({ error: 'テンプレートが見つかりません' })
+        return
+      }
+      res.json({ ok: true })
+    })
+  }
 
   return router
 }

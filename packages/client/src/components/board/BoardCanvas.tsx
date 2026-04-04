@@ -5,6 +5,7 @@ import {
   useReactFlow,
   Background,
   BackgroundVariant,
+  MiniMap,
   useNodesState,
   useEdgesState,
   addEdge as rfAddEdge,
@@ -23,14 +24,18 @@ import { useLayoutStore } from '../../stores/layout-store'
 import { useSessionStore } from '../../stores/session-store'
 import { SessionNode, type SessionNodeData } from './SessionNode'
 import { ProjectGroupNode, type ProjectGroupNodeData } from './ProjectGroupNode'
-import type { BoardEdge, Session } from '@kurimats/shared'
+import { FileNode, type FileNodeData } from './FileNode'
+import { matchesCanvasFilter } from '@kurimats/shared'
+import type { BoardEdge, Session, FileTilePosition } from '@kurimats/shared'
 import { NodeContextMenu, CanvasContextMenu } from './ContextMenu'
+import { CanvasToolbar, type CanvasFilter } from './CanvasToolbar'
 
 // カスタムノードタイプの登録
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const nodeTypes: Record<string, any> = {
   session: SessionNode,
   projectGroup: ProjectGroupNode,
+  file: FileNode,
 }
 
 // プロジェクトグループの枠のパディング
@@ -49,7 +54,7 @@ export function BoardCanvas() {
 }
 
 function BoardCanvasInner() {
-  const { fitView, setCenter } = useReactFlow()
+  const { fitView, setCenter, zoomIn: rfZoomIn, zoomOut: rfZoomOut } = useReactFlow()
   const prevActiveSessionRef = useRef<string | null>(null)
   const {
     boardNodes,
@@ -65,6 +70,10 @@ function BoardCanvasInner() {
     addEdge: addBoardEdge,
     removeEdge: removeBoardEdge,
     setBoardEdges,
+    fileTiles,
+    removeFileTile,
+    updateFileTilePosition,
+    updateFileTileSize,
   } = useLayoutStore()
 
   const { sessions, projects, deleteSession, toggleFavorite, reconnectSession, assignProject, renameSession } = useSessionStore()
@@ -72,6 +81,13 @@ function BoardCanvasInner() {
   // コンテキストメニュー状態
   const [nodeContextMenu, setNodeContextMenu] = useState<{ x: number; y: number; session: Session } | null>(null)
   const [canvasContextMenu, setCanvasContextMenu] = useState<{ x: number; y: number } | null>(null)
+
+  // キャンバスフィルタ
+  const [canvasFilter, setCanvasFilter] = useState<CanvasFilter>({
+    favoritesOnly: false,
+    status: 'all',
+    projectId: null,
+  })
 
   // セッションからプロジェクトカラーを取得
   const getProjectColor = useCallback((projectId: string | null) => {
@@ -141,10 +157,13 @@ function BoardCanvasInner() {
       })
     }
 
-    // セッションノードを追加
+    // セッションノードを追加（フィルタ適用）
     for (const node of boardNodes) {
       const session = sessions.find(s => s.id === node.sessionId)
       if (!session) continue
+
+      // フィルタ適用: 条件に合わないノードはスキップ
+      if (!matchesCanvasFilter(session, canvasFilter)) continue
 
       result.push({
         id: node.sessionId,
@@ -173,8 +192,29 @@ function BoardCanvasInner() {
         zIndex: 1,
       })
     }
+
+    // ファイルタイルノードを追加
+    for (const tile of fileTiles) {
+      result.push({
+        id: tile.id,
+        type: 'file',
+        position: { x: tile.x, y: tile.y },
+        data: {
+          filePath: tile.filePath,
+          language: tile.language,
+          onClose: () => removeFileTile(tile.id),
+        } as FileNodeData,
+        style: {
+          width: tile.width,
+          height: tile.height,
+        },
+        dragHandle: '.drag-handle',
+        zIndex: 2,
+      })
+    }
+
     return result
-  }, [boardNodes, sessions, activeSessionId, projects, getProjectColor, deleteSession, removeBoardNode, setActiveSession, toggleFavorite])
+  }, [boardNodes, sessions, activeSessionId, projects, getProjectColor, deleteSession, removeBoardNode, setActiveSession, toggleFavorite, fileTiles, removeFileTile, canvasFilter])
 
   // ボードエッジをReact Flowエッジに変換
   const flowEdges: Edge[] = useMemo(() => {
@@ -262,12 +302,18 @@ function BoardCanvasInner() {
     }
 
     // ドラッグ終了時に位置を永続化
+    const fileTileIds = new Set(fileTiles.map(t => t.id))
     for (const change of filteredChanges) {
       if (change.type === 'position' && change.dragging === false && change.position) {
-        updateNodePosition(change.id, change.position.x, change.position.y)
+        // ファイルタイルかセッションノードかをIDセットで判別
+        if (fileTileIds.has(change.id)) {
+          updateFileTilePosition(change.id, change.position.x, change.position.y)
+        } else {
+          updateNodePosition(change.id, change.position.x, change.position.y)
+        }
       }
     }
-  }, [setNodes, updateNodePosition])
+  }, [setNodes, updateNodePosition, updateFileTilePosition, fileTiles])
 
   // エッジの変更を処理（削除など）
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
@@ -310,6 +356,7 @@ function BoardCanvasInner() {
 
   // リサイズ時のサイズ永続化
   const onNodesChangeWithResize = useCallback((changes: NodeChange[]) => {
+    const ftIds = new Set(fileTiles.map(t => t.id))
     // リサイズ中かどうかを検出
     for (const change of changes) {
       if (change.type === 'dimensions' && 'resizing' in change) {
@@ -319,14 +366,18 @@ function BoardCanvasInner() {
           isResizingRef.current = false
           // リサイズ完了時にサイズを永続化
           if (change.dimensions?.width && change.dimensions?.height) {
-            updateNodeSize(change.id, change.dimensions.width, change.dimensions.height)
+            if (ftIds.has(change.id)) {
+              updateFileTileSize(change.id, change.dimensions.width, change.dimensions.height)
+            } else {
+              updateNodeSize(change.id, change.dimensions.width, change.dimensions.height)
+            }
           }
         }
       }
     }
 
     onNodesChange(changes)
-  }, [onNodesChange, updateNodeSize])
+  }, [onNodesChange, updateNodeSize, updateFileTileSize, fileTiles])
 
   // ビューポート変更を処理（ズームインジケーター付き）
   const onMoveEnd = useCallback((_event: unknown, vp: Viewport) => {
@@ -393,6 +444,23 @@ function BoardCanvasInner() {
   const onPaneDoubleClick = useCallback(() => {
     window.dispatchEvent(new CustomEvent('focus-create-session'))
   }, [])
+
+  // ズーム操作
+  const handleZoomIn = useCallback(() => {
+    rfZoomIn({ duration: 200 })
+  }, [rfZoomIn])
+
+  const handleZoomOut = useCallback(() => {
+    rfZoomOut({ duration: 200 })
+  }, [rfZoomOut])
+
+  const handleZoomReset = useCallback(() => {
+    fitView({ padding: 0.3, duration: 300 })
+  }, [fitView])
+
+  const handleFitView = useCallback(() => {
+    fitView({ padding: 0.3, duration: 300 })
+  }, [fitView])
 
   // ノード右クリック
   const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
@@ -464,8 +532,26 @@ function BoardCanvasInner() {
     setBoardNodes(newNodes)
   }, [boardNodes, sessions, setBoardNodes])
 
+  // 現在のズーム値（ツールバー表示用）
+  const currentZoom = viewport?.zoom ?? 1
+
   return (
     <div className="w-full h-full">
+      {/* キャンバスツールバー */}
+      <CanvasToolbar
+        filter={canvasFilter}
+        onFilterChange={setCanvasFilter}
+        zoom={currentZoom}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onZoomReset={handleZoomReset}
+        onFitView={handleFitView}
+        onAutoLayout={handleAutoLayout}
+        projects={projects}
+        sessionCount={boardNodes.length}
+        fileTileCount={fileTiles.length}
+      />
+
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -497,7 +583,18 @@ function BoardCanvasInner() {
           size={1.5}
           color="#1e2d3d"
         />
-        {/* ミニマップは非表示（#48） */}
+        <MiniMap
+          style={{ background: '#0b0f13' }}
+          maskColor="rgba(15, 20, 25, 0.7)"
+          nodeColor={(node) => {
+            if (node.type === 'file') return '#2dd4bf'
+            if (node.type === 'projectGroup') return 'transparent'
+            return '#94a3b8'
+          }}
+          nodeStrokeColor="#1e2d3d"
+          pannable
+          zoomable
+        />
       </ReactFlow>
 
       {/* ボードが空の場合のプレースホルダー */}

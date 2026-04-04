@@ -1,5 +1,13 @@
 import { spawn as cpSpawn, type ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __ptyDir = path.dirname(fileURLToPath(import.meta.url))
+const PTY_HELPER_PATH = path.join(__ptyDir, 'pty-helper.py')
+
+/** リサイズ用の特殊エスケープシーケンス（pty-helper.pyと同期） */
+const RESIZE_ESC = (cols: number, rows: number) => `\x1b[R;${cols};${rows}\x07`
 
 // node-ptyの型定義（動的インポート用）
 interface INodePty {
@@ -204,8 +212,11 @@ export class PtyManager extends EventEmitter {
     args?: string[],
   ): void {
     const cmd = command || process.env.SHELL || '/bin/zsh'
-    const cmdArgs = args || (command ? [] : ['-i'])
-    const child = cpSpawn(cmd, cmdArgs, {
+    const cmdArgs = args || []
+
+    // python3のpty-helper.pyで擬似tty割り当て（node-pty利用不可時の代替）
+    // pty-helper.pyはリサイズ用の特殊エスケープシーケンスも処理する
+    const child = cpSpawn('python3', [PTY_HELPER_PATH, cmd, ...cmdArgs], {
       cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
@@ -214,6 +225,9 @@ export class PtyManager extends EventEmitter {
         COLORTERM: 'truecolor',
         COLUMNS: String(cols),
         LINES: String(rows),
+        PTY_CWD: cwd,
+        PTY_COLS: String(cols),
+        PTY_ROWS: String(rows),
       },
     })
 
@@ -282,9 +296,9 @@ export class PtyManager extends EventEmitter {
     if (session.backend === 'node-pty' && session.ptyProcess) {
       session.ptyProcess.resize(cols, rows)
     } else if (session.childProcess) {
-      // child_processモードではSIGWINCHを送信（限定的サポート）
+      // child_processモード: pty-helper.pyに特殊エスケープシーケンスでリサイズ通知
       try {
-        session.childProcess.kill('SIGWINCH')
+        session.childProcess.stdin?.write(RESIZE_ESC(cols, rows))
       } catch {
         // プロセス終了済みの場合は無視
       }

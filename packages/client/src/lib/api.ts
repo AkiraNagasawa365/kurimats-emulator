@@ -1,4 +1,4 @@
-import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, LayoutState, BoardLayoutState, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus, Feedback, CreateFeedbackParams } from '@kurimats/shared'
+import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, LayoutState, BoardLayoutState, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams, Workspace } from '@kurimats/shared'
 
 const BASE = '/api'
 
@@ -59,7 +59,7 @@ export const projectsApi = {
   list: () => request<Project[]>('/projects'),
   create: (params: CreateProjectParams) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(params) }),
-  update: (id: string, updates: Partial<CreateProjectParams>) =>
+  update: (id: string, updates: Partial<CreateProjectParams> & { sshPresetId?: string | null; startupTemplateId?: string | null }) =>
     request<{ ok: boolean }>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(updates) }),
   delete: (id: string) =>
     request<{ ok: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
@@ -73,6 +73,16 @@ export const layoutApi = {
   getBoard: () => request<BoardLayoutState | null>('/layout/board'),
   saveBoard: (state: BoardLayoutState) =>
     request<{ ok: boolean }>('/layout/board', { method: 'PUT', body: JSON.stringify(state) }),
+
+  // ワークスペース
+  workspaces: {
+    list: () => request<Workspace[]>('/layout/workspaces'),
+    get: (id: string) => request<Workspace>(`/layout/workspaces/${id}`),
+    create: (data: { name: string; boardNodes: unknown[]; fileTiles: unknown[]; edges: unknown[]; viewport: { x: number; y: number; zoom: number } }) =>
+      request<Workspace>('/layout/workspaces', { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      request<{ ok: boolean }>(`/layout/workspaces/${id}`, { method: 'DELETE' }),
+  },
 }
 
 // tabコマンドAPI
@@ -108,4 +118,24 @@ export const sshApi = {
     }),
   status: () => request<Record<string, SshConnectionStatus>>('/ssh/status'),
   refresh: () => request<SshHost[]>('/ssh/refresh', { method: 'POST' }),
+
+  // SSHプリセット
+  presets: {
+    list: () => request<SshPreset[]>('/ssh/presets'),
+    create: (params: CreateSshPresetParams) =>
+      request<SshPreset>('/ssh/presets', { method: 'POST', body: JSON.stringify(params) }),
+    update: (id: string, params: Partial<CreateSshPresetParams>) =>
+      request<SshPreset>(`/ssh/presets/${id}`, { method: 'PATCH', body: JSON.stringify(params) }),
+    delete: (id: string) =>
+      request<{ ok: boolean }>(`/ssh/presets/${id}`, { method: 'DELETE' }),
+  },
+
+  // 起動テンプレート
+  templates: {
+    list: () => request<StartupTemplate[]>('/ssh/templates'),
+    create: (params: CreateStartupTemplateParams) =>
+      request<StartupTemplate>('/ssh/templates', { method: 'POST', body: JSON.stringify(params) }),
+    delete: (id: string) =>
+      request<{ ok: boolean }>(`/ssh/templates/${id}`, { method: 'DELETE' }),
+  },
 }

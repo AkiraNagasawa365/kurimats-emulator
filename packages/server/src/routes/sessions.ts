@@ -107,18 +107,25 @@ export function createSessionsRouter(
     const cwd = worktreePath || params.repoPath
 
     try {
+      // バックエンド初期化（node-pty or child_process判定）
+      await ptyManager.initialize()
+
       if (isRemote && params.sshHost) {
         // リモートSSHセッション: SshManager経由で接続・シェル起動
         await sshManager.connect(params.sshHost)
         await sshManager.spawn(session.id, params.sshHost, cwd, 120, 30)
-        // リモートでもclaude起動（シェル出力を監視して準備完了後に実行）
         waitForShellReady(session.id, ptyManager, sshManager, true)
       } else {
-        // ローカルPTYセッション: シェルを起動し、claudeを自動実行
-        const shell = process.env.SHELL || '/bin/zsh'
-        await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
-        // シェル出力を監視して準備完了後にclaudeを実行
-        waitForShellReady(session.id, ptyManager, sshManager, false)
+        // ローカルPTYセッション
+        if (ptyManager.backend === 'node-pty') {
+          // node-ptyモード: シェル起動→プロンプト検出→claude送信
+          const shell = process.env.SHELL || '/bin/zsh'
+          await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
+          waitForShellReady(session.id, ptyManager, sshManager, false)
+        } else {
+          // child_processモード（python3 pty.spawn）: claudeを直接起動
+          await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', [])
+        }
       }
     } catch (e) {
       console.error(`${isRemote ? 'SSH接続/リモートシェル' : 'PTY'}起動エラー:`, e)
@@ -194,9 +201,13 @@ export function createSessionsRouter(
         await sshManager.spawn(session.id, session.sshHost, cwd, 120, 30)
         waitForShellReady(session.id, ptyManager, sshManager, true)
       } else {
-        const shell = process.env.SHELL || '/bin/zsh'
-        await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
-        waitForShellReady(session.id, ptyManager, sshManager, false)
+        if (ptyManager.backend === 'node-pty') {
+          const shell = process.env.SHELL || '/bin/zsh'
+          await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
+          waitForShellReady(session.id, ptyManager, sshManager, false)
+        } else {
+          await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', [])
+        }
       }
 
       store.updateStatus(session.id, 'active')

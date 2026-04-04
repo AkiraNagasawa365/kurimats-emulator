@@ -47,6 +47,13 @@ export function useKeyboardShortcuts() {
         openOverlay('markdown')
         return
       }
+
+      // Ctrl/Cmd+N → 新規セッション作成
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent('focus-create-session'))
+        return
+      }
     }
 
     window.addEventListener('keydown', handler)

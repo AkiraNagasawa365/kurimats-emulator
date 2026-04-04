@@ -70,6 +70,8 @@ export interface Project {
   name: string
   color: string // hex color like '#3b82f6'
   repoPath: string
+  sshPresetId?: string | null
+  startupTemplateId?: string | null
   createdAt: number
 }
 
@@ -107,6 +109,50 @@ export interface SshHost {
 // SSH接続ステータス
 export type SshConnectionStatus = 'online' | 'offline' | 'reconnecting'
 
+// SSHプリセット（プロジェクトに紐付くSSH接続設定）
+export interface SshPreset {
+  id: string
+  name: string
+  hostname: string
+  user: string
+  port: number
+  identityFile: string | null
+  defaultCwd: string
+  startupCommand: string | null
+  envVars: Record<string, string>
+  createdAt: number
+}
+
+// SSHプリセット作成パラメータ
+export interface CreateSshPresetParams {
+  name: string
+  hostname: string
+  user: string
+  port?: number
+  identityFile?: string
+  defaultCwd: string
+  startupCommand?: string
+  envVars?: Record<string, string>
+}
+
+// 起動テンプレート
+export interface StartupTemplate {
+  id: string
+  name: string
+  sshPresetId: string | null
+  commands: string[]
+  envVars: Record<string, string>
+  createdAt: number
+}
+
+// 起動テンプレート作成パラメータ
+export interface CreateStartupTemplateParams {
+  name: string
+  sshPresetId?: string
+  commands: string[]
+  envVars?: Record<string, string>
+}
+
 // Claude通知
 export interface ClaudeNotification {
   id: string
@@ -124,9 +170,23 @@ export interface FileNode {
   children?: FileNode[]
 }
 
+// ボードタイルの種別
+export type BoardTileType = 'session' | 'file'
+
 // ボードノード位置情報（React Flow用）
 export interface BoardNodePosition {
   sessionId: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+// ファイルタイル（キャンバス上にMonaco Editorでファイルを表示）
+export interface FileTilePosition {
+  id: string
+  filePath: string
+  language: string
   x: number
   y: number
   width: number
@@ -144,6 +204,7 @@ export interface BoardEdge {
 // ボードレイアウト永続化
 export interface BoardLayoutState {
   nodes: BoardNodePosition[]
+  fileTiles?: FileTilePosition[]
   edges: BoardEdge[]
   viewport: { x: number; y: number; zoom: number }
   savedAt: number
@@ -209,6 +270,40 @@ export const FEEDBACK_PRIORITY_LABELS: Record<FeedbackPriority, string> = {
   medium: '中',
   low: '低',
 } as const
+
+// ワークスペース（キャンバス配置の名前付き保存）
+export interface Workspace {
+  id: string
+  name: string
+  boardNodes: BoardNodePosition[]
+  fileTiles?: FileTilePosition[]
+  edges: BoardEdge[]
+  viewport: { x: number; y: number; zoom: number }
+  createdAt: number
+}
+
+// ワークスペース作成パラメータ
+export interface CreateWorkspaceParams {
+  name: string
+}
+
+// キャンバスフィルタ条件
+export interface CanvasFilterCriteria {
+  favoritesOnly: boolean
+  status: 'all' | SessionStatus
+  projectId: string | null
+}
+
+/** キャンバスフィルタにセッションが合致するか判定 */
+export function matchesCanvasFilter(
+  session: { isFavorite: boolean; status: string; projectId: string | null },
+  filter: CanvasFilterCriteria,
+): boolean {
+  if (filter.favoritesOnly && !session.isFavorite) return false
+  if (filter.status !== 'all' && session.status !== filter.status) return false
+  if (filter.projectId && session.projectId !== filter.projectId) return false
+  return true
+}
 
 // bookmarks.toml のブックマーク情報
 export interface TabBookmark {
