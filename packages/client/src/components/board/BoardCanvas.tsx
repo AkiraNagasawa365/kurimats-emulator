@@ -209,7 +209,7 @@ function BoardCanvasInner() {
         continue
       }
 
-      isResizingRef.current = change.resizing
+      isResizingRef.current = change.resizing ?? false
       if (change.resizing || !change.dimensions?.width || !change.dimensions?.height) {
         continue
       }

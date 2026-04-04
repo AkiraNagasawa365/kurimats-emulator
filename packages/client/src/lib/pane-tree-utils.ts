@@ -156,6 +156,7 @@ export function splitLeaf(
     const split: PaneSplit = {
       kind: 'split',
       id: generateSplitId(),
+      ratio: 0.5,
       direction,
       children: [originalLeaf, newLeaf],
     }

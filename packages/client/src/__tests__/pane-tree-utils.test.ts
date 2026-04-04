@@ -23,8 +23,8 @@ function makeLeaf(id: string, ratio = 0.5, surfaces: Surface[] = []): PaneLeaf {
   return { kind: 'leaf', id, surfaces, activeSurfaceIndex: 0, ratio }
 }
 
-function makeSplit(id: string, direction: 'horizontal' | 'vertical', children: [PaneNode, PaneNode]): PaneSplit {
-  return { kind: 'split', id, direction, children }
+function makeSplit(id: string, direction: 'horizontal' | 'vertical', children: [PaneNode, PaneNode], ratio = 0.5): PaneSplit {
+  return { kind: 'split', id, direction, children, ratio }
 }
 
 function makeTerminalSurface(id: string, sessionId: string): Surface {

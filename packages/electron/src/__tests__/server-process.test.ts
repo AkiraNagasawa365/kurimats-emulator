@@ -211,8 +211,8 @@ describe('resolveServerDir', () => {
     expect(result).toContain('server')
   })
 
-  it('ビルドモードではappPath配下のパスを返す', () => {
-    const result = resolveServerDir(false, '/Applications/kurimats.app')
-    expect(result).toBe('/Applications/kurimats.app/packages/server')
+  it('ビルドモードではresourcesPath配下のパスを返す', () => {
+    const result = resolveServerDir(false, '/Applications/kurimats.app/Contents/Resources')
+    expect(result).toBe('/Applications/kurimats.app/Contents/Resources/app-content/server')
   })
 })

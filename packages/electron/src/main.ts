@@ -94,7 +94,9 @@ const store = new Store()
 // サーバープロセス管理
 const serverManager = new ServerProcessManager({
   spawnFn: spawn as any,
-  serverDir: resolveServerDir(IS_DEV, app.getAppPath()),
+  serverDir: resolveServerDir(IS_DEV, process.resourcesPath),
+  clientDir: IS_DEV ? undefined : path.join(process.resourcesPath, 'app-content', 'client'),
+  isDev: IS_DEV,
 })
 
 let mainWindow: BrowserWindow | null = null
@@ -130,12 +132,9 @@ function createWindow(): void {
   }
 
   // クライアントURLをロード
-  if (IS_DEV) {
-    mainWindow.loadURL(DEV_CLIENT_URL)
-  } else {
-    // ビルド後はローカルファイルを読み込む
-    mainWindow.loadFile('../client/dist/index.html')
-  }
+  // 本番でもサーバー経由でロード（APIが相対パスのため file:// では動かない）
+  const clientUrl = IS_DEV ? DEV_CLIENT_URL : `http://localhost:${SERVER_PORT}`
+  mainWindow.loadURL(clientUrl)
 
   // 外部リンクをブラウザで開く
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -181,14 +180,23 @@ app.whenReady().then(async () => {
   // サーバーを自動起動
   serverManager.start(SERVER_PORT)
 
-  // dev時はViteクライアントも起動して準備完了を待つ
   if (IS_DEV) {
+    // dev時はViteクライアントも起動して準備完了を待つ
     console.log('Vite devサーバーを起動中...')
     try {
       await startViteDevServer()
       console.log('Vite devサーバー準備完了')
     } catch (err) {
       console.error('Vite起動に失敗:', err)
+    }
+  } else {
+    // 本番時はサーバーの起動を待つ
+    console.log('サーバーの起動を待機中...')
+    try {
+      await waitForUrl(`http://localhost:${SERVER_PORT}/api/health`, 30, 1000)
+      console.log('サーバー準備完了')
+    } catch (err) {
+      console.error('サーバー起動待機に失敗:', err)
     }
   }
 

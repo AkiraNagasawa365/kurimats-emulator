@@ -5,7 +5,7 @@
   "main": "dist/main.js",
   "scripts": {
     "dev": "node scripts/build.mjs && electron .",
-    "build": "node scripts/build.mjs && electron-builder",
+    "build": "node scripts/build.mjs && node scripts/bundle-app.mjs && electron-builder",
     "start": "electron ."
   },
   "dependencies": {
@@ -28,6 +28,14 @@
       "dist/**/*",
       "resources/**/*",
       "node_modules/**/*"
-    ]
+    ],
+    "extraResources": [
+      {
+        "from": "app-content",
+        "to": "app-content",
+        "filter": ["**/*"]
+      }
+    ],
+    "asarUnpack": []
   }
 }
