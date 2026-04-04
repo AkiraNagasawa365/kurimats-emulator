@@ -123,11 +123,13 @@ export function createWorkspacesRouter(
 
   // ワークスペース作成（セッション+Claude Code自動起動付き）
   router.post('/', async (req, res) => {
-    const { name, repoPath, projectId, sshHost, useWorktree, baseBranch } = req.body
-    if (!name || !repoPath) {
-      res.status(400).json({ error: '名前とリポジトリパスは必須です' })
+    const { repoPath, projectId, sshHost, useWorktree, baseBranch } = req.body
+    if (!repoPath) {
+      res.status(400).json({ error: 'リポジトリパスは必須です' })
       return
     }
+    // 名前が未指定ならパスの末尾をデフォルト名にする
+    const name = req.body.name || repoPath.split('/').filter(Boolean).pop() || 'workspace'
 
     try {
       // 仮のワークスペースIDを先に生成

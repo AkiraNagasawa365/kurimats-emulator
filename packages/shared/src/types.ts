@@ -99,7 +99,8 @@ export interface CmuxWorkspace {
 
 /** ワークスペース作成パラメータ */
 export interface CreateCmuxWorkspaceParams {
-  name: string
+  /** ワークスペース名（省略時はrepoPathの末尾がデフォルト） */
+  name?: string
   /** リポジトリパス（必須） */
   repoPath: string
   projectId?: string
