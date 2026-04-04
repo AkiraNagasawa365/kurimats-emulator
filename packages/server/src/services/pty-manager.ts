@@ -47,6 +47,8 @@ interface PtySession {
   alive: boolean
   cols: number
   rows: number
+  cleanup: () => void
+  finalized: boolean
 }
 
 const RING_BUFFER_SIZE = 50 * 1024 // 50KB
@@ -130,8 +132,13 @@ export class PtyManager extends EventEmitter {
     command?: string,
     args?: string[],
   ): Promise<void> {
-    if (this.sessions.has(sessionId)) {
+    const existing = this.sessions.get(sessionId)
+    if (existing?.alive) {
       throw new Error(`セッション ${sessionId} は既に存在します`)
+    }
+    if (existing) {
+      existing.cleanup()
+      this.sessions.delete(sessionId)
     }
 
     await this.initialize()
@@ -182,9 +189,11 @@ export class PtyManager extends EventEmitter {
       alive: true,
       cols,
       rows,
+      cleanup: () => {},
+      finalized: false,
     }
 
-    ptyProcess.onData((data: string) => {
+    const dataDisposable = ptyProcess.onData((data: string) => {
       session.ringBuffer += data
       if (session.ringBuffer.length > RING_BUFFER_SIZE) {
         session.ringBuffer = session.ringBuffer.slice(-RING_BUFFER_SIZE)
@@ -192,10 +201,18 @@ export class PtyManager extends EventEmitter {
       this.emit('data', sessionId, data)
     })
 
-    ptyProcess.onExit(({ exitCode }) => {
+    const exitDisposable = ptyProcess.onExit(({ exitCode }) => {
+      if (session.finalized) return
+      session.finalized = true
       session.alive = false
+      session.cleanup()
       this.emit('exit', sessionId, exitCode)
     })
+
+    session.cleanup = () => {
+      dataDisposable.dispose()
+      exitDisposable.dispose()
+    }
 
     this.sessions.set(sessionId, session)
   }
@@ -239,6 +256,8 @@ export class PtyManager extends EventEmitter {
       alive: true,
       cols,
       rows,
+      cleanup: () => {},
+      finalized: false,
     }
 
     const handleData = (data: Buffer) => {
@@ -253,16 +272,27 @@ export class PtyManager extends EventEmitter {
     child.stdout?.on('data', handleData)
     child.stderr?.on('data', handleData)
 
-    child.on('exit', (code) => {
+    const handleExit = (code: number) => {
+      if (session.finalized) return
+      session.finalized = true
       session.alive = false
+      session.cleanup()
       this.emit('exit', sessionId, code ?? 0)
-    })
+    }
+
+    child.on('exit', handleExit)
 
     child.on('error', (err) => {
+      if (session.finalized) return
       console.error(`セッション ${sessionId} エラー:`, err)
-      session.alive = false
-      this.emit('exit', sessionId, 1)
+      handleExit(1)
     })
+
+    session.cleanup = () => {
+      child.stdout?.off('data', handleData)
+      child.stderr?.off('data', handleData)
+      child.off('exit', handleExit)
+    }
 
     this.sessions.set(sessionId, session)
   }
@@ -277,7 +307,11 @@ export class PtyManager extends EventEmitter {
     if (session.backend === 'node-pty' && session.ptyProcess) {
       session.ptyProcess.write(data)
     } else if (session.childProcess) {
-      session.childProcess.stdin?.write(data)
+      try {
+        session.childProcess.stdin?.write(data)
+      } catch {
+        session.alive = false
+      }
     }
   }
 
@@ -343,12 +377,20 @@ export class PtyManager extends EventEmitter {
     if (!session) return
 
     if (session.alive) {
+      session.alive = false
+      session.finalized = true
+      session.cleanup()
       if (session.backend === 'node-pty' && session.ptyProcess) {
         session.ptyProcess.kill()
       } else if (session.childProcess) {
-        session.childProcess.kill()
+        session.childProcess.kill('SIGTERM')
       }
+      this.sessions.delete(sessionId)
+      this.emit('exit', sessionId, 0)
+      return
     }
+
+    session.cleanup()
     this.sessions.delete(sessionId)
   }
 

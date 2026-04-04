@@ -4,7 +4,9 @@ import { createServer, type Server } from 'http'
 import { SessionStore } from '../services/session-store.js'
 import { createFeedbackRouter } from '../routes/feedback.js'
 
-describe('フィードバックAPI', () => {
+const describeServer = process.env.CODEX_SANDBOX_NETWORK_DISABLED === '1' ? describe.skip : describe
+
+describeServer('フィードバックAPI', () => {
   let server: Server
   let baseUrl: string
   let store: SessionStore
@@ -22,11 +24,11 @@ describe('フィードバックAPI', () => {
 
     server = createServer(app)
     await new Promise<void>((resolve) => {
-      server.listen(0, () => resolve())
+      server.listen(0, '127.0.0.1', () => resolve())
     })
     const addr = server.address()
     const port = typeof addr === 'object' && addr ? addr.port : 0
-    baseUrl = `http://localhost:${port}`
+    baseUrl = `http://127.0.0.1:${port}`
   })
 
   afterEach(() => {

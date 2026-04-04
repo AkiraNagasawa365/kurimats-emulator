@@ -82,7 +82,19 @@ async function createSessionWithClaude(
     }
   } catch (e) {
     console.error(`PTY/SSH起動エラー:`, e)
+    if (sshManager.hasSession(session.id)) {
+      sshManager.kill(session.id)
+    } else {
+      ptyManager.kill(session.id)
+    }
     try { store.delete(session.id) } catch { /* ignore */ }
+    if (worktreePath) {
+      try {
+        worktreeService.remove(params.repoPath, worktreePath)
+      } catch {
+        // ignore cleanup errors
+      }
+    }
     throw e
   }
 
@@ -140,9 +152,9 @@ export function createWorkspacesRouter(
       return
     }
 
-    try {
+  try {
       // 仮のワークスペースIDを先に生成
-      const tempWsId = genId('ws')
+      const workspaceId = genId('ws')
 
       // セッション+PTY/SSH+Claude Code起動
       const { session, surface, paneId } = await createSessionWithClaude(
@@ -153,7 +165,7 @@ export function createWorkspacesRouter(
           sshHost,
           useWorktree,
           baseBranch,
-          workspaceId: tempWsId,
+          workspaceId,
         },
       )
 
@@ -170,10 +182,8 @@ export function createWorkspacesRouter(
       const workspace = store.createCmuxWorkspace(
         { name, projectId, repoPath, sshHost },
         paneTree,
+        workspaceId,
       )
-
-      // セッションのworkspace_idを正しいIDに更新
-      store.assignWorkspace(session.id, workspace.id)
 
       res.status(201).json(workspace)
     } catch (e) {
@@ -201,19 +211,24 @@ export function createWorkspacesRouter(
       res.status(404).json({ error: 'ワークスペースが見つかりません' })
       return
     }
+    if (!containsLeafId(workspace.paneTree, paneId)) {
+      res.status(400).json({ error: '指定されたペインが見つかりません' })
+      return
+    }
 
     // 指定があればオーバーライド、なければWSのデフォルト
     const effectiveSshHost = overrideSshHost !== undefined ? overrideSshHost : workspace.sshHost
     const effectiveRepoPath = overrideRepoPath || workspace.repoPath
     const isRemotePane = !!effectiveSshHost
 
+    let session: Session | null = null
     try {
       // ペイン数をカウントしてユニーク名を作成
       const paneCount = countLeaves(workspace.paneTree)
       const sessionName = `${workspace.name}-pane${paneCount + 1}`
 
       // 新セッション+PTY/SSH+Claude Code起動（独自worktree付き）
-      const { session, surface, paneId: newPaneId } = await createSessionWithClaude(
+      const created = await createSessionWithClaude(
         store, ptyManager, sshManager, worktreeService,
         {
           name: sessionName,
@@ -223,6 +238,8 @@ export function createWorkspacesRouter(
           workspaceId: workspace.id,
         },
       )
+      session = created.session
+      const { surface, paneId: newPaneId } = created
 
       // ペインツリーを分割
       const newLeaf: PaneLeaf = {
@@ -235,6 +252,12 @@ export function createWorkspacesRouter(
 
       const splitTree = splitLeafInTree(workspace.paneTree, paneId, direction, newLeaf)
       if (!splitTree) {
+        if (sshManager.hasSession(session.id)) {
+          sshManager.kill(session.id)
+        } else {
+          ptyManager.kill(session.id)
+        }
+        store.delete(session.id)
         res.status(400).json({ error: '指定されたペインが見つかりません' })
         return
       }
@@ -251,6 +274,18 @@ export function createWorkspacesRouter(
         newSession: session,
       })
     } catch (e) {
+      if (session) {
+        if (sshManager.hasSession(session.id)) {
+          sshManager.kill(session.id)
+        } else {
+          ptyManager.kill(session.id)
+        }
+        try {
+          store.delete(session.id)
+        } catch {
+          // ignore cleanup errors
+        }
+      }
       console.error('ペイン分割エラー:', e)
       res.status(500).json({ error: `ペイン分割に失敗: ${e}` })
     }
@@ -329,6 +364,11 @@ function rebalanceRatios(tree: PaneNode): PaneNode {
 function countLeaves(node: PaneNode): number {
   if (node.kind === 'leaf') return 1
   return countLeaves(node.children[0]) + countLeaves(node.children[1])
+}
+
+function containsLeafId(node: PaneNode, leafId: string): boolean {
+  if (node.kind === 'leaf') return node.id === leafId
+  return containsLeafId(node.children[0], leafId) || containsLeafId(node.children[1], leafId)
 }
 
 /** ツリー内の指定リーフを分割して新しいツリーを返す */

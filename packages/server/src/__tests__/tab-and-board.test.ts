@@ -16,7 +16,9 @@ vi.mock('../services/bookmarks-parser.js', () => ({
   ]),
 }))
 
-describe('tabコマンドAPI', () => {
+const describeServer = process.env.CODEX_SANDBOX_NETWORK_DISABLED === '1' ? describe.skip : describe
+
+describeServer('tabコマンドAPI', () => {
   let server: Server
   let baseUrl: string
   let store: SessionStore
@@ -40,11 +42,11 @@ describe('tabコマンドAPI', () => {
 
     server = createServer(app)
     await new Promise<void>((resolve) => {
-      server.listen(0, () => resolve())
+      server.listen(0, '127.0.0.1', () => resolve())
     })
     const addr = server.address()
     const port = typeof addr === 'object' && addr ? addr.port : 0
-    baseUrl = `http://localhost:${port}`
+    baseUrl = `http://127.0.0.1:${port}`
   })
 
   afterEach(() => {
@@ -78,7 +80,7 @@ describe('tabコマンドAPI', () => {
 
 })
 
-describe('ボードレイアウトAPI', () => {
+describeServer('ボードレイアウトAPI', () => {
   let server: Server
   let baseUrl: string
   let store: SessionStore
@@ -92,11 +94,11 @@ describe('ボードレイアウトAPI', () => {
 
     server = createServer(app)
     await new Promise<void>((resolve) => {
-      server.listen(0, () => resolve())
+      server.listen(0, '127.0.0.1', () => resolve())
     })
     const addr = server.address()
     const port = typeof addr === 'object' && addr ? addr.port : 0
-    baseUrl = `http://localhost:${port}`
+    baseUrl = `http://127.0.0.1:${port}`
   })
 
   afterEach(() => {

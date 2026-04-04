@@ -126,6 +126,12 @@ describe('cmuxワークスペース', () => {
     expect(store.getById(session.id)!.workspaceId).toBe(ws.id)
   })
 
+  it('指定したIDでワークスペースを作成できる', () => {
+    const ws = store.createCmuxWorkspace({ name: 'fixed-id', repoPath: '/tmp/test' }, defaultPaneTree(), 'ws-fixed')
+    expect(ws.id).toBe('ws-fixed')
+    expect(store.getCmuxWorkspace('ws-fixed')?.id).toBe('ws-fixed')
+  })
+
   it('ワークスペース削除時にセッションのworkspace_idがnullになる', () => {
     const ws = store.createCmuxWorkspace({ name: 'WS', repoPath: '/tmp/test-repo' }, defaultPaneTree())
     const session = store.create({

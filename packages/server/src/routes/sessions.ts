@@ -18,6 +18,25 @@ export function waitForShellReady(
 ): void {
   const manager = isRemote ? sshManager : ptyManager
   let resolved = false
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+
+  const cleanup = () => {
+    manager.removeListener('data', onData)
+    manager.removeListener('exit', onExit)
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+      timeoutId = null
+    }
+  }
+
+  const launchClaude = () => {
+    cleanup()
+    if (isRemote) {
+      sshManager.write(sessionId, 'claude\r')
+    } else {
+      ptyManager.write(sessionId, 'claude\r')
+    }
+  }
 
   const onData = (_sid: string, data: string) => {
     if (_sid !== sessionId || resolved) return
@@ -25,31 +44,26 @@ export function waitForShellReady(
     const cleanData = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim()
     if (cleanData.match(/[$%>#]\s*$/) || cleanData.includes('❯')) {
       resolved = true
-      manager.removeListener('data', onData)
       // プロンプト検出後、少し待ってからclaudeを送信
-      setTimeout(() => {
-        if (isRemote) {
-          sshManager.write(sessionId, 'claude\r')
-        } else {
-          ptyManager.write(sessionId, 'claude\r')
-        }
-      }, 100)
+      timeoutId = setTimeout(launchClaude, 100)
     }
   }
 
+  const onExit = (_sid: string) => {
+    if (_sid !== sessionId || resolved) return
+    resolved = true
+    cleanup()
+  }
+
   manager.on('data', onData)
+  manager.on('exit', onExit)
 
   // タイムアウト: 5秒以内にプロンプトが検出されなければ強制送信
-  setTimeout(() => {
+  timeoutId = setTimeout(() => {
     if (!resolved) {
       resolved = true
-      manager.removeListener('data', onData)
       console.warn(`⚠️ セッション ${sessionId.slice(0, 8)}... のシェルプロンプト検出タイムアウト。claudeを強制送信します。`)
-      if (isRemote) {
-        sshManager.write(sessionId, 'claude\r')
-      } else {
-        ptyManager.write(sessionId, 'claude\r')
-      }
+      launchClaude()
     }
   }, 5000)
 }
@@ -129,10 +143,22 @@ export function createSessionsRouter(
       }
     } catch (e) {
       console.error(`${isRemote ? 'SSH接続/リモートシェル' : 'PTY'}起動エラー:`, e)
+      if (sshManager.hasSession(session.id)) {
+        sshManager.kill(session.id)
+      } else {
+        ptyManager.kill(session.id)
+      }
       try {
         store.delete(session.id)
       } catch (deleteErr) {
         console.error('セッション削除エラー:', deleteErr)
+      }
+      if (worktreePath) {
+        try {
+          worktreeService.remove(params.repoPath, worktreePath)
+        } catch (cleanupErr) {
+          console.error('worktree削除エラー:', cleanupErr)
+        }
       }
       res.status(500).json({ error: `${isRemote ? 'SSH接続/リモートシェル' : 'PTY'}起動エラー: ${e}` })
       return

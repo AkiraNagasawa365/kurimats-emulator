@@ -17,19 +17,33 @@ export function useNotificationWs() {
   const { updateConnectionStatus, addNotification } = useSshStore()
 
   useEffect(() => {
+    let disposed = false
+
     function connect() {
+      if (disposed) return
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       const ws = new WebSocket(`${protocol}//${window.location.host}/ws/notifications`)
       wsRef.current = ws
 
       ws.onopen = () => {
+        if (disposed) {
+          ws.close()
+          return
+        }
         if (reconnectTimerRef.current) {
           clearTimeout(reconnectTimerRef.current)
+          reconnectTimerRef.current = undefined
         }
       }
 
       ws.onmessage = (event) => {
-        const msg: NotificationMessage = JSON.parse(event.data)
+        if (disposed) return
+        let msg: NotificationMessage
+        try {
+          msg = JSON.parse(event.data)
+        } catch {
+          return
+        }
         switch (msg.type) {
           case 'connection_status':
             updateConnectionStatus(msg.host, msg.status)
@@ -47,7 +61,9 @@ export function useNotificationWs() {
       }
 
       ws.onclose = () => {
-        reconnectTimerRef.current = setTimeout(connect, 3000)
+        if (!disposed) {
+          reconnectTimerRef.current = setTimeout(connect, 3000)
+        }
       }
 
       ws.onerror = () => {
@@ -58,8 +74,10 @@ export function useNotificationWs() {
     connect()
 
     return () => {
+      disposed = true
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = undefined
       }
       wsRef.current?.close()
       wsRef.current = null
