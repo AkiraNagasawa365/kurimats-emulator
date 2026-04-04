@@ -49,7 +49,7 @@ export function WorkspaceItem({
     <div className="relative">
       <div
         className={`
-          flex items-center gap-2 px-3 py-1.5 cursor-pointer
+          flex flex-col px-3 py-1.5 cursor-pointer
           transition-colors text-sm group
           ${isActive
             ? 'bg-surface-2 text-text-primary'
@@ -63,20 +63,22 @@ export function WorkspaceItem({
           setShowContextMenu(true)
         }}
       >
-        {/* プロジェクトカラーインジケーター */}
-        {projectColor && (
-          <div
-            className="w-2 h-2 rounded-full flex-shrink-0"
-            style={{ backgroundColor: projectColor }}
-          />
-        )}
+        {/* 上段: 名前 + バッジ */}
+        <div className="flex items-center gap-2">
+          {/* プロジェクトカラーインジケーター */}
+          {projectColor && (
+            <div
+              className="w-2 h-2 rounded-full flex-shrink-0"
+              style={{ backgroundColor: projectColor }}
+            />
+          )}
 
-        {/* ワークスペース名 or リネーム入力 */}
-        {isRenaming ? (
-          <input
-            type="text"
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
+          {/* ワークスペース名 or リネーム入力 */}
+          {isRenaming ? (
+            <input
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
             onBlur={handleRenameSubmit}
             onKeyDown={handleKeyDown}
             className="flex-1 bg-surface-0 border border-accent rounded px-1 py-0 text-xs
@@ -106,6 +108,19 @@ export function WorkspaceItem({
             {workspace.notificationCount}
           </span>
         )}
+        </div>
+
+        {/* 下段: プロジェクト情報（リポパス + SSHホスト） */}
+        <div className="flex items-center gap-1 mt-0.5">
+          {workspace.sshHost && (
+            <span className="text-[10px] text-blue-400 truncate">
+              {workspace.sshHost}:
+            </span>
+          )}
+          <span className="text-[10px] text-text-muted truncate">
+            {workspace.repoPath.split('/').slice(-2).join('/')}
+          </span>
+        </div>
       </div>
 
       {/* コンテキストメニュー */}
