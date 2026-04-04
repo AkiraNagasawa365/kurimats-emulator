@@ -8,3 +8,9 @@ dist/
 .DS_Store
 .playwright-mcp/
 packages/server/data/
+*.tsbuildinfo
+screenshot-*.png
+test-*.png
+0*-*.png
+
+.kurimats-worktrees/

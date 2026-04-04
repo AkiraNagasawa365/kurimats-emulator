@@ -33,8 +33,8 @@ describe('ボードキャンバスストア', () => {
     const state = useLayoutStore.getState()
     expect(state.boardNodes).toHaveLength(1)
     expect(state.boardNodes[0].sessionId).toBe('session-1')
-    expect(state.boardNodes[0].width).toBe(600)
-    expect(state.boardNodes[0].height).toBe(400)
+    expect(state.boardNodes[0].width).toBe(520)
+    expect(state.boardNodes[0].height).toBe(620)
     expect(state.activeSessionId).toBe('session-1')
   })
 

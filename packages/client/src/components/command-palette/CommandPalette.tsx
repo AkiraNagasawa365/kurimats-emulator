@@ -1,62 +1,63 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useCommandPaletteStore, type Command } from '../../stores/command-palette-store'
-import { useSessionStore } from '../../stores/session-store'
-import { useLayoutStore } from '../../stores/layout-store'
-import { useOverlayStore } from '../../stores/overlay-store'
-import type { LayoutMode } from '@kurimats/shared'
+import { useWorkspaceStore } from '../../stores/workspace-store'
+import { usePaneStore } from '../../stores/pane-store'
 
 /**
- * コマンドパレット
- * Ctrl+Shift+P / Ctrl+K で開く
- * コマンド検索・実行
+ * コマンドパレット（cmux v3）
+ * Cmd+Shift+P で開く
+ * ペイン/ワークスペース/サーフェス操作をファジー検索
  */
 export function CommandPalette() {
   const { search, setSearch, close } = useCommandPaletteStore()
-  const { sessions } = useSessionStore()
-  const { setMode, addPanel, setActivePanel, panels } = useLayoutStore()
-  const { openOverlay } = useOverlayStore()
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
 
+  const { workspaces, workspaceOrder, switchWorkspace, activeWorkspaceId } = useWorkspaceStore()
+  const { splitPane, closePane, toggleZoom, focusDirection } = usePaneStore()
+
+  // アクティブワークスペース
+  const activeWs = workspaces.find(w => w.id === activeWorkspaceId)
+  const activePaneId = activeWs?.activePaneId ?? ''
+
   // コマンド一覧の構築
   const commands: Command[] = useMemo(() => {
-    const cmds: Command[] = [
-      // レイアウトコマンド
-      { id: 'layout-1x1', label: 'レイアウト: 1列', shortcut: '', category: 'レイアウト', action: () => { setMode('1x1' as LayoutMode); close() } },
-      { id: 'layout-2x1', label: 'レイアウト: 2列', shortcut: '', category: 'レイアウト', action: () => { setMode('2x1' as LayoutMode); close() } },
-      { id: 'layout-1x2', label: 'レイアウト: 2段', shortcut: '', category: 'レイアウト', action: () => { setMode('1x2' as LayoutMode); close() } },
-      { id: 'layout-2x2', label: 'レイアウト: 4分割', shortcut: '', category: 'レイアウト', action: () => { setMode('2x2' as LayoutMode); close() } },
-      { id: 'layout-3x1', label: 'レイアウト: 3列', shortcut: '', category: 'レイアウト', action: () => { setMode('3x1' as LayoutMode); close() } },
-      // オーバーレイコマンド
-      { id: 'file-tree', label: 'ファイルツリーを開く', shortcut: '⌘E', category: 'ツール', action: () => { openOverlay('file-tree'); close() } },
-      { id: 'markdown', label: 'Markdownプレビュー', shortcut: '⌘M', category: 'ツール', action: () => { openOverlay('markdown'); close() } },
-    ]
+    const cmds: Command[] = []
 
-    // セッションコマンド
-    sessions.forEach(session => {
-      const panelIndex = panels.findIndex(p => p.sessionId === session.id)
-      const isInPanel = panelIndex >= 0
+    // ペインコマンド
+    cmds.push(
+      { id: 'pane-split-v', label: '縦に分割', shortcut: '⌘D', category: 'ペイン', action: () => { splitPane(activePaneId, 'vertical'); close() } },
+      { id: 'pane-split-h', label: '横に分割', shortcut: '⌘⇧D', category: 'ペイン', action: () => { splitPane(activePaneId, 'horizontal'); close() } },
+      { id: 'pane-close', label: 'ペインを閉じる', shortcut: '⌘W', category: 'ペイン', action: () => { closePane(activePaneId); close() } },
+      { id: 'pane-zoom', label: 'ズーム切替', shortcut: '⌘⇧↩', category: 'ペイン', action: () => { toggleZoom(activePaneId); close() } },
+      { id: 'pane-focus-left', label: '左のペインへ移動', shortcut: '⌘⌥←', category: 'ナビゲーション', action: () => { focusDirection('left'); close() } },
+      { id: 'pane-focus-right', label: '右のペインへ移動', shortcut: '⌘⌥→', category: 'ナビゲーション', action: () => { focusDirection('right'); close() } },
+      { id: 'pane-focus-up', label: '上のペインへ移動', shortcut: '⌘⌥↑', category: 'ナビゲーション', action: () => { focusDirection('up'); close() } },
+      { id: 'pane-focus-down', label: '下のペインへ移動', shortcut: '⌘⌥↓', category: 'ナビゲーション', action: () => { focusDirection('down'); close() } },
+    )
 
+    // ワークスペースコマンド
+    cmds.push(
+      { id: 'ws-new', label: '新規ワークスペース', shortcut: '⌘N', category: 'ワークスペース', action: () => { window.dispatchEvent(new CustomEvent('create-workspace')); close() } },
+    )
+
+    // ワークスペース切替コマンド
+    workspaceOrder.forEach((wsId, index) => {
+      const ws = workspaces.find(w => w.id === wsId)
+      if (!ws) return
       cmds.push({
-        id: `session-${session.id}`,
-        label: `セッションに移動: ${session.name}`,
-        shortcut: '',
-        category: 'セッション',
-        action: () => {
-          if (isInPanel) {
-            setActivePanel(panelIndex)
-          } else {
-            addPanel(session.id)
-          }
-          close()
-        },
+        id: `ws-switch-${wsId}`,
+        label: `切替: ${ws.name}`,
+        shortcut: index < 9 ? `⌘${index + 1}` : '',
+        category: 'ワークスペース',
+        action: () => { switchWorkspace(wsId); close() },
       })
     })
 
     return cmds
-  }, [sessions, panels, setMode, openOverlay, close, setActivePanel, addPanel])
+  }, [activePaneId, workspaces, workspaceOrder, splitPane, closePane, toggleZoom, focusDirection, switchWorkspace, close])
 
   // 検索フィルタ
   const filteredCommands = useMemo(() => {
@@ -64,28 +65,22 @@ export function CommandPalette() {
     const query = search.toLowerCase()
     return commands.filter(cmd =>
       cmd.label.toLowerCase().includes(query) ||
-      cmd.category.toLowerCase().includes(query)
+      cmd.category.toLowerCase().includes(query),
     )
   }, [commands, search])
 
   // 選択インデックスのリセット
-  useEffect(() => {
-    setSelectedIndex(0)
-  }, [search])
+  useEffect(() => { setSelectedIndex(0) }, [search])
 
   // 初期フォーカス
-  useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
+  useEffect(() => { inputRef.current?.focus() }, [])
 
   // 選択項目のスクロール追従
   useEffect(() => {
     const list = listRef.current
     if (!list) return
     const selected = list.children[selectedIndex] as HTMLElement
-    if (selected) {
-      selected.scrollIntoView({ block: 'nearest' })
-    }
+    if (selected) selected.scrollIntoView({ block: 'nearest' })
   }, [selectedIndex])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -125,12 +120,10 @@ export function CommandPalette() {
       className="fixed inset-0 z-50 flex justify-center pt-[15vh] animate-fade-in"
       onClick={close}
     >
-      {/* 背景オーバーレイ */}
-      <div className="absolute inset-0 bg-black/10" />
+      <div className="absolute inset-0 bg-black/40" />
 
-      {/* パレット本体 */}
       <div
-        className="relative w-full max-w-[600px] bg-white rounded-lg shadow-2xl border border-border overflow-hidden animate-slide-down"
+        className="relative w-full max-w-[600px] bg-surface-1 rounded-lg shadow-2xl border border-border overflow-hidden animate-slide-down"
         style={{ maxHeight: '60vh' }}
         onClick={e => e.stopPropagation()}
       >
@@ -166,7 +159,7 @@ export function CommandPalette() {
                 }`}
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-text-muted text-xs">{cmd.category}</span>
+                  <span className="text-text-muted text-xs w-20 flex-shrink-0">{cmd.category}</span>
                   <span className="truncate">{highlightMatch(cmd.label)}</span>
                 </div>
                 {cmd.shortcut && (
@@ -180,6 +173,6 @@ export function CommandPalette() {
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   )
 }

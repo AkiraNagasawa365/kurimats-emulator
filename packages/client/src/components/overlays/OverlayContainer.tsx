@@ -5,13 +5,14 @@ interface Props {
   onClose: () => void
   title: string
   children: React.ReactNode
+  fullScreen?: boolean
 }
 
 /**
  * オーバーレイコンテナ
- * 右側からスライドインするパネル
+ * 右側からスライドインするパネル（fullScreen時は全画面）
  */
-export function OverlayContainer({ isOpen, onClose, title, children }: Props) {
+export function OverlayContainer({ isOpen, onClose, title, children, fullScreen }: Props) {
   const panelRef = useRef<HTMLDivElement>(null)
 
   // Escapeキーで閉じる
@@ -31,14 +32,16 @@ export function OverlayContainer({ isOpen, onClose, title, children }: Props) {
     <div className="fixed inset-0 z-40 flex justify-end animate-fade-in">
       {/* 背景 */}
       <div
-        className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
         onClick={onClose}
       />
 
       {/* パネル */}
       <div
         ref={panelRef}
-        className="relative w-1/2 max-w-[700px] min-w-[400px] h-full bg-white shadow-2xl flex flex-col animate-slide-in"
+        className={`relative h-full bg-surface-1 shadow-2xl flex flex-col animate-slide-in ${
+          fullScreen ? 'w-full' : 'w-1/2 max-w-[700px] min-w-[400px]'
+        }`}
       >
         {/* ヘッダー */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">

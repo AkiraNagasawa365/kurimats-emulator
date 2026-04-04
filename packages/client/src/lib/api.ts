@@ -1,4 +1,4 @@
-import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, LayoutState, BoardLayoutState, TabListResponse, TabSyncResponse, SshHost, SshConnectionStatus } from '@kurimats/shared'
+import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams, CmuxWorkspace, CreateCmuxWorkspaceParams, PaneNode, SplitPaneRequest, SplitPaneResponse, LayoutState, BoardLayoutState } from '@kurimats/shared'
 
 const BASE = '/api'
 
@@ -32,6 +32,15 @@ export const sessionsApi = {
       method: 'POST',
       body: JSON.stringify({ projectId }),
     }),
+  getPreview: (id: string, lines = 5) =>
+    request<{ sessionId: string; lines: string[] }>(`/sessions/${id}/preview?lines=${lines}`),
+  reconnect: (id: string) =>
+    request<{ ok: boolean; session: Session }>(`/sessions/${id}/reconnect`, { method: 'POST' }),
+  rename: (id: string, name: string) =>
+    request<{ ok: boolean; session: Session }>(`/sessions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
 }
 
 // ファイルAPI
@@ -50,26 +59,72 @@ export const projectsApi = {
   list: () => request<Project[]>('/projects'),
   create: (params: CreateProjectParams) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(params) }),
-  update: (id: string, updates: Partial<CreateProjectParams>) =>
+  update: (id: string, updates: Partial<CreateProjectParams> & { sshPresetId?: string | null; startupTemplateId?: string | null }) =>
     request<{ ok: boolean }>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(updates) }),
   delete: (id: string) =>
     request<{ ok: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
 }
 
-// レイアウトAPI
+// ワークスペースAPI（cmux v3）
+export const workspacesApi = {
+  list: () => request<CmuxWorkspace[]>('/workspaces'),
+  get: (id: string) => request<CmuxWorkspace>(`/workspaces/${id}`),
+  create: (params: CreateCmuxWorkspaceParams) =>
+    request<CmuxWorkspace>('/workspaces', { method: 'POST', body: JSON.stringify(params) }),
+  delete: (id: string) =>
+    request<{ ok: boolean }>(`/workspaces/${id}`, { method: 'DELETE' }),
+  rename: (id: string, name: string) =>
+    request<CmuxWorkspace>(`/workspaces/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
+  togglePin: (id: string) =>
+    request<CmuxWorkspace>(`/workspaces/${id}/pin`, { method: 'POST' }),
+  updatePaneTree: (id: string, paneTree: PaneNode, activePaneId: string) =>
+    request<{ ok: boolean }>(`/workspaces/${id}/pane-tree`, {
+      method: 'PUT',
+      body: JSON.stringify({ paneTree, activePaneId }),
+    }),
+  splitPane: (id: string, params: SplitPaneRequest) =>
+    request<SplitPaneResponse>(`/workspaces/${id}/split-pane`, {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
+}
+
+// 旧レイアウトAPI
 export const layoutApi = {
   get: () => request<LayoutState | null>('/layout'),
   save: (state: LayoutState) =>
-    request<{ ok: boolean }>('/layout', { method: 'PUT', body: JSON.stringify(state) }),
+    request<{ ok: boolean }>('/layout', {
+      method: 'PUT',
+      body: JSON.stringify(state),
+    }),
   getBoard: () => request<BoardLayoutState | null>('/layout/board'),
   saveBoard: (state: BoardLayoutState) =>
-    request<{ ok: boolean }>('/layout/board', { method: 'PUT', body: JSON.stringify(state) }),
+    request<{ ok: boolean }>('/layout/board', {
+      method: 'PUT',
+      body: JSON.stringify(state),
+    }),
 }
 
 // tabコマンドAPI
 export const tabApi = {
   list: () => request<TabListResponse>('/tab/list'),
   sync: () => request<TabSyncResponse>('/tab/sync', { method: 'POST' }),
+  bookmarks: () => request<{ bookmarks: TabBookmark[] }>('/tab/bookmarks'),
+}
+
+// フィードバックAPI
+export const feedbackApi = {
+  list: () => request<Feedback[]>('/feedback'),
+  create: (params: CreateFeedbackParams) =>
+    request<Feedback>('/feedback', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
+  delete: (id: string) =>
+    request<{ ok: boolean }>(`/feedback/${id}`, { method: 'DELETE' }),
 }
 
 // SSH API
@@ -86,4 +141,24 @@ export const sshApi = {
     }),
   status: () => request<Record<string, SshConnectionStatus>>('/ssh/status'),
   refresh: () => request<SshHost[]>('/ssh/refresh', { method: 'POST' }),
+
+  // SSHプリセット
+  presets: {
+    list: () => request<SshPreset[]>('/ssh/presets'),
+    create: (params: CreateSshPresetParams) =>
+      request<SshPreset>('/ssh/presets', { method: 'POST', body: JSON.stringify(params) }),
+    update: (id: string, params: Partial<CreateSshPresetParams>) =>
+      request<SshPreset>(`/ssh/presets/${id}`, { method: 'PATCH', body: JSON.stringify(params) }),
+    delete: (id: string) =>
+      request<{ ok: boolean }>(`/ssh/presets/${id}`, { method: 'DELETE' }),
+  },
+
+  // 起動テンプレート
+  templates: {
+    list: () => request<StartupTemplate[]>('/ssh/templates'),
+    create: (params: CreateStartupTemplateParams) =>
+      request<StartupTemplate>('/ssh/templates', { method: 'POST', body: JSON.stringify(params) }),
+    delete: (id: string) =>
+      request<{ ok: boolean }>(`/ssh/templates/${id}`, { method: 'DELETE' }),
+  },
 }

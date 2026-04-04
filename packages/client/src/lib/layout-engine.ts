@@ -14,7 +14,7 @@ export interface CardRect {
 
 export type AutoLayoutMode = 'grid' | 'flow' | 'tree'
 
-const DEFAULT_GAP = 16
+const DEFAULT_GAP = 40
 
 /**
  * 2つの矩形が重なっているか判定
@@ -152,8 +152,9 @@ export function findOptimalPosition(
   containerHeight: number,
 ): { x: number; y: number } {
   const gap = DEFAULT_GAP
-  const stepX = 10
-  const stepY = 10
+  // ステップをノードサイズの半分にして効率的にスキャン
+  const stepX = Math.max(Math.floor(newCard.width / 2), 50)
+  const stepY = Math.max(Math.floor(newCard.height / 2), 50)
 
   // 空の場合は左上
   if (existing.length === 0) {

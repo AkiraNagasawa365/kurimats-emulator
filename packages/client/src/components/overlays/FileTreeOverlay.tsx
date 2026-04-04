@@ -6,15 +6,29 @@ import { useSessionStore } from '../../stores/session-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { OverlayContainer } from './OverlayContainer'
 
+/** 拡張子からMonaco Editor言語を推定 */
+function getLanguage(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() || ''
+  const map: Record<string, string> = {
+    ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
+    json: 'json', css: 'css', html: 'html', md: 'markdown',
+    py: 'python', rs: 'rust', go: 'go', sh: 'bash', bash: 'bash',
+    yml: 'yaml', yaml: 'yaml', toml: 'toml', sql: 'sql',
+    dockerfile: 'dockerfile', makefile: 'makefile',
+  }
+  return map[ext] || 'plaintext'
+}
+
 interface Props {
   onClose: () => void
+  sessionId?: string
 }
 
 /**
  * ファイルツリーオーバーレイ
  * リポジトリのファイル構造を表示
  */
-export function FileTreeOverlay({ onClose }: Props) {
+export function FileTreeOverlay({ onClose, sessionId }: Props) {
   const { sessions } = useSessionStore()
   const { panels, activePanelIndex } = useLayoutStore()
   const { openOverlay } = useOverlayStore()
@@ -24,14 +38,21 @@ export function FileTreeOverlay({ onClose }: Props) {
   const [filter, setFilter] = useState('')
   const [workingDir, setWorkingDir] = useState('')
 
-  // アクティブなセッションのリポジトリパスを取得
+  // セッションのリポジトリパスを取得（sessionId指定時はそのセッション優先）
   useEffect(() => {
-    const activePanel = panels[activePanelIndex]
-    const activeSession = activePanel?.sessionId
-      ? sessions.find(s => s.id === activePanel.sessionId)
-      : sessions[0]
+    let activeSession
+    if (sessionId) {
+      activeSession = sessions.find(s => s.id === sessionId)
+    } else {
+      const activePanel = panels[activePanelIndex]
+      activeSession = activePanel?.sessionId
+        ? sessions.find(s => s.id === activePanel.sessionId)
+        : sessions[0]
+    }
 
-    const root = activeSession?.worktreePath || activeSession?.repoPath || ''
+    // ファイルツリーではrepoPath（元リポジトリ）を優先
+    // worktreePathはgit管理ファイルのみで不完全なため
+    const root = activeSession?.repoPath || ''
     setWorkingDir(root)
 
     if (!root) {
@@ -53,14 +74,19 @@ export function FileTreeOverlay({ onClose }: Props) {
       })
   }, [sessions, panels, activePanelIndex])
 
+  const { addFileTile } = useLayoutStore()
+
   const handleFileClick = useCallback((path: string) => {
-    // Markdownファイルならmarkdownオーバーレイ、それ以外はコードビューア
+    // Markdownファイルなら全画面markdownオーバーレイ
     if (path.endsWith('.md')) {
-      openOverlay('markdown', { filePath: path })
+      openOverlay('markdown', { filePath: path, fullScreen: true })
     } else {
-      openOverlay('code-viewer', { filePath: path })
+      // キャンバス上にMonaco Editorタイルとして開く
+      const language = getLanguage(path)
+      addFileTile(path, language)
+      onClose()
     }
-  }, [openOverlay])
+  }, [openOverlay, addFileTile, onClose])
 
   return (
     <OverlayContainer isOpen={true} onClose={onClose} title="ファイルツリー">

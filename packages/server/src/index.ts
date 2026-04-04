@@ -15,6 +15,9 @@ import { createProjectsRouter } from './routes/projects.js'
 import { createLayoutRouter } from './routes/layout.js'
 import { createTabRouter } from './routes/tab.js'
 import { createSshRouter } from './routes/ssh.js'
+import { createFeedbackRouter } from './routes/feedback.js'
+import { createWorkspacesRouter } from './routes/workspaces.js'
+import { CanvasStore } from './services/canvas-store.js'
 
 const PORT = parseInt(process.env.PORT || '3001', 10)
 const HOST = process.env.HOST || 'localhost'
@@ -27,6 +30,35 @@ const ptyManager = new PtyManager()
 const sshManager = new SshManager()
 const worktreeService = new WorktreeService()
 const sessionStore = new SessionStore()
+const canvasStore = new CanvasStore()
+
+const markDisconnected = (sessionId: string) => {
+  const session = sessionStore.getById(sessionId)
+  if (session && session.status === 'active') {
+    sessionStore.updateStatus(sessionId, 'disconnected')
+  }
+}
+
+ptyManager.on('exit', (sessionId: string) => {
+  markDisconnected(sessionId)
+})
+
+sshManager.on('exit', (sessionId: string) => {
+  markDisconnected(sessionId)
+})
+
+// サーバー起動時: PTYが消失したactiveセッションをdisconnectedに変更
+const orphanedSessions = sessionStore.getAll().filter(s => s.status === 'active')
+if (orphanedSessions.length > 0) {
+  console.log(`⚠️  ${orphanedSessions.length}件のorphanedセッションを検出 → disconnectedに変更`)
+  for (const s of orphanedSessions) {
+    sessionStore.updateStatus(s.id, 'disconnected')
+    console.log(`   ↳ セッション "${s.name}" (${s.id.slice(0, 8)}...) → disconnected`)
+  }
+  console.log('✅ orphanedセッションの復元処理完了。UIから再接続可能です。')
+} else {
+  console.log('✅ orphanedセッションなし')
+}
 
 // Express設定
 const app = express()
@@ -50,9 +82,11 @@ app.use('/api/sessions', createSessionsRouter(sessionStore, ptyManager, sshManag
 app.use('/api/files', createFilesRouter())
 app.use('/api/worktrees', createWorktreesRouter(worktreeService))
 app.use('/api/projects', createProjectsRouter(sessionStore))
-app.use('/api/layout', createLayoutRouter(sessionStore))
-app.use('/api/tab', createTabRouter(sessionStore))
-app.use('/api/ssh', createSshRouter(sshManager))
+app.use('/api/layout', createLayoutRouter(sessionStore, canvasStore))
+app.use('/api/tab', createTabRouter(sessionStore, ptyManager, sshManager))
+app.use('/api/ssh', createSshRouter(sshManager, sessionStore))
+app.use('/api/feedback', createFeedbackRouter(sessionStore))
+app.use('/api/workspaces', createWorkspacesRouter(sessionStore, ptyManager, sshManager, worktreeService))
 
 // ヘルスチェック
 app.get('/api/health', (_req, res) => {
@@ -121,3 +155,12 @@ function shutdown() {
 
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason)
+})
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error)
+  shutdown()
+})

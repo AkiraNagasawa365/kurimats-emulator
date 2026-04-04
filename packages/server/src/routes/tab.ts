@@ -1,17 +1,14 @@
 import { Router } from 'express'
 import { execSync } from 'child_process'
 import type { SessionStore } from '../services/session-store.js'
-import type { TabHost, TabProject, TabListResponse, TabSyncResponse } from '@kurimats/shared'
+import type { PtyManager } from '../services/pty-manager.js'
+import type { SshManager } from '../services/ssh-manager.js'
+import type { TabHost, TabProject, TabListResponse, TabSyncResponse, TabBookmark, Session } from '@kurimats/shared'
 import { PROJECT_COLORS } from '@kurimats/shared'
+import { parseBookmarksToml } from '../services/bookmarks-parser.js'
 
 /**
  * `tab list` コマンドの出力をパースする
- * フォーマット例:
- *   local:
- *     project-a → /path/to/project-a
- *     project-b → /path/to/project-b
- *   remote-host:
- *     project-c → /remote/path/to/project-c
  */
 function parseTabListOutput(output: string): TabHost[] {
   const hosts: TabHost[] = []
@@ -21,7 +18,6 @@ function parseTabListOutput(output: string): TabHost[] {
     const trimmed = line.trim()
     if (!trimmed) continue
 
-    // ホスト行: "hostname:" 形式
     if (trimmed.endsWith(':') && !trimmed.includes('→')) {
       const hostName = trimmed.slice(0, -1).trim()
       currentHost = {
@@ -33,7 +29,6 @@ function parseTabListOutput(output: string): TabHost[] {
       continue
     }
 
-    // プロジェクト行: "name → path" 形式
     const arrowMatch = trimmed.match(/^(.+?)\s*[→→>]\s*(.+)$/)
     if (arrowMatch && currentHost) {
       const project: TabProject = {
@@ -47,8 +42,11 @@ function parseTabListOutput(output: string): TabHost[] {
   return hosts
 }
 
-export function createTabRouter(store: SessionStore): Router {
+export function createTabRouter(store: SessionStore, ptyManager: PtyManager, sshManager: SshManager): Router {
   const router = Router()
+
+  // tab同期のmutex（同時実行防止）
+  let isSyncing = false
 
   // tab listコマンド実行・パース
   router.get('/list', (_req, res) => {
@@ -62,61 +60,145 @@ export function createTabRouter(store: SessionStore): Router {
       res.json(response)
     } catch (e) {
       console.error('tabコマンド実行エラー:', e)
-      // tabコマンドが見つからない場合はダミーデータを返す
       res.json({ hosts: [] } satisfies TabListResponse)
     }
   })
 
-  // tab同期: tabのプロジェクトをkurimatsプロジェクトにインポート
-  router.post('/sync', (_req, res) => {
+  // bookmarks.toml 直接読み込み
+  router.get('/bookmarks', (_req, res) => {
+    const bookmarks = parseBookmarksToml()
+    res.json({ bookmarks })
+  })
+
+  // tab同期: bookmarks.toml → プロジェクト + セッション作成 + Claude起動
+  router.post('/sync', async (_req, res) => {
+    // 同時実行防止
+    if (isSyncing) {
+      res.status(409).json({ error: '同期処理が実行中です。しばらくお待ちください。' })
+      return
+    }
+    isSyncing = true
     try {
+      // bookmarks.toml からブックマーク一覧を取得
+      const bookmarks = parseBookmarksToml()
+
+      // フォールバック: bookmarks.toml が空の場合は tab list を使う
       let hosts: TabHost[] = []
-      try {
-        const output = execSync('tab list', {
-          encoding: 'utf-8',
-          timeout: 5000,
-        })
-        hosts = parseTabListOutput(output)
-      } catch {
-        // tabコマンドが利用できない場合
-        console.warn('tabコマンドが見つかりません。空のプロジェクト一覧で続行します。')
+      if (bookmarks.length === 0) {
+        try {
+          const output = execSync('tab list', {
+            encoding: 'utf-8',
+            timeout: 5000,
+          })
+          hosts = parseTabListOutput(output)
+        } catch {
+          console.warn('tabコマンドが見つかりません。')
+        }
       }
 
       const existingProjects = store.getAllProjects()
-      const existingNames = new Set(existingProjects.map(p => p.name))
+      const existingProjectNames = new Set(existingProjects.map(p => p.name))
+      const existingSessions = store.getAll()
+      // 全ステータスのセッション名で重複チェック（起動のたびに増えるのを防止）
+      const existingSessionNames = new Set(
+        existingSessions.map(s => s.name)
+      )
 
       let created = 0
       let skipped = 0
-      const createdProjects = []
+      const createdSessions: Session[] = []
 
-      // ホストごとにカラーを割り当て
-      const hostColorMap = new Map<string, string>()
-      let colorIndex = 0
+      if (bookmarks.length > 0) {
+        // bookmarks.toml ベースの同期
+        const hostColorMap = new Map<string, string>()
+        let colorIndex = 0
 
-      for (const host of hosts) {
-        // localはblue、リモートは順番にカラー割り当て
-        if (host.type === 'local') {
-          hostColorMap.set(host.name, '#3b82f6') // blue
-        } else {
-          const color = PROJECT_COLORS[colorIndex % PROJECT_COLORS.length]
-          hostColorMap.set(host.name, color)
-          colorIndex++
-        }
+        for (const bm of bookmarks) {
+          const hostKey = bm.host || 'local'
 
-        for (const tabProject of host.projects) {
-          if (existingNames.has(tabProject.name)) {
-            skipped++
-            continue
+          // ホストごとのカラー割り当て
+          if (!hostColorMap.has(hostKey)) {
+            if (hostKey === 'local') {
+              hostColorMap.set(hostKey, '#3b82f6')
+            } else {
+              hostColorMap.set(hostKey, PROJECT_COLORS[colorIndex % PROJECT_COLORS.length])
+              colorIndex++
+            }
           }
 
-          const project = store.createProject({
-            name: tabProject.name,
-            color: hostColorMap.get(host.name) || '#6b7280',
-            repoPath: tabProject.path,
-          })
-          createdProjects.push(project)
-          existingNames.add(tabProject.name)
-          created++
+          // プロジェクト作成（未作成の場合のみ）
+          if (!existingProjectNames.has(bm.name)) {
+            store.createProject({
+              name: bm.name,
+              color: hostColorMap.get(hostKey) || '#6b7280',
+              repoPath: bm.directory,
+            })
+            existingProjectNames.add(bm.name)
+            created++
+          } else {
+            skipped++
+          }
+
+          // セッション作成（同名セッションが存在しない場合のみ）
+          if (!existingSessionNames.has(bm.name)) {
+            const isRemote = !!bm.host
+            const project = store.getAllProjects().find(p => p.name === bm.name)
+
+            const session = store.create({
+              name: bm.name,
+              repoPath: bm.directory,
+              sshHost: bm.host || null,
+              isRemote,
+              projectId: project?.id || null,
+            })
+
+            // セッション起動: リモートはSshManager、ローカルはPtyManager
+            try {
+              if (isRemote && bm.host) {
+                // リモート: SshManager経由で接続・シェル起動
+                await sshManager.connect(bm.host)
+                await sshManager.spawn(session.id, bm.host, bm.directory, 120, 30)
+              } else {
+                // ローカル: シェルを cwd 指定で起動
+                const shell = process.env.SHELL || '/bin/zsh'
+                await ptyManager.spawn(session.id, bm.directory, 120, 30, shell, [])
+              }
+              createdSessions.push(session)
+              existingSessionNames.add(bm.name)
+            } catch (e) {
+              console.error(`セッション ${bm.name} の起動に失敗:`, e)
+              store.delete(session.id)
+            }
+          }
+        }
+      } else {
+        // tab list ベースの同期（従来互換）
+        const hostColorMap = new Map<string, string>()
+        let colorIndex = 0
+
+        for (const host of hosts) {
+          if (host.type === 'local') {
+            hostColorMap.set(host.name, '#3b82f6')
+          } else {
+            const color = PROJECT_COLORS[colorIndex % PROJECT_COLORS.length]
+            hostColorMap.set(host.name, color)
+            colorIndex++
+          }
+
+          for (const tabProject of host.projects) {
+            if (existingProjectNames.has(tabProject.name)) {
+              skipped++
+              continue
+            }
+
+            store.createProject({
+              name: tabProject.name,
+              color: hostColorMap.get(host.name) || '#6b7280',
+              repoPath: tabProject.path,
+            })
+            existingProjectNames.add(tabProject.name)
+            created++
+          }
         }
       }
 
@@ -125,11 +207,14 @@ export function createTabRouter(store: SessionStore): Router {
         created,
         skipped,
         projects: allProjects,
+        sessions: createdSessions,
       }
       res.json(response)
     } catch (e) {
       console.error('tab同期エラー:', e)
       res.status(500).json({ error: `tab同期に失敗: ${e}` })
+    } finally {
+      isSyncing = false
     }
   })
 

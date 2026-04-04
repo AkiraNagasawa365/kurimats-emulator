@@ -1,25 +1,21 @@
-import { useEffect } from 'react'
-import { ReactFlowProvider } from '@xyflow/react'
-import { Sidebar } from './components/layout/Sidebar'
-import { BoardCanvas } from './components/board/BoardCanvas'
+import { useEffect, useState } from 'react'
+import { ActivityBar, type ActivityBarSection } from './components/navigator/ActivityBar'
+import { WorkspaceNavigator } from './components/navigator/WorkspaceNavigator'
+import { PaneContainer } from './components/panes/PaneContainer'
 import { StatusBar } from './components/layout/StatusBar'
 import { CommandPalette } from './components/command-palette/CommandPalette'
-import { FileTreeOverlay } from './components/overlays/FileTreeOverlay'
-import { CodeViewerOverlay } from './components/overlays/CodeViewerOverlay'
-import { MarkdownOverlay } from './components/overlays/MarkdownOverlay'
 import { NotificationToast } from './components/notifications/NotificationToast'
 import { useSessionStore } from './stores/session-store'
-import { useOverlayStore } from './stores/overlay-store'
+import { useWorkspaceStore } from './stores/workspace-store'
 import { useCommandPaletteStore } from './stores/command-palette-store'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { useLayoutStore } from './stores/layout-store'
 import { useNotificationWs } from './hooks/useNotificationWs'
 
 export default function App() {
   const { fetchSessions, fetchProjects } = useSessionStore()
-  const { activeOverlay, closeOverlay, overlayProps } = useOverlayStore()
+  const { fetchWorkspaces, workspaces } = useWorkspaceStore()
   const { isOpen: isPaletteOpen } = useCommandPaletteStore()
-  const { loadSavedLayout } = useLayoutStore()
+  const [activeSection, setActiveSection] = useState<ActivityBarSection | null>('workspaces')
 
   useKeyboardShortcuts()
   useNotificationWs()
@@ -27,19 +23,34 @@ export default function App() {
   useEffect(() => {
     fetchSessions()
     fetchProjects()
-    loadSavedLayout()
-  }, [fetchSessions, fetchProjects, loadSavedLayout])
+    fetchWorkspaces()
+  }, [fetchSessions, fetchProjects, fetchWorkspaces])
+
+  // 通知バッジの合計
+  const totalNotifications = workspaces.reduce((sum, w) => sum + w.notificationCount, 0)
+
+  const handleSectionToggle = (section: ActivityBarSection) => {
+    setActiveSection(prev => prev === section ? null : section)
+  }
 
   return (
-    <div className="h-screen flex flex-col bg-white text-text-primary">
-      {/* メインエリア: サイドバー + ボードキャンバス */}
+    <div className="h-screen flex flex-col bg-surface-0 text-text-primary">
+      {/* メインエリア: ActivityBar + Navigator + PaneContainer */}
       <div className="flex-1 flex min-h-0">
-        <Sidebar />
-        <div className="flex-1 min-w-0 relative">
-          <ReactFlowProvider>
-            <BoardCanvas />
-          </ReactFlowProvider>
-        </div>
+        {/* 左端アイコンバー（48px） */}
+        <ActivityBar
+          activeSection={activeSection}
+          onSectionToggle={handleSectionToggle}
+          totalNotifications={totalNotifications}
+        />
+
+        {/* 展開可能サイドパネル */}
+        {activeSection && activeSection !== 'settings' && (
+          <WorkspaceNavigator activeSection={activeSection} />
+        )}
+
+        {/* ペイン分割エリア */}
+        <PaneContainer />
       </div>
 
       {/* ステータスバー */}
@@ -47,23 +58,6 @@ export default function App() {
 
       {/* コマンドパレット */}
       {isPaletteOpen && <CommandPalette />}
-
-      {/* オーバーレイ */}
-      {activeOverlay === 'file-tree' && (
-        <FileTreeOverlay onClose={closeOverlay} />
-      )}
-      {activeOverlay === 'code-viewer' && (
-        <CodeViewerOverlay
-          filePath={overlayProps.filePath as string}
-          onClose={closeOverlay}
-        />
-      )}
-      {activeOverlay === 'markdown' && (
-        <MarkdownOverlay
-          filePath={overlayProps.filePath as string | undefined}
-          onClose={closeOverlay}
-        />
-      )}
 
       {/* 通知トースト */}
       <NotificationToast />

@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { useTerminalWs } from '../../hooks/useTerminalWs'
+import { hasValidSize, safeFit } from '../../utils/terminal-utils'
 
 interface Props {
   sessionId: string
@@ -23,6 +24,9 @@ export function TerminalComponent({ sessionId, isActive, onFocus }: Props) {
   // xterm.jsインスタンスの作成
   useEffect(() => {
     if (!containerRef.current) return
+
+    const container = containerRef.current
+    let disposed = false
 
     const term = new XTerm({
       theme: {
@@ -58,26 +62,58 @@ export function TerminalComponent({ sessionId, isActive, onFocus }: Props) {
     const webLinksAddon = new WebLinksAddon()
     term.loadAddon(fitAddon)
     term.loadAddon(webLinksAddon)
-
-    term.open(containerRef.current)
-    fitAddon.fit()
     fitAddonRef.current = fitAddon
 
-    setTerminal(term)
+    let initObserver: ResizeObserver | null = null
 
-    // リサイズ監視
-    const resizeObserver = new ResizeObserver(() => {
+    /**
+     * ターミナルの初期化を実行する
+     * open()はコンテナサイズが0だと内部のrenderServiceが未初期化となり
+     * syncScrollAreaでdimensionsエラーが発生する。
+     * さらにopen()内部でも同期的にsyncScrollAreaが呼ばれるため、
+     * requestAnimationFrameで次フレームに遅延させ、DOMレイアウト確定後に実行する。
+     */
+    const initTerminal = () => {
       requestAnimationFrame(() => {
+        if (disposed) return
+        if (!hasValidSize(container)) return
         try {
-          fitAddon.fit()
+          term.open(container)
         } catch {
-          // コンテナが非表示の場合は無視
+          // xterm.js内部のdimensionsエラーをキャッチ（初回open時の既知の問題）
+          return
+        }
+        safeFit(fitAddon, container)
+        setTerminal(term)
+      })
+    }
+
+    // コンテナサイズが有効ならすぐ初期化、そうでなければサイズ確定を待つ
+    if (hasValidSize(container)) {
+      initTerminal()
+    } else {
+      // サイズが0の場合、ResizeObserverでサイズ確定を検知してから初期化
+      initObserver = new ResizeObserver(() => {
+        if (hasValidSize(container)) {
+          initObserver?.disconnect()
+          initObserver = null
+          initTerminal()
         }
       })
+      initObserver.observe(container)
+    }
+
+    // リサイズ監視（サイズが有効な場合のみfit）
+    const resizeObserver = new ResizeObserver(() => {
+      requestAnimationFrame(() => {
+        safeFit(fitAddon, container)
+      })
     })
-    resizeObserver.observe(containerRef.current)
+    resizeObserver.observe(container)
 
     return () => {
+      disposed = true
+      initObserver?.disconnect()
       resizeObserver.disconnect()
       term.dispose()
       setTerminal(null)
@@ -97,8 +133,9 @@ export function TerminalComponent({ sessionId, isActive, onFocus }: Props) {
   return (
     <div
       ref={containerRef}
-      className="w-full h-full"
-      onClick={onFocus}
+      className="w-full h-full nopan nodrag nowheel"
+      style={{ contain: 'strict' }}
+      onClick={() => { onFocus?.(); terminal?.focus() }}
     />
   )
 }

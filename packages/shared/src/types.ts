@@ -14,6 +14,7 @@ export interface Session {
   projectId: string | null
   sshHost: string | null
   isRemote: boolean
+  workspaceId: string | null
   createdAt: number
   lastActiveAt: number
 }
@@ -25,6 +26,7 @@ export interface CreateSessionParams {
   baseBranch?: string
   useWorktree?: boolean
   sshHost?: string
+  workspaceId?: string
 }
 
 // Worktree情報
@@ -35,34 +37,207 @@ export interface WorktreeInfo {
   isMain: boolean
 }
 
-// ボードカード種別
-export type BoardCardType = 'screenshot' | 'text_output' | 'file_change' | 'error' | 'custom'
+// ========== cmux ペインツリー（バイナリツリー） ==========
 
-// ボードカード
-export interface BoardCard {
+/** スプリット方向 */
+export type SplitDirection = 'horizontal' | 'vertical'
+
+/** サーフェス種別（ペイン内タブの中身） */
+export type SurfaceType = 'terminal' | 'browser' | 'editor' | 'markdown'
+
+/** サーフェス（ペイン内の1タブ） */
+export interface Surface {
   id: string
-  sessionId: string
-  type: BoardCardType
-  title: string
-  content: Record<string, unknown>
-  position: { x: number; y: number }
-  dimensions: { width: number; height: number }
-  createdAt: number
+  type: SurfaceType
+  /** terminal: sessionId, browser: url, editor: filePath, markdown: filePath */
+  target: string
+  label: string
 }
 
-// 自動レイアウトモード
-export type AutoLayoutMode = 'grid' | 'flow' | 'tree'
+/** ペインツリーのリーフ（実際のコンテンツを持つ） */
+export interface PaneLeaf {
+  kind: 'leaf'
+  id: string
+  surfaces: Surface[]
+  activeSurfaceIndex: number
+  /** 親スプリット内での割合（0-1） */
+  ratio: number
+}
 
-// パネルレイアウト
+/** ペインツリーの分割ノード */
+export interface PaneSplit {
+  kind: 'split'
+  id: string
+  /** 親スプリット内での割合（0-1）。ネストされたスプリットのサイズ計算用 */
+  ratio: number
+  direction: SplitDirection
+  children: [PaneNode, PaneNode]
+}
+
+/** ペインツリーのノード（リーフ or スプリット） */
+export type PaneNode = PaneLeaf | PaneSplit
+
+// ========== ワークスペース ==========
+
+/** ワークスペース（cmux のワークスペース概念） */
+export interface CmuxWorkspace {
+  id: string
+  name: string
+  projectId: string | null
+  /** ベースリポジトリパス（全ペインの起点） */
+  repoPath: string
+  /** SSHホスト名（リモートWSの場合） */
+  sshHost: string | null
+  paneTree: PaneNode
+  activePaneId: string
+  isPinned: boolean
+  /** ランタイムのみ（非永続化） */
+  notificationCount: number
+  /** 最終通知時刻（リオーダー用） */
+  lastNotifiedAt: number | null
+  createdAt: number
+  updatedAt: number
+}
+
+/** ワークスペース作成パラメータ */
+export interface CreateCmuxWorkspaceParams {
+  /** ワークスペース名（省略時はrepoPathの末尾がデフォルト） */
+  name?: string
+  /** リポジトリパス（必須） */
+  repoPath: string
+  projectId?: string
+  useWorktree?: boolean
+  baseBranch?: string
+  sshHost?: string
+}
+
+/** ペイン分割リクエスト */
+export interface SplitPaneRequest {
+  paneId: string
+  direction: SplitDirection
+  /** WSのデフォルトと異なるSSHホストで分割する場合 */
+  sshHost?: string | null
+  /** WSのデフォルトと異なるリポパスで分割する場合 */
+  repoPath?: string | null
+}
+
+/** ペイン分割レスポンス（サーバーが新セッション+worktreeを作成） */
+export interface SplitPaneResponse {
+  paneTree: PaneNode
+  activePaneId: string
+  newSession: Session
+}
+
+/** ペイン通知情報 */
+export interface PaneNotification {
+  paneId: string
+  surfaceId: string
+  sessionId: string
+  message: string
+  timestamp: number
+  read: boolean
+}
+
+/** アプリ全体のレイアウト状態 */
+export interface AppLayoutState {
+  workspaceIds: string[]
+  activeWorkspaceId: string | null
+  sidebarCollapsed: boolean
+  savedAt: number
+}
+
+// ========== レガシーレイアウト / ボード ==========
+
+/** 分割ビューのレイアウト種別 */
 export type LayoutMode = '1x1' | '2x1' | '1x2' | '2x2' | '3x1'
 
-export interface PanelLayout {
-  mode: LayoutMode
-  panels: Array<{
-    sessionId: string | null
-    position: number
-  }>
+/** ボード自動配置のモード */
+export type AutoLayoutMode = 'grid' | 'flow' | 'tree'
+
+/** 旧レイアウトAPIのパネル情報 */
+export interface LayoutPanel {
+  sessionId: string | null
+  position: number
 }
+
+/** 旧レイアウトAPIの保存形式 */
+export interface LayoutState {
+  mode: LayoutMode
+  panels: LayoutPanel[]
+  activePanelIndex: number
+  savedAt: number
+}
+
+/** ボード上のセッションノード位置 */
+export interface BoardNodePosition {
+  sessionId: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** ボード上の接続線 */
+export interface BoardEdge {
+  id: string
+  source: string
+  target: string
+  label?: string
+}
+
+/** ボード上のファイルタイル位置 */
+export interface FileTilePosition {
+  id: string
+  filePath: string
+  language: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** ボードレイアウト保存形式 */
+export interface BoardLayoutState {
+  nodes: BoardNodePosition[]
+  edges: BoardEdge[]
+  fileTiles?: FileTilePosition[]
+  viewport: { x: number; y: number; zoom: number }
+  savedAt: number
+}
+
+/** 旧キャンバスワークスペース保存リクエスト */
+export interface CreateWorkspaceParams {
+  name: string
+}
+
+/** ボードキャンバスのフィルタ条件 */
+export interface CanvasFilterCriteria {
+  favoritesOnly: boolean
+  status: SessionStatus | 'all'
+  projectId: string | null
+}
+
+/** キャンバス表示判定 */
+export function matchesCanvasFilter(
+  session: Pick<Session, 'isFavorite' | 'status' | 'projectId'>,
+  filter: CanvasFilterCriteria,
+): boolean {
+  if (filter.favoritesOnly && !session.isFavorite) {
+    return false
+  }
+
+  if (filter.status !== 'all' && session.status !== filter.status) {
+    return false
+  }
+
+  if (filter.projectId !== null && session.projectId !== filter.projectId) {
+    return false
+  }
+
+  return true
+}
+
+// ========== プロジェクト ==========
 
 // プロジェクト
 export interface Project {
@@ -70,6 +245,8 @@ export interface Project {
   name: string
   color: string // hex color like '#3b82f6'
   repoPath: string
+  sshPresetId?: string | null
+  startupTemplateId?: string | null
   createdAt: number
 }
 
@@ -80,19 +257,13 @@ export interface CreateProjectParams {
   repoPath: string
 }
 
-// レイアウト永続化
-export interface LayoutState {
-  mode: LayoutMode
-  panels: Array<{ sessionId: string | null; position: number }>
-  activePanelIndex: number
-  savedAt: number
-}
-
 // プロジェクトカラー定数
 export const PROJECT_COLORS = [
   '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
   '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
 ] as const
+
+// ========== SSH ==========
 
 // SSHホスト情報
 export interface SshHost {
@@ -107,6 +278,52 @@ export interface SshHost {
 // SSH接続ステータス
 export type SshConnectionStatus = 'online' | 'offline' | 'reconnecting'
 
+// SSHプリセット（プロジェクトに紐付くSSH接続設定）
+export interface SshPreset {
+  id: string
+  name: string
+  hostname: string
+  user: string
+  port: number
+  identityFile: string | null
+  defaultCwd: string
+  startupCommand: string | null
+  envVars: Record<string, string>
+  createdAt: number
+}
+
+// SSHプリセット作成パラメータ
+export interface CreateSshPresetParams {
+  name: string
+  hostname: string
+  user: string
+  port?: number
+  identityFile?: string
+  defaultCwd: string
+  startupCommand?: string
+  envVars?: Record<string, string>
+}
+
+// 起動テンプレート
+export interface StartupTemplate {
+  id: string
+  name: string
+  sshPresetId: string | null
+  commands: string[]
+  envVars: Record<string, string>
+  createdAt: number
+}
+
+// 起動テンプレート作成パラメータ
+export interface CreateStartupTemplateParams {
+  name: string
+  sshPresetId?: string
+  commands: string[]
+  envVars?: Record<string, string>
+}
+
+// ========== 通知 ==========
+
 // Claude通知
 export interface ClaudeNotification {
   id: string
@@ -116,6 +333,8 @@ export interface ClaudeNotification {
   read: boolean
 }
 
+// ========== ファイルツリー ==========
+
 // ファイルツリーノード
 export interface FileNode {
   name: string
@@ -124,23 +343,8 @@ export interface FileNode {
   children?: FileNode[]
 }
 
-// ボードノード位置情報（React Flow用）
-export interface BoardNodePosition {
-  sessionId: string
-  x: number
-  y: number
-  width: number
-  height: number
-}
+// ========== tabコマンド連携 ==========
 
-// ボードレイアウト永続化
-export interface BoardLayoutState {
-  nodes: BoardNodePosition[]
-  viewport: { x: number; y: number; zoom: number }
-  savedAt: number
-}
-
-// tabコマンド連携
 export interface TabHost {
   name: string
   type: 'local' | 'remote'
@@ -160,4 +364,55 @@ export interface TabSyncResponse {
   created: number
   skipped: number
   projects: Project[]
+  sessions: Session[]
+}
+
+// ========== フィードバック ==========
+
+// フィードバックカテゴリ
+export type FeedbackCategory = 'feature_request' | 'bug_report' | 'improvement'
+
+// フィードバック優先度
+export type FeedbackPriority = 'high' | 'medium' | 'low'
+
+// フィードバック
+export interface Feedback {
+  id: string
+  title: string
+  detail: string
+  category: FeedbackCategory
+  priority: FeedbackPriority
+  createdAt: number
+}
+
+// フィードバック作成パラメータ
+export interface CreateFeedbackParams {
+  title: string
+  detail: string
+  category: FeedbackCategory
+  priority: FeedbackPriority
+}
+
+// フィードバックカテゴリラベル
+export const FEEDBACK_CATEGORY_LABELS: Record<FeedbackCategory, string> = {
+  feature_request: '機能要望',
+  bug_report: 'バグ報告',
+  improvement: '改善提案',
+} as const
+
+// フィードバック優先度ラベル
+export const FEEDBACK_PRIORITY_LABELS: Record<FeedbackPriority, string> = {
+  high: '高',
+  medium: '中',
+  low: '低',
+} as const
+
+// ========== bookmarks ==========
+
+// bookmarks.toml のブックマーク情報
+export interface TabBookmark {
+  name: string
+  directory: string
+  host?: string
+  shared?: boolean
 }

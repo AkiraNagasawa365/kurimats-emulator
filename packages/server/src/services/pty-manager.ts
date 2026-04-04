@@ -1,5 +1,13 @@
 import { spawn as cpSpawn, type ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __ptyDir = path.dirname(fileURLToPath(import.meta.url))
+const PTY_HELPER_PATH = path.join(__ptyDir, 'pty-helper.py')
+
+/** リサイズ用の特殊エスケープシーケンス（pty-helper.pyと同期） */
+const RESIZE_ESC = (cols: number, rows: number) => `\x1b[R;${cols};${rows}\x07`
 
 // node-ptyの型定義（動的インポート用）
 interface INodePty {
@@ -39,6 +47,8 @@ interface PtySession {
   alive: boolean
   cols: number
   rows: number
+  cleanup: () => void
+  finalized: boolean
 }
 
 const RING_BUFFER_SIZE = 50 * 1024 // 50KB
@@ -111,39 +121,62 @@ export class PtyManager extends EventEmitter {
 
   /**
    * 新しいシェルセッションを作成
+   * @param command 実行コマンド（省略時はデフォルトシェル）
+   * @param args コマンド引数
    */
-  async spawn(sessionId: string, cwd: string, cols = 120, rows = 30): Promise<void> {
-    if (this.sessions.has(sessionId)) {
+  async spawn(
+    sessionId: string,
+    cwd: string,
+    cols = 120,
+    rows = 30,
+    command?: string,
+    args?: string[],
+  ): Promise<void> {
+    const existing = this.sessions.get(sessionId)
+    if (existing?.alive) {
       throw new Error(`セッション ${sessionId} は既に存在します`)
+    }
+    if (existing) {
+      existing.cleanup()
+      this.sessions.delete(sessionId)
     }
 
     await this.initialize()
 
     if (this._backend === 'node-pty' && nodePty) {
       try {
-        this._spawnWithNodePty(sessionId, cwd, cols, rows)
+        this._spawnWithNodePty(sessionId, cwd, cols, rows, command, args)
       } catch (e) {
         console.warn('node-ptyでのspawnに失敗。child_processにフォールバックします:', e)
         this._backend = 'child_process'
-        this._spawnWithChildProcess(sessionId, cwd, cols, rows)
+        this._spawnWithChildProcess(sessionId, cwd, cols, rows, command, args)
       }
     } else {
-      this._spawnWithChildProcess(sessionId, cwd, cols, rows)
+      this._spawnWithChildProcess(sessionId, cwd, cols, rows, command, args)
     }
   }
 
   /**
    * node-ptyでセッション作成
    */
-  private _spawnWithNodePty(sessionId: string, cwd: string, cols: number, rows: number): void {
-    const shell = process.env.SHELL || '/bin/zsh'
-    const ptyProcess = nodePty!.spawn(shell, [], {
+  private _spawnWithNodePty(
+    sessionId: string,
+    cwd: string,
+    cols: number,
+    rows: number,
+    command?: string,
+    args?: string[],
+  ): void {
+    const cmd = command || process.env.SHELL || '/bin/zsh'
+    const cmdArgs = args || []
+    const ptyProcess = nodePty!.spawn(cmd, cmdArgs, {
       name: 'xterm-256color',
       cols,
       rows,
       cwd,
       env: {
         ...process.env,
+        TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
       } as Record<string, string>,
     })
@@ -156,9 +189,11 @@ export class PtyManager extends EventEmitter {
       alive: true,
       cols,
       rows,
+      cleanup: () => {},
+      finalized: false,
     }
 
-    ptyProcess.onData((data: string) => {
+    const dataDisposable = ptyProcess.onData((data: string) => {
       session.ringBuffer += data
       if (session.ringBuffer.length > RING_BUFFER_SIZE) {
         session.ringBuffer = session.ringBuffer.slice(-RING_BUFFER_SIZE)
@@ -166,10 +201,18 @@ export class PtyManager extends EventEmitter {
       this.emit('data', sessionId, data)
     })
 
-    ptyProcess.onExit(({ exitCode }) => {
+    const exitDisposable = ptyProcess.onExit(({ exitCode }) => {
+      if (session.finalized) return
+      session.finalized = true
       session.alive = false
+      session.cleanup()
       this.emit('exit', sessionId, exitCode)
     })
+
+    session.cleanup = () => {
+      dataDisposable.dispose()
+      exitDisposable.dispose()
+    }
 
     this.sessions.set(sessionId, session)
   }
@@ -177,9 +220,20 @@ export class PtyManager extends EventEmitter {
   /**
    * child_processでセッション作成（フォールバック）
    */
-  private _spawnWithChildProcess(sessionId: string, cwd: string, cols: number, rows: number): void {
-    const shell = process.env.SHELL || '/bin/zsh'
-    const child = cpSpawn(shell, ['-i'], {
+  private _spawnWithChildProcess(
+    sessionId: string,
+    cwd: string,
+    cols: number,
+    rows: number,
+    command?: string,
+    args?: string[],
+  ): void {
+    const cmd = command || process.env.SHELL || '/bin/zsh'
+    const cmdArgs = args || []
+
+    // python3のpty-helper.pyで擬似tty割り当て（node-pty利用不可時の代替）
+    // pty-helper.pyはリサイズ用の特殊エスケープシーケンスも処理する
+    const child = cpSpawn('python3', [PTY_HELPER_PATH, cmd, ...cmdArgs], {
       cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
@@ -188,6 +242,9 @@ export class PtyManager extends EventEmitter {
         COLORTERM: 'truecolor',
         COLUMNS: String(cols),
         LINES: String(rows),
+        PTY_CWD: cwd,
+        PTY_COLS: String(cols),
+        PTY_ROWS: String(rows),
       },
     })
 
@@ -199,6 +256,8 @@ export class PtyManager extends EventEmitter {
       alive: true,
       cols,
       rows,
+      cleanup: () => {},
+      finalized: false,
     }
 
     const handleData = (data: Buffer) => {
@@ -213,16 +272,27 @@ export class PtyManager extends EventEmitter {
     child.stdout?.on('data', handleData)
     child.stderr?.on('data', handleData)
 
-    child.on('exit', (code) => {
+    const handleExit = (code: number) => {
+      if (session.finalized) return
+      session.finalized = true
       session.alive = false
+      session.cleanup()
       this.emit('exit', sessionId, code ?? 0)
-    })
+    }
+
+    child.on('exit', handleExit)
 
     child.on('error', (err) => {
+      if (session.finalized) return
       console.error(`セッション ${sessionId} エラー:`, err)
-      session.alive = false
-      this.emit('exit', sessionId, 1)
+      handleExit(1)
     })
+
+    session.cleanup = () => {
+      child.stdout?.off('data', handleData)
+      child.stderr?.off('data', handleData)
+      child.off('exit', handleExit)
+    }
 
     this.sessions.set(sessionId, session)
   }
@@ -237,7 +307,11 @@ export class PtyManager extends EventEmitter {
     if (session.backend === 'node-pty' && session.ptyProcess) {
       session.ptyProcess.write(data)
     } else if (session.childProcess) {
-      session.childProcess.stdin?.write(data)
+      try {
+        session.childProcess.stdin?.write(data)
+      } catch {
+        session.alive = false
+      }
     }
   }
 
@@ -256,9 +330,9 @@ export class PtyManager extends EventEmitter {
     if (session.backend === 'node-pty' && session.ptyProcess) {
       session.ptyProcess.resize(cols, rows)
     } else if (session.childProcess) {
-      // child_processモードではSIGWINCHを送信（限定的サポート）
+      // child_processモード: pty-helper.pyに特殊エスケープシーケンスでリサイズ通知
       try {
-        session.childProcess.kill('SIGWINCH')
+        session.childProcess.stdin?.write(RESIZE_ESC(cols, rows))
       } catch {
         // プロセス終了済みの場合は無視
       }
@@ -303,12 +377,20 @@ export class PtyManager extends EventEmitter {
     if (!session) return
 
     if (session.alive) {
+      session.alive = false
+      session.finalized = true
+      session.cleanup()
       if (session.backend === 'node-pty' && session.ptyProcess) {
         session.ptyProcess.kill()
       } else if (session.childProcess) {
-        session.childProcess.kill()
+        session.childProcess.kill('SIGTERM')
       }
+      this.sessions.delete(sessionId)
+      this.emit('exit', sessionId, 0)
+      return
     }
+
+    session.cleanup()
     this.sessions.delete(sessionId)
   }
 

@@ -212,13 +212,29 @@ describe('PtyManager', () => {
       })
 
       await manager.spawn('exit-event', '/tmp')
-      // exitコマンドでシェルを終了
-      manager.write('exit-event', 'exit\n')
+      // kill()でプロセスを終了（python3 pty.spawn経由のため、exit送信よりkillが確実）
+      setTimeout(() => manager.kill('exit-event'), 500)
 
       const result = await exitPromise
       expect(result.sessionId).toBe('exit-event')
       expect(typeof result.code).toBe('number')
-    }, 5000)
+    }, 15000)
+
+    it('終了済みセッションIDを再利用して再spawnできる', async () => {
+      const exitPromise = new Promise<void>((resolve) => {
+        manager.on('exit', (sessionId: string) => {
+          if (sessionId === 'respawn-id') resolve()
+        })
+      })
+
+      await manager.spawn('respawn-id', '/tmp', 120, 30, '/bin/sh', ['-lc', 'exit 0'])
+      await exitPromise
+
+      await expect(
+        manager.spawn('respawn-id', '/tmp', 120, 30, '/bin/sh', ['-lc', 'sleep 0.1']),
+      ).resolves.toBeUndefined()
+      expect(manager.isAlive('respawn-id')).toBe(true)
+    }, 15000)
   })
 
   // ========================================

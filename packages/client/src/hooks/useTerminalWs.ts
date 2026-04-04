@@ -8,24 +8,37 @@ import type { ClientTerminalMessage, ServerTerminalMessage } from '@kurimats/sha
  */
 export function useTerminalWs(sessionId: string | null, terminal: Terminal | null) {
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const disposedRef = useRef(false)
 
   const connect = useCallback(() => {
-    if (!sessionId || !terminal) return
+    if (!sessionId || !terminal || disposedRef.current) return
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws/terminal/${sessionId}`)
     wsRef.current = ws
 
     ws.onopen = () => {
+      if (disposedRef.current) {
+        ws.close()
+        return
+      }
       // 接続成功時、再接続タイマーをクリア
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = undefined
       }
     }
 
     ws.onmessage = (event) => {
-      const msg: ServerTerminalMessage = JSON.parse(event.data)
+      if (disposedRef.current) return
+      let msg: ServerTerminalMessage
+      try {
+        msg = JSON.parse(event.data)
+      } catch {
+        terminal.write('\r\n\x1b[31m[エラー: 不正なメッセージを受信しました]\x1b[0m\r\n')
+        return
+      }
       switch (msg.type) {
         case 'output':
           terminal.write(msg.data)
@@ -34,7 +47,11 @@ export function useTerminalWs(sessionId: string | null, terminal: Terminal | nul
           terminal.write(`\r\n\x1b[33m[プロセス終了: コード ${msg.code}]\x1b[0m\r\n`)
           break
         case 'connected':
-          // 接続確認
+          // 接続確認 → 現在のターミナルサイズを送信（PTY側の初期サイズと同期）
+          if (terminal) {
+            const resizeMsg: ClientTerminalMessage = { type: 'resize', cols: terminal.cols, rows: terminal.rows }
+            ws.send(JSON.stringify(resizeMsg))
+          }
           break
         case 'error':
           terminal.write(`\r\n\x1b[31m[エラー: ${msg.message}]\x1b[0m\r\n`)
@@ -43,9 +60,10 @@ export function useTerminalWs(sessionId: string | null, terminal: Terminal | nul
     }
 
     ws.onclose = () => {
+      if (disposedRef.current) return
       // 自動再接続（指数バックオフ）
       reconnectTimerRef.current = setTimeout(() => {
-        if (sessionId && terminal) connect()
+        if (!disposedRef.current && sessionId && terminal) connect()
       }, 2000)
     }
 
@@ -86,14 +104,18 @@ export function useTerminalWs(sessionId: string | null, terminal: Terminal | nul
 
   // 接続開始/クリーンアップ
   useEffect(() => {
+    disposedRef.current = false
     connect()
 
     return () => {
+      disposedRef.current = true
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = undefined
       }
-      wsRef.current?.close()
+      const ws = wsRef.current
       wsRef.current = null
+      ws?.close()
     }
   }, [connect])
 }
