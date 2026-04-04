@@ -60,8 +60,14 @@ export class ServerProcessManager {
       const args = this.isDev ? ['tsx', 'watch', 'src/index.ts'] : ['index.js']
 
       // 本番時はクライアント静的ファイルのパスを渡す
+      // Finder/Launchpadから起動するとPATHにHomebrew等が含まれないため補完する
+      const nodePaths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin']
+      const currentPath = process.env.PATH || ''
+      const augmentedPath = [...nodePaths, currentPath].join(':')
+
       const env: Record<string, string | undefined> = {
         ...process.env,
+        PATH: augmentedPath,
         PORT: String(port),
       }
       if (!this.isDev && this.clientDir) {

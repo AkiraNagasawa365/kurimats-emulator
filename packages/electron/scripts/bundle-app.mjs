@@ -2,7 +2,7 @@
  * Electronビルド用バンドルスクリプト
  * クライアント・サーバーのビルド成果物を app-content/ にコピーする
  */
-import { cpSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'fs'
+import { cpSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync, lstatSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -30,6 +30,18 @@ cpSync(
   { recursive: true },
 )
 
+// pty-helper.py をコピー（node-pty利用不可時のフォールバック用）
+cpSync(
+  resolve(repoRoot, 'packages/server/src/services/pty-helper.py'),
+  resolve(appContent, 'server', 'services', 'pty-helper.py'),
+)
+
+// server/package.json をコピー（"type": "module" がESM解決に必要）
+cpSync(
+  resolve(repoRoot, 'packages/server/package.json'),
+  resolve(appContent, 'server', 'package.json'),
+)
+
 // sharedのビルド成果物もコピー（サーバーが参照する）
 mkdirSync(resolve(appContent, 'shared', 'dist'), { recursive: true })
 cpSync(
@@ -42,22 +54,50 @@ cpSync(
   resolve(appContent, 'shared', 'package.json'),
 )
 
-// サーバーの依存関係をルートのnode_modulesから直接コピー
+// サーバーの依存関係をルートのnode_modulesから再帰的にコピー
 const serverPkg = JSON.parse(readFileSync(resolve(repoRoot, 'packages/server/package.json'), 'utf-8'))
-const deps = Object.keys(serverPkg.dependencies || {})
+const topDeps = Object.keys(serverPkg.dependencies || {})
 const serverModules = resolve(appContent, 'server', 'node_modules')
 mkdirSync(serverModules, { recursive: true })
 
-for (const dep of deps) {
-  if (dep.startsWith('@kurimats/')) continue // workspace参照はスキップ
-  const src = resolve(repoRoot, 'node_modules', dep)
-  const dst = resolve(serverModules, dep)
-  try {
-    cpSync(src, dst, { recursive: true })
-    console.log(`  コピー: ${dep}`)
-  } catch {
-    console.warn(`  スキップ（見つからない）: ${dep}`)
+/**
+ * 依存パッケージとそのサブ依存を再帰的にコピーする
+ */
+function copyDependencyTree(depName, visited = new Set()) {
+  if (depName.startsWith('@kurimats/')) return
+  if (visited.has(depName)) return
+  visited.add(depName)
+
+  const src = resolve(repoRoot, 'node_modules', depName)
+  const dst = resolve(serverModules, depName)
+
+  if (!existsSync(src)) {
+    console.warn(`  スキップ（見つからない）: ${depName}`)
+    return
   }
+  if (existsSync(dst)) return // コピー済み
+
+  // スコープ付きパッケージのディレクトリを作成
+  if (depName.includes('/')) {
+    mkdirSync(resolve(serverModules, depName.split('/')[0]), { recursive: true })
+  }
+
+  cpSync(src, dst, { recursive: true, filter: (s) => !lstatSync(s).isSymbolicLink() })
+  console.log(`  コピー: ${depName}`)
+
+  // サブ依存を再帰的にコピー
+  const pkgPath = resolve(src, 'package.json')
+  if (existsSync(pkgPath)) {
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
+    for (const subDep of Object.keys(pkg.dependencies || {})) {
+      copyDependencyTree(subDep, visited)
+    }
+  }
+}
+
+const visited = new Set()
+for (const dep of topDeps) {
+  copyDependencyTree(dep, visited)
 }
 
 // @kurimats/shared をnode_modulesにコピーし、mainをdistに書き換え
