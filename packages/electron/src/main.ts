@@ -14,7 +14,7 @@ import { ServerProcessManager, resolveServerDir } from './server-process'
 
 const APP_NAME = 'kurimats'
 const DEV_CLIENT_URL = 'http://localhost:5173'
-const SERVER_PORT = 3001
+const SERVER_PORT = 13001
 const IS_DEV = !app.isPackaged
 
 let viteProcess: ChildProcess | null = null
