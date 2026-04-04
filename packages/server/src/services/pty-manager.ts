@@ -77,8 +77,8 @@ async function loadNodePty(): Promise<INodePty | null> {
     testProc.kill()
     nodePty = pty
     return nodePty
-  } catch {
-    console.warn('node-pty利用不可。child_processモードで動作します')
+  } catch (e) {
+    console.warn('node-pty利用不可。child_processモードで動作します:', e)
     return null
   }
 }
