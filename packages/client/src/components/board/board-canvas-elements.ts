@@ -6,11 +6,12 @@ import { SessionNode, type SessionNodeData } from './SessionNode'
 
 export const GROUP_PADDING = 40
 
-export const boardNodeTypes: NodeTypes = {
+// react-flow の NodeTypes ジェネリクスとの型不一致を回避
+export const boardNodeTypes = {
   session: SessionNode,
   projectGroup: ProjectGroupNode,
   file: FileNode,
-}
+} as NodeTypes
 
 export interface CanvasFilter {
   favoritesOnly: boolean

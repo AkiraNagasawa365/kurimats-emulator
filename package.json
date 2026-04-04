@@ -14,7 +14,7 @@
     "dev:client": "npm run dev -w packages/client",
     "electron": "npm run dev -w packages/electron",
     "electron:start": "npm run start -w packages/electron",
-    "build:electron": "npm run build -w packages/electron"
+    "build:electron": "npm run build -w packages/shared && npm run build -w packages/server && npm run build -w packages/client && npm run build -w packages/electron"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
