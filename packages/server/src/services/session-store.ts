@@ -1,15 +1,14 @@
 import Database from 'better-sqlite3'
 import path from 'path'
 import { mkdirSync } from 'fs'
-import { fileURLToPath } from 'url'
+import { homedir } from 'os'
 import type { BoardLayoutState, CreateFeedbackParams, CreateProjectParams, CreateSessionParams, CreateSshPresetParams, CreateStartupTemplateParams, CreateCmuxWorkspaceParams, Feedback, LayoutState, PaneNode, Project, Session, SshPreset, StartupTemplate, CmuxWorkspace } from '@kurimats/shared'
 import { v4 as uuidv4 } from 'uuid'
 import { loadBoardLayoutState, loadLegacyLayout, saveBoardLayoutState, saveLegacyLayout } from './session-store-layout.js'
 import { mapCmuxWorkspaceRow, mapFeedbackRow, mapProjectRow, mapSessionRow, mapSshPresetRow, mapStartupTemplateRow } from './session-store-mappers.js'
 import { runSessionStoreMigrations } from './session-store-migrations.js'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DEFAULT_DB_PATH = path.join(__dirname, '..', '..', 'data', 'sessions.db')
+const DEFAULT_DB_PATH = path.join(homedir(), '.kurimats', 'sessions.db')
 
 /**
  * SQLiteベースのセッション永続化
