@@ -211,13 +211,13 @@ export function Sidebar() {
 
       {/* 新規セッション作成フォーム */}
       {showNewForm && (
-        <div className="p-3 border-b border-border space-y-2 bg-surface-0">
+        <div className="p-3 border-b border-border space-y-2 bg-surface-1">
           <input
             type="text"
             placeholder="セッション名"
             value={newName}
             onChange={e => setNewName(e.target.value)}
-            className="w-full px-2.5 py-1.5 text-xs bg-white border border-border rounded text-text-primary placeholder-text-muted focus:border-accent outline-none"
+            className="w-full px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary placeholder-text-muted focus:border-accent outline-none"
             autoFocus
           />
           <input
@@ -225,7 +225,7 @@ export function Sidebar() {
             placeholder="リポジトリパス"
             value={newRepoPath}
             onChange={e => setNewRepoPath(e.target.value)}
-            className="w-full px-2.5 py-1.5 text-xs bg-white border border-border rounded text-text-primary placeholder-text-muted focus:border-accent outline-none"
+            className="w-full px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary placeholder-text-muted focus:border-accent outline-none"
             onKeyDown={e => e.key === 'Enter' && handleCreate()}
           />
           {/* SSHホスト選択 */}
@@ -256,7 +256,7 @@ export function Sidebar() {
           )}
           <button
             onClick={handleCreate}
-            className="w-full px-2 py-1.5 text-xs bg-accent hover:bg-accent-hover text-white rounded transition-colors font-medium"
+            className="w-full px-2 py-1.5 text-xs bg-accent hover:bg-accent-hover text-surface-0 rounded transition-colors font-medium"
           >
             作成
           </button>
@@ -270,7 +270,7 @@ export function Sidebar() {
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           placeholder="セッションを検索..."
-          className="w-full px-2.5 py-1.5 text-xs bg-white border border-border rounded text-text-primary placeholder-text-muted focus:border-accent outline-none"
+          className="w-full px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary placeholder-text-muted focus:border-accent outline-none"
         />
       </div>
 
@@ -432,7 +432,7 @@ export function Sidebar() {
               <button
                 onClick={handleTabSync}
                 disabled={tabSyncing}
-                className="w-full text-left px-3 py-1.5 text-xs text-cyan-600 hover:bg-surface-2 transition-colors disabled:opacity-50"
+                className="w-full text-left px-3 py-1.5 text-xs text-cyan-400 hover:bg-surface-2 transition-colors disabled:opacity-50"
               >
                 {tabSyncing ? '同期中...' : 'tab同期'}
               </button>
@@ -448,7 +448,7 @@ export function Sidebar() {
                     placeholder="プロジェクト名"
                     value={newProjectName}
                     onChange={e => setNewProjectName(e.target.value)}
-                    className="w-full px-2 py-1 text-xs bg-white border border-border rounded text-text-primary placeholder-text-muted focus:border-accent outline-none"
+                    className="w-full px-2 py-1 text-xs bg-surface-2 border border-border rounded text-text-primary placeholder-text-muted focus:border-accent outline-none"
                     autoFocus
                     onKeyDown={e => e.key === 'Enter' && handleCreateProject()}
                   />
@@ -458,7 +458,7 @@ export function Sidebar() {
                         key={color}
                         onClick={() => setNewProjectColor(color)}
                         className={`w-5 h-5 rounded-sm transition-transform ${
-                          newProjectColor === color ? 'ring-2 ring-accent ring-offset-1 scale-110' : ''
+                          newProjectColor === color ? 'ring-2 ring-accent ring-offset-1 ring-offset-surface-1 scale-110' : ''
                         }`}
                         style={{ backgroundColor: color }}
                       />
@@ -467,7 +467,7 @@ export function Sidebar() {
                   <div className="flex gap-1">
                     <button
                       onClick={handleCreateProject}
-                      className="flex-1 px-2 py-1 text-xs bg-accent hover:bg-accent-hover text-white rounded transition-colors"
+                      className="flex-1 px-2 py-1 text-xs bg-accent hover:bg-accent-hover text-surface-0 rounded transition-colors"
                     >
                       作成
                     </button>
@@ -582,7 +582,7 @@ function SessionItem({
       {isDisconnected && onReconnect && (
         <button
           onClick={(e) => { e.stopPropagation(); onReconnect() }}
-          className="text-[9px] px-1.5 py-0.5 bg-yellow-100 text-yellow-700 hover:bg-yellow-200 rounded flex-shrink-0 transition-colors"
+          className="text-[9px] px-1.5 py-0.5 bg-yellow-900/30 text-yellow-400 hover:bg-yellow-900/50 rounded flex-shrink-0 transition-colors"
           title="再接続"
         >
           再接続
@@ -591,7 +591,7 @@ function SessionItem({
 
       {/* リモートバッジ */}
       {session.isRemote && (
-        <span className="text-[9px] px-1 py-0.5 bg-blue-100 text-blue-600 rounded flex-shrink-0">
+        <span className="text-[9px] px-1 py-0.5 bg-blue-900/30 text-blue-400 rounded flex-shrink-0">
           SSH
         </span>
       )}
@@ -634,8 +634,8 @@ function SshHostItem({
         onClick={host.isConnected ? onDisconnect : onConnect}
         className={`text-[10px] px-1.5 py-0.5 rounded transition-colors opacity-0 group-hover:opacity-100 ${
           host.isConnected
-            ? 'bg-red-100 text-red-600 hover:bg-red-200'
-            : 'bg-green-100 text-green-600 hover:bg-green-200'
+            ? 'bg-red-900/30 text-red-400 hover:bg-red-900/50'
+            : 'bg-green-900/30 text-green-400 hover:bg-green-900/50'
         }`}
       >
         {host.isConnected ? '切断' : '接続'}

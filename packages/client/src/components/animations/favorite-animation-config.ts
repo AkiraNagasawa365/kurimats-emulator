@@ -34,7 +34,7 @@ export const particleVariants = {
       opacity: [1, 1, 0],
       x: pos.x,
       y: pos.y,
-      transition: { duration: 0.5, ease: 'easeOut' },
+      transition: { duration: 0.5, ease: 'easeOut' as const },
     }
   },
 }
@@ -48,7 +48,7 @@ export const fadeOutVariants = {
 /** お気に入りカードの集合バリアント */
 export const gatherVariants = {
   initial: { opacity: 0, y: 20 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' as const } },
   exit: { opacity: 0, y: -10, transition: { duration: 0.3 } },
 }
 
@@ -64,7 +64,7 @@ export const badgeBounceVariants = {
   initial: { scale: 1 },
   bounce: {
     scale: [1, 1.4, 0.9, 1.1, 1],
-    transition: { duration: 0.5, ease: 'easeInOut' },
+    transition: { duration: 0.5, ease: 'easeInOut' as const },
   },
 }
 

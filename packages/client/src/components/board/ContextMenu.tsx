@@ -54,14 +54,14 @@ export function NodeContextMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-[100] min-w-[180px]"
+      className="fixed bg-surface-1 border border-border rounded-lg shadow-xl py-1 z-[100] min-w-[180px]"
       style={{ left: position.x, top: position.y }}
     >
       {isRenaming ? (
         <div className="px-3 py-2">
           <input
             autoFocus
-            className="w-full px-2 py-1 text-sm border border-gray-300 rounded outline-none focus:border-accent"
+            className="w-full px-2 py-1 text-sm border border-border bg-surface-2 text-text-primary rounded outline-none focus:border-accent"
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
             onKeyDown={(e) => {
@@ -109,7 +109,7 @@ export function NodeContextMenu({
               </div>
             )}
           </div>
-          <div className="my-1 border-t border-gray-100" />
+          <div className="my-1 border-t border-border" />
           <MenuItem
             label="セッションを削除"
             icon="🗑️"
@@ -151,7 +151,7 @@ export function CanvasContextMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-[100] min-w-[180px]"
+      className="fixed bg-surface-1 border border-border rounded-lg shadow-xl py-1 z-[100] min-w-[180px]"
       style={{ left: position.x, top: position.y }}
     >
       <MenuItem
@@ -190,10 +190,10 @@ function MenuItem({
     <button
       className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 transition-colors ${
         danger
-          ? 'text-red-600 hover:bg-red-50'
+          ? 'text-red-400 hover:bg-red-900/20'
           : isActive
-            ? 'text-accent bg-accent/5 hover:bg-accent/10'
-            : 'text-gray-700 hover:bg-gray-100'
+            ? 'text-accent bg-accent/10 hover:bg-accent/15'
+            : 'text-text-secondary hover:bg-surface-2'
       }`}
       onClick={onClick}
     >
@@ -205,7 +205,7 @@ function MenuItem({
       )}
       {icon && <span className="w-5 text-center">{icon}</span>}
       <span className="flex-1">{label}</span>
-      {hasSubmenu && <span className="text-gray-400">▶</span>}
+      {hasSubmenu && <span className="text-text-muted">▶</span>}
     </button>
   )
 }

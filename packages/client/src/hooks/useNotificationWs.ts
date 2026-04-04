@@ -13,7 +13,7 @@ function generateId(): string {
  */
 export function useNotificationWs() {
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const { updateConnectionStatus, addNotification } = useSshStore()
 
   useEffect(() => {

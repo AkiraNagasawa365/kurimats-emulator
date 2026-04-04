@@ -15,8 +15,8 @@ export function TerminalHeader({ session, isActive, onClose }: Props) {
     <div
       className={`flex items-center justify-between px-3 py-1.5 text-xs border-b transition-colors ${
         isActive
-          ? 'bg-surface-1 border-accent text-text-primary'
-          : 'bg-surface-0 border-border text-text-secondary'
+          ? 'bg-tile-header border-accent text-text-primary'
+          : 'bg-tile-header border-border text-text-secondary'
       }`}
     >
       <div className="flex items-center gap-2 min-w-0">
@@ -24,7 +24,7 @@ export function TerminalHeader({ session, isActive, onClose }: Props) {
           session.status === 'active' ? 'bg-green-500' : 'bg-gray-400'
         }`} />
         {session.isRemote && (
-          <span className="text-[9px] px-1 py-0.5 bg-blue-100 text-blue-600 rounded flex-shrink-0 font-medium">
+          <span className="text-[9px] px-1 py-0.5 bg-blue-900/30 text-blue-400 rounded flex-shrink-0 font-medium">
             SSH:{session.sshHost}
           </span>
         )}

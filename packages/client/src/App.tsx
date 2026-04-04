@@ -32,7 +32,7 @@ export default function App() {
   }, [fetchSessions, fetchProjects, loadSavedLayout])
 
   return (
-    <div className="h-screen flex flex-col bg-white text-text-primary">
+    <div className="h-screen flex flex-col bg-surface-0 text-text-primary">
       {/* メインエリア: サイドバー + ボードキャンバス */}
       <div className="flex-1 flex min-h-0">
         <Sidebar />

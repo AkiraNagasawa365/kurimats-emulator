@@ -100,13 +100,13 @@ export function MarkdownOverlay({ onClose, filePath: initialPath, fullScreen }: 
             onChange={e => setFilePath(e.target.value)}
             onKeyDown={handlePathChange}
             placeholder=".md ファイルのパスを入力 (Enterで読み込み)"
-            className="flex-1 px-3 py-1.5 text-xs bg-white border border-border rounded text-text-primary placeholder-text-muted outline-none focus:border-accent"
+            className="flex-1 px-3 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary placeholder-text-muted outline-none focus:border-accent"
           />
           <button
             onClick={() => setShowEditor(!showEditor)}
             className={`text-xs px-2 py-1.5 rounded transition-colors ${
               showEditor
-                ? 'bg-accent text-white'
+                ? 'bg-accent text-surface-0'
                 : 'bg-surface-2 text-text-secondary hover:bg-surface-3'
             }`}
           >

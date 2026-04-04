@@ -8,7 +8,7 @@ import type { ClientTerminalMessage, ServerTerminalMessage } from '@kurimats/sha
  */
 export function useTerminalWs(sessionId: string | null, terminal: Terminal | null) {
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const connect = useCallback(() => {
     if (!sessionId || !terminal) return

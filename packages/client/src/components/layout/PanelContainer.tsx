@@ -61,15 +61,15 @@ export function PanelContainer() {
   return (
     <div className="flex flex-col h-full">
       {/* 自動整列ボタン */}
-      <div className="flex items-center gap-1 px-2 py-1 bg-surface border-b border-border">
+      <div className="flex items-center gap-1 px-2 py-1 bg-surface-1 border-b border-border">
         <span className="text-xs text-text-muted mr-1">配置:</span>
         {AUTO_LAYOUT_OPTIONS.map(({ mode: layoutMode, label }) => (
           <button
             key={layoutMode}
             className={`px-2 py-0.5 text-xs rounded transition-colors ${
               autoLayoutMode === layoutMode
-                ? 'bg-accent text-white'
-                : 'bg-surface-hover text-text-secondary hover:bg-border'
+                ? 'bg-accent text-surface-0'
+                : 'bg-surface-2 text-text-secondary hover:bg-surface-3'
             }`}
             onClick={() => setAutoLayoutMode(layoutMode)}
             title={`${label}配置に切り替え`}
@@ -79,7 +79,7 @@ export function PanelContainer() {
         ))}
         {isMaximized && (
           <button
-            className="ml-auto px-2 py-0.5 text-xs rounded bg-surface-hover text-text-secondary hover:bg-border"
+            className="ml-auto px-2 py-0.5 text-xs rounded bg-surface-2 text-text-secondary hover:bg-surface-3"
             onClick={() => toggleMaximize(maximizedPanelIndex!)}
             title="最大化を解除"
           >
@@ -125,7 +125,7 @@ export function PanelContainer() {
                   </div>
                 </>
               ) : (
-                <div className="flex-1 flex items-center justify-center bg-white text-text-muted">
+                <div className="flex-1 flex items-center justify-center bg-surface-0 text-text-muted">
                   <div className="text-center">
                     <p className="text-sm">空のパネル</p>
                     <p className="text-xs mt-1 text-text-muted">サイドバーからセッションを作成</p>

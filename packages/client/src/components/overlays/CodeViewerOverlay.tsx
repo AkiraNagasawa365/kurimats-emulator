@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { filesApi } from '../../lib/api'
 import { OverlayContainer } from './OverlayContainer'
 
@@ -69,7 +69,7 @@ export function CodeViewerOverlay({ filePath, onClose }: Props) {
               onClick={() => setWordWrap(!wordWrap)}
               className={`text-xs px-2 py-1 rounded transition-colors ${
                 wordWrap
-                  ? 'bg-accent text-white'
+                  ? 'bg-accent text-surface-0'
                   : 'bg-surface-2 text-text-secondary hover:bg-surface-3'
               }`}
               title="折り返し切り替え"
@@ -101,7 +101,7 @@ export function CodeViewerOverlay({ filePath, onClose }: Props) {
           {!loading && !error && (
             <SyntaxHighlighter
               language={language}
-              style={oneLight}
+              style={oneDark}
               showLineNumbers
               wrapLines={wordWrap}
               wrapLongLines={wordWrap}
@@ -110,13 +110,13 @@ export function CodeViewerOverlay({ filePath, onClose }: Props) {
                 padding: '12px',
                 fontSize: '13px',
                 lineHeight: '1.5',
-                background: '#ffffff',
+                background: '#0f1419',
                 minHeight: '100%',
               }}
               lineNumberStyle={{
                 minWidth: '3em',
                 paddingRight: '1em',
-                color: '#9ca3af',
+                color: '#64748b',
                 userSelect: 'none',
               }}
             >
