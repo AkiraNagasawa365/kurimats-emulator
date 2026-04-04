@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import type { SplitDirection, Surface } from '@kurimats/shared'
 import {
-  splitLeaf,
   closeLeaf,
   resizeSplit,
   addSurface as addSurfaceToTree,
@@ -12,6 +11,7 @@ import {
   countLeaves,
 } from '../lib/pane-tree-utils'
 import { useWorkspaceStore } from './workspace-store'
+import { workspacesApi } from '../lib/api'
 
 type Direction = 'up' | 'down' | 'left' | 'right'
 
@@ -22,7 +22,7 @@ interface PaneState {
   attentionRings: Map<string, boolean>
 
   // ペイン操作（アクティブワークスペースのツリーを操作）
-  splitPane: (paneId: string, direction: SplitDirection) => void
+  splitPane: (paneId: string, direction: SplitDirection) => Promise<void>
   closePane: (paneId: string) => void
   zoomPane: (paneId: string) => void
   unzoom: () => void
@@ -62,14 +62,19 @@ export const usePaneStore = create<PaneState>((set, get) => ({
   zoomedPaneId: null,
   attentionRings: new Map(),
 
-  splitPane: (paneId, direction) => {
-    withActiveWorkspace((ws) => {
-      const newTree = splitLeaf(ws.paneTree, paneId, direction)
-      // 新しいリーフを見つける（splitLeafが作る新しいリーフのIDを取得）
-      // splitLeafは元のリーフの右（または下）に新しいリーフを挿入する
-      // 新しいリーフがアクティブになる
-      return { tree: newTree, activePaneId: ws.activePaneId }
-    })
+  splitPane: async (paneId, direction) => {
+    const wsStore = useWorkspaceStore.getState()
+    const workspace = wsStore.workspaces.find(w => w.id === wsStore.activeWorkspaceId)
+    if (!workspace) return
+
+    try {
+      // サーバーAPIで新セッション+worktree+Claude Code起動
+      const result = await workspacesApi.splitPane(workspace.id, { paneId, direction })
+      // サーバーが返した新しいペインツリーをストアに反映
+      wsStore.updatePaneTree(workspace.id, result.paneTree, result.activePaneId)
+    } catch (e) {
+      console.error('ペイン分割エラー:', e)
+    }
   },
 
   closePane: (paneId) => {

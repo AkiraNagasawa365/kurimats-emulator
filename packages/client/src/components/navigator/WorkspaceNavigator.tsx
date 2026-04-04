@@ -17,6 +17,9 @@ export function WorkspaceNavigator({ activeSection }: WorkspaceNavigatorProps) {
   const [search, setSearch] = useState('')
   const [showNewForm, setShowNewForm] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newRepoPath, setNewRepoPath] = useState('')
+  const [newSshHost, setNewSshHost] = useState('')
+  const [creating, setCreating] = useState(false)
 
   const {
     workspaces,
@@ -47,7 +50,7 @@ export function WorkspaceNavigator({ activeSection }: WorkspaceNavigatorProps) {
     const lower = search.toLowerCase()
     return ordered.filter(w =>
       w.name.toLowerCase().includes(lower) ||
-      (w.branch ?? '').toLowerCase().includes(lower),
+      (w.repoPath ?? '').toLowerCase().includes(lower),
     )
   }, [workspaces, workspaceOrder, search, activeSection])
 
@@ -62,11 +65,24 @@ export function WorkspaceNavigator({ activeSection }: WorkspaceNavigatorProps) {
 
   const handleCreateWorkspace = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newName.trim()) return
-    await createWorkspace({ name: newName.trim() })
-    setNewName('')
-    setShowNewForm(false)
-  }, [newName, createWorkspace])
+    if (!newName.trim() || !newRepoPath.trim()) return
+    setCreating(true)
+    try {
+      await createWorkspace({
+        name: newName.trim(),
+        repoPath: newRepoPath.trim(),
+        sshHost: newSshHost.trim() || undefined,
+      })
+      setNewName('')
+      setNewRepoPath('')
+      setNewSshHost('')
+      setShowNewForm(false)
+    } catch (e) {
+      console.error('ワークスペース作成エラー:', e)
+    } finally {
+      setCreating(false)
+    }
+  }, [newName, newRepoPath, newSshHost, createWorkspace])
 
   const sectionTitle = activeSection === 'favorites' ? 'お気に入り'
     : activeSection === 'ssh' ? 'SSH接続'
@@ -92,7 +108,7 @@ export function WorkspaceNavigator({ activeSection }: WorkspaceNavigatorProps) {
 
       {/* 新規作成フォーム */}
       {showNewForm && (
-        <form onSubmit={handleCreateWorkspace} className="px-3 py-2 border-b border-border">
+        <form onSubmit={handleCreateWorkspace} className="px-3 py-2 border-b border-border space-y-1.5">
           <input
             type="text"
             value={newName}
@@ -103,13 +119,32 @@ export function WorkspaceNavigator({ activeSection }: WorkspaceNavigatorProps) {
                        focus:border-accent focus:outline-none"
             autoFocus
           />
-          <div className="flex gap-2 mt-2">
+          <input
+            type="text"
+            value={newRepoPath}
+            onChange={(e) => setNewRepoPath(e.target.value)}
+            placeholder="リポジトリパス（必須）..."
+            className="w-full px-2 py-1 text-xs bg-surface-0 border border-border rounded
+                       text-text-primary placeholder-text-muted
+                       focus:border-accent focus:outline-none"
+          />
+          <input
+            type="text"
+            value={newSshHost}
+            onChange={(e) => setNewSshHost(e.target.value)}
+            placeholder="SSHホスト（空ならローカル）..."
+            className="w-full px-2 py-1 text-xs bg-surface-0 border border-border rounded
+                       text-text-primary placeholder-text-muted
+                       focus:border-accent focus:outline-none"
+          />
+          <div className="flex gap-2">
             <button
               type="submit"
+              disabled={creating || !newName.trim() || !newRepoPath.trim()}
               className="flex-1 px-2 py-1 text-xs bg-accent text-surface-0 rounded
-                         hover:bg-accent-hover transition-colors"
+                         hover:bg-accent-hover transition-colors disabled:opacity-50"
             >
-              作成
+              {creating ? '起動中...' : '作成 + Claude Code'}
             </button>
             <button
               type="button"

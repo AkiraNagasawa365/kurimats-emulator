@@ -87,10 +87,10 @@ export function WorkspaceItem({
           <span className="flex-1 truncate">{workspace.name}</span>
         )}
 
-        {/* ブランチ名 */}
-        {workspace.branch && (
-          <span className="text-[10px] text-text-muted truncate max-w-16">
-            {workspace.branch}
+        {/* SSHホスト表示 */}
+        {workspace.sshHost && (
+          <span className="text-[10px] text-blue-400 truncate max-w-16">
+            SSH
           </span>
         )}
 

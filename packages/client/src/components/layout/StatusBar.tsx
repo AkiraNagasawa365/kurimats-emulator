@@ -15,8 +15,8 @@ export function StatusBar() {
       {activeWs ? (
         <>
           <span className="font-medium text-text-primary">{activeWs.name}</span>
-          {activeWs.branch && (
-            <span className="text-accent">{activeWs.branch}</span>
+          {activeWs.sshHost && (
+            <span className="text-blue-400">SSH: {activeWs.sshHost}</span>
           )}
           <span>{paneCount} ペイン</span>
         </>

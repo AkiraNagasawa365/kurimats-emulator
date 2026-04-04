@@ -1,4 +1,4 @@
-import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams, CmuxWorkspace, CreateCmuxWorkspaceParams, PaneNode } from '@kurimats/shared'
+import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams, CmuxWorkspace, CreateCmuxWorkspaceParams, PaneNode, SplitPaneRequest, SplitPaneResponse } from '@kurimats/shared'
 
 const BASE = '/api'
 
@@ -84,6 +84,11 @@ export const workspacesApi = {
     request<{ ok: boolean }>(`/workspaces/${id}/pane-tree`, {
       method: 'PUT',
       body: JSON.stringify({ paneTree, activePaneId }),
+    }),
+  splitPane: (id: string, params: SplitPaneRequest) =>
+    request<SplitPaneResponse>(`/workspaces/${id}/split-pane`, {
+      method: 'POST',
+      body: JSON.stringify(params),
     }),
 }
 

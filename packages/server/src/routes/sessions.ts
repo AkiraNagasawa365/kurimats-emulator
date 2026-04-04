@@ -10,7 +10,7 @@ import type { CreateSessionParams } from '@kurimats/shared'
  * シェルのプロンプト出力（$ や % や > の末尾文字）を監視し、
  * 表示されたらclaudeを実行する。最大5秒のタイムアウト付き。
  */
-function waitForShellReady(
+export function waitForShellReady(
   sessionId: string,
   ptyManager: PtyManager,
   sshManager: SshManager,

@@ -25,7 +25,7 @@ describe('cmuxワークスペース', () => {
   })
 
   it('ワークスペースを作成できる', () => {
-    const workspace = store.createCmuxWorkspace({ name: '開発用' }, defaultPaneTree())
+    const workspace = store.createCmuxWorkspace({ name: '開発用', repoPath: '/tmp/test-repo' }, defaultPaneTree())
 
     expect(workspace.id).toBeDefined()
     expect(workspace.name).toBe('開発用')
@@ -35,28 +35,28 @@ describe('cmuxワークスペース', () => {
   })
 
   it('全ワークスペースを取得できる', () => {
-    store.createCmuxWorkspace({ name: 'WS1' }, defaultPaneTree())
-    store.createCmuxWorkspace({ name: 'WS2' }, defaultPaneTree())
+    store.createCmuxWorkspace({ name: 'WS1', repoPath: '/tmp/test-repo' }, defaultPaneTree())
+    store.createCmuxWorkspace({ name: 'WS2', repoPath: '/tmp/test-repo' }, defaultPaneTree())
 
     expect(store.getAllCmuxWorkspaces()).toHaveLength(2)
   })
 
   it('IDでワークスペースを取得できる', () => {
-    const created = store.createCmuxWorkspace({ name: 'テスト' }, defaultPaneTree())
+    const created = store.createCmuxWorkspace({ name: 'テスト', repoPath: '/tmp/test-repo' }, defaultPaneTree())
     const found = store.getCmuxWorkspace(created.id)
     expect(found).not.toBeNull()
     expect(found!.name).toBe('テスト')
   })
 
   it('ワークスペース名を変更できる', () => {
-    const created = store.createCmuxWorkspace({ name: '旧名' }, defaultPaneTree())
+    const created = store.createCmuxWorkspace({ name: '旧名', repoPath: '/tmp/test-repo' }, defaultPaneTree())
     const updated = store.renameCmuxWorkspace(created.id, '新名')
     expect(updated).not.toBeNull()
     expect(updated!.name).toBe('新名')
   })
 
   it('ピン留めをトグルできる', () => {
-    const created = store.createCmuxWorkspace({ name: 'ピン' }, defaultPaneTree())
+    const created = store.createCmuxWorkspace({ name: 'ピン', repoPath: '/tmp/test-repo' }, defaultPaneTree())
     expect(created.isPinned).toBe(false)
 
     const pinned = store.toggleCmuxWorkspacePin(created.id)
@@ -67,7 +67,7 @@ describe('cmuxワークスペース', () => {
   })
 
   it('ペインツリーを更新できる', () => {
-    const created = store.createCmuxWorkspace({ name: 'レイアウト' }, defaultPaneTree())
+    const created = store.createCmuxWorkspace({ name: 'レイアウト', repoPath: '/tmp/test-repo' }, defaultPaneTree())
 
     const newTree: PaneLeaf = {
       kind: 'leaf',
@@ -87,7 +87,7 @@ describe('cmuxワークスペース', () => {
   })
 
   it('ワークスペースを削除できる', () => {
-    const created = store.createCmuxWorkspace({ name: '削除用' }, defaultPaneTree())
+    const created = store.createCmuxWorkspace({ name: '削除用', repoPath: '/tmp/test-repo' }, defaultPaneTree())
     expect(store.deleteCmuxWorkspace(created.id)).toBe(true)
     expect(store.getCmuxWorkspace(created.id)).toBeNull()
   })
@@ -97,7 +97,7 @@ describe('cmuxワークスペース', () => {
   })
 
   it('ワークスペース削除時にセッションのworkspace_idがnullになる', () => {
-    const ws = store.createCmuxWorkspace({ name: 'WS' }, defaultPaneTree())
+    const ws = store.createCmuxWorkspace({ name: 'WS', repoPath: '/tmp/test-repo' }, defaultPaneTree())
     const session = store.create({
       name: 'セッション',
       repoPath: '/path',

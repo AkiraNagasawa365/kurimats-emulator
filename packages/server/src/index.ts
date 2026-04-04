@@ -71,7 +71,7 @@ app.use('/api/layout', createLayoutRouter(sessionStore, canvasStore))
 app.use('/api/tab', createTabRouter(sessionStore, ptyManager, sshManager))
 app.use('/api/ssh', createSshRouter(sshManager, sessionStore))
 app.use('/api/feedback', createFeedbackRouter(sessionStore))
-app.use('/api/workspaces', createWorkspacesRouter(sessionStore))
+app.use('/api/workspaces', createWorkspacesRouter(sessionStore, ptyManager, sshManager, worktreeService))
 
 // ヘルスチェック
 app.get('/api/health', (_req, res) => {

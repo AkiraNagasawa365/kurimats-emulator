@@ -159,15 +159,19 @@ export class SessionStore {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         project_id TEXT,
+        repo_path TEXT NOT NULL DEFAULT '',
+        ssh_host TEXT,
         pane_tree TEXT NOT NULL DEFAULT '{}',
         active_pane_id TEXT,
         is_pinned INTEGER NOT NULL DEFAULT 0,
-        worktree_path TEXT,
-        branch TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
     `)
+
+    // 既存テーブルへのカラム追加（v3.1移行用）
+    try { this.db.exec('ALTER TABLE cmux_workspaces ADD COLUMN repo_path TEXT NOT NULL DEFAULT \'\'') } catch { /* カラム既存 */ }
+    try { this.db.exec('ALTER TABLE cmux_workspaces ADD COLUMN ssh_host TEXT') } catch { /* カラム既存 */ }
 
     // セッションにworkspace_id追加
     try { this.db.exec('ALTER TABLE sessions ADD COLUMN workspace_id TEXT') } catch { /* カラム既存 */ }
@@ -637,23 +641,28 @@ export class SessionStore {
       id,
       name: params.name,
       projectId: params.projectId ?? null,
+      repoPath: params.repoPath,
+      sshHost: params.sshHost ?? null,
       paneTree: initialPaneTree,
       activePaneId,
       isPinned: false,
       notificationCount: 0,
       lastNotifiedAt: null,
-      worktreePath: null,
-      branch: null,
       createdAt: now,
       updatedAt: now,
     }
 
     this.db.prepare(`
-      INSERT INTO cmux_workspaces (id, name, project_id, pane_tree, active_pane_id, is_pinned, worktree_path, branch, created_at, updated_at)
+      INSERT INTO cmux_workspaces (id, name, project_id, repo_path, ssh_host, pane_tree, active_pane_id, is_pinned, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, workspace.name, workspace.projectId, JSON.stringify(initialPaneTree), activePaneId, 0, null, null, now, now)
+    `).run(id, workspace.name, workspace.projectId, workspace.repoPath, workspace.sshHost, JSON.stringify(initialPaneTree), activePaneId, 0, now, now)
 
     return workspace
+  }
+
+  /** セッションのworkspace_idを更新 */
+  assignWorkspace(sessionId: string, workspaceId: string): void {
+    this.db.prepare('UPDATE sessions SET workspace_id = ? WHERE id = ?').run(workspaceId, sessionId)
   }
 
   /** 全ワークスペース取得 */
@@ -701,13 +710,13 @@ export class SessionStore {
       id: row.id as string,
       name: row.name as string,
       projectId: (row.project_id as string | null) ?? null,
+      repoPath: (row.repo_path as string) ?? '',
+      sshHost: (row.ssh_host as string | null) ?? null,
       paneTree: JSON.parse((row.pane_tree as string) || '{}'),
       activePaneId: (row.active_pane_id as string) ?? '',
       isPinned: Boolean(row.is_pinned),
       notificationCount: 0, // ランタイムのみ
       lastNotifiedAt: null,
-      worktreePath: (row.worktree_path as string | null) ?? null,
-      branch: (row.branch as string | null) ?? null,
       createdAt: row.created_at as number,
       updatedAt: row.updated_at as number,
     }

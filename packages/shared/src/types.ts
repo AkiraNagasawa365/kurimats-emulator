@@ -82,6 +82,10 @@ export interface CmuxWorkspace {
   id: string
   name: string
   projectId: string | null
+  /** ベースリポジトリパス（全ペインの起点） */
+  repoPath: string
+  /** SSHホスト名（リモートWSの場合） */
+  sshHost: string | null
   paneTree: PaneNode
   activePaneId: string
   isPinned: boolean
@@ -89,8 +93,6 @@ export interface CmuxWorkspace {
   notificationCount: number
   /** 最終通知時刻（リオーダー用） */
   lastNotifiedAt: number | null
-  worktreePath: string | null
-  branch: string | null
   createdAt: number
   updatedAt: number
 }
@@ -98,11 +100,25 @@ export interface CmuxWorkspace {
 /** ワークスペース作成パラメータ */
 export interface CreateCmuxWorkspaceParams {
   name: string
+  /** リポジトリパス（必須） */
+  repoPath: string
   projectId?: string
-  repoPath?: string
   useWorktree?: boolean
   baseBranch?: string
   sshHost?: string
+}
+
+/** ペイン分割リクエスト */
+export interface SplitPaneRequest {
+  paneId: string
+  direction: SplitDirection
+}
+
+/** ペイン分割レスポンス（サーバーが新セッション+worktreeを作成） */
+export interface SplitPaneResponse {
+  paneTree: PaneNode
+  activePaneId: string
+  newSession: Session
 }
 
 /** ペイン通知情報 */
