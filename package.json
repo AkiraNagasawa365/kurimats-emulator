@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo run dev --parallel",
+    "dev": "turbo run dev --parallel --filter=!@kurimats/electron",
     "build": "turbo run build",
     "dev:server": "npm run dev -w packages/server",
     "dev:client": "npm run dev -w packages/client",
@@ -25,7 +25,8 @@
     "vitest": "^4.1.2"
   },
   "dependencies": {
-    "esbuild": "^0.27.4"
+    "esbuild": "^0.27.4",
+    "node-pty": "^1.1.0"
   },
   "optionalDependencies": {
     "lightningcss-darwin-arm64": "^1.32.0"

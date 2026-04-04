@@ -89,17 +89,14 @@ html, body, #root {
   animation: fadeIn 0.15s ease-out;
 }
 
-/* xterm.jsのCanvas rendererがReact FlowのCSS transform下で正しく描画されるよう補正 */
-.react-flow__node .xterm {
-  contain: layout style;
+/* 通知リング（ペイン枠が青く光るアニメーション） */
+@keyframes ringPulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--color-accent), 0 0 12px rgba(45, 212, 191, 0.3); }
+  50% { box-shadow: 0 0 0 2px var(--color-accent), 0 0 20px rgba(45, 212, 191, 0.5); }
 }
-.react-flow__node .xterm-screen canvas {
-  image-rendering: auto;
-}
-
-/* React Flowノードのvisibility:hidden上書き（全ノード常時表示） */
-.react-flow__node {
-  visibility: visible !important;
+.pane-attention-ring {
+  box-shadow: 0 0 0 2px var(--color-accent), 0 0 12px rgba(45, 212, 191, 0.3);
+  animation: ringPulse 2s ease-in-out infinite;
 }
 
 /* カスタムスクロールバー（ダークテーマ用） */

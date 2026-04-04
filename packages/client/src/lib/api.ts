@@ -1,4 +1,4 @@
-import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, LayoutState, BoardLayoutState, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams, Workspace } from '@kurimats/shared'
+import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams, CmuxWorkspace, CreateCmuxWorkspaceParams, PaneNode, SplitPaneRequest, SplitPaneResponse } from '@kurimats/shared'
 
 const BASE = '/api'
 
@@ -65,24 +65,31 @@ export const projectsApi = {
     request<{ ok: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
 }
 
-// レイアウトAPI
-export const layoutApi = {
-  get: () => request<LayoutState | null>('/layout'),
-  save: (state: LayoutState) =>
-    request<{ ok: boolean }>('/layout', { method: 'PUT', body: JSON.stringify(state) }),
-  getBoard: () => request<BoardLayoutState | null>('/layout/board'),
-  saveBoard: (state: BoardLayoutState) =>
-    request<{ ok: boolean }>('/layout/board', { method: 'PUT', body: JSON.stringify(state) }),
-
-  // ワークスペース
-  workspaces: {
-    list: () => request<Workspace[]>('/layout/workspaces'),
-    get: (id: string) => request<Workspace>(`/layout/workspaces/${id}`),
-    create: (data: { name: string; boardNodes: unknown[]; fileTiles: unknown[]; edges: unknown[]; viewport: { x: number; y: number; zoom: number } }) =>
-      request<Workspace>('/layout/workspaces', { method: 'POST', body: JSON.stringify(data) }),
-    delete: (id: string) =>
-      request<{ ok: boolean }>(`/layout/workspaces/${id}`, { method: 'DELETE' }),
-  },
+// ワークスペースAPI（cmux v3）
+export const workspacesApi = {
+  list: () => request<CmuxWorkspace[]>('/workspaces'),
+  get: (id: string) => request<CmuxWorkspace>(`/workspaces/${id}`),
+  create: (params: CreateCmuxWorkspaceParams) =>
+    request<CmuxWorkspace>('/workspaces', { method: 'POST', body: JSON.stringify(params) }),
+  delete: (id: string) =>
+    request<{ ok: boolean }>(`/workspaces/${id}`, { method: 'DELETE' }),
+  rename: (id: string, name: string) =>
+    request<CmuxWorkspace>(`/workspaces/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
+  togglePin: (id: string) =>
+    request<CmuxWorkspace>(`/workspaces/${id}/pin`, { method: 'POST' }),
+  updatePaneTree: (id: string, paneTree: PaneNode, activePaneId: string) =>
+    request<{ ok: boolean }>(`/workspaces/${id}/pane-tree`, {
+      method: 'PUT',
+      body: JSON.stringify({ paneTree, activePaneId }),
+    }),
+  splitPane: (id: string, params: SplitPaneRequest) =>
+    request<SplitPaneResponse>(`/workspaces/${id}/split-pane`, {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
 }
 
 // tabコマンドAPI

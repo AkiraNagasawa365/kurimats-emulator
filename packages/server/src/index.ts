@@ -16,6 +16,7 @@ import { createLayoutRouter } from './routes/layout.js'
 import { createTabRouter } from './routes/tab.js'
 import { createSshRouter } from './routes/ssh.js'
 import { createFeedbackRouter } from './routes/feedback.js'
+import { createWorkspacesRouter } from './routes/workspaces.js'
 import { CanvasStore } from './services/canvas-store.js'
 
 const PORT = parseInt(process.env.PORT || '3001', 10)
@@ -70,6 +71,7 @@ app.use('/api/layout', createLayoutRouter(sessionStore, canvasStore))
 app.use('/api/tab', createTabRouter(sessionStore, ptyManager, sshManager))
 app.use('/api/ssh', createSshRouter(sshManager, sessionStore))
 app.use('/api/feedback', createFeedbackRouter(sessionStore))
+app.use('/api/workspaces', createWorkspacesRouter(sessionStore, ptyManager, sshManager, worktreeService))
 
 // ヘルスチェック
 app.get('/api/health', (_req, res) => {

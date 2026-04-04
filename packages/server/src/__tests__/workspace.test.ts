@@ -1,10 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SessionStore } from '../services/session-store'
+import type { PaneLeaf } from '@kurimats/shared'
 
-/**
- * Phase 3: ワークスペース + プロジェクト管理強化のテスト
- */
-describe('ワークスペース', () => {
+/** テスト用のデフォルトペインツリー */
+function defaultPaneTree(): PaneLeaf {
+  return {
+    kind: 'leaf',
+    id: 'test-pane-1',
+    surfaces: [],
+    activeSurfaceIndex: 0,
+    ratio: 0.5,
+  }
+}
+
+describe('cmuxワークスペース', () => {
   let store: SessionStore
 
   beforeEach(() => {
@@ -15,55 +24,120 @@ describe('ワークスペース', () => {
     store.close()
   })
 
-  it('ワークスペースを保存できる', () => {
-    const nodes = [
-      { sessionId: 's1', x: 0, y: 0, width: 520, height: 620 },
-      { sessionId: 's2', x: 560, y: 0, width: 520, height: 620 },
-    ]
-    const edges = [{ id: 'e1', source: 's1', target: 's2' }]
-    const viewport = { x: 100, y: 200, zoom: 0.8 }
-
-    const workspace = store.createWorkspace({ name: '開発用' }, nodes, [], edges, viewport)
+  it('ワークスペースを作成できる', () => {
+    const workspace = store.createCmuxWorkspace({ name: '開発用', repoPath: '/tmp/test-repo' }, defaultPaneTree())
 
     expect(workspace.id).toBeDefined()
     expect(workspace.name).toBe('開発用')
-    expect(workspace.boardNodes).toHaveLength(2)
-    expect(workspace.edges).toHaveLength(1)
-    expect(workspace.viewport).toEqual(viewport)
-  })
-
-  it('ファイルタイル付きで保存できる', () => {
-    const fileTiles = [
-      { id: 'f1', filePath: '/path/to/file.ts', language: 'typescript', x: 0, y: 0, width: 500, height: 400 },
-    ]
-    const workspace = store.createWorkspace({ name: 'レビュー用' }, [], fileTiles, [], { x: 0, y: 0, zoom: 1 })
-
-    expect(workspace.fileTiles).toHaveLength(1)
-    expect(workspace.fileTiles![0].filePath).toBe('/path/to/file.ts')
+    expect(workspace.paneTree.kind).toBe('leaf')
+    expect(workspace.activePaneId).toBe('test-pane-1')
+    expect(workspace.isPinned).toBe(false)
   })
 
   it('全ワークスペースを取得できる', () => {
-    store.createWorkspace({ name: 'WS1' }, [], [], [], { x: 0, y: 0, zoom: 1 })
-    store.createWorkspace({ name: 'WS2' }, [], [], [], { x: 0, y: 0, zoom: 1 })
+    store.createCmuxWorkspace({ name: 'WS1', repoPath: '/tmp/test-repo' }, defaultPaneTree())
+    store.createCmuxWorkspace({ name: 'WS2', repoPath: '/tmp/test-repo' }, defaultPaneTree())
 
-    expect(store.getAllWorkspaces()).toHaveLength(2)
+    expect(store.getAllCmuxWorkspaces()).toHaveLength(2)
   })
 
   it('IDでワークスペースを取得できる', () => {
-    const created = store.createWorkspace({ name: 'テスト' }, [], [], [], { x: 0, y: 0, zoom: 1 })
-    const found = store.getWorkspace(created.id)
+    const created = store.createCmuxWorkspace({ name: 'テスト', repoPath: '/tmp/test-repo' }, defaultPaneTree())
+    const found = store.getCmuxWorkspace(created.id)
     expect(found).not.toBeNull()
     expect(found!.name).toBe('テスト')
   })
 
+  it('ワークスペース名を変更できる', () => {
+    const created = store.createCmuxWorkspace({ name: '旧名', repoPath: '/tmp/test-repo' }, defaultPaneTree())
+    const updated = store.renameCmuxWorkspace(created.id, '新名')
+    expect(updated).not.toBeNull()
+    expect(updated!.name).toBe('新名')
+  })
+
+  it('ピン留めをトグルできる', () => {
+    const created = store.createCmuxWorkspace({ name: 'ピン', repoPath: '/tmp/test-repo' }, defaultPaneTree())
+    expect(created.isPinned).toBe(false)
+
+    const pinned = store.toggleCmuxWorkspacePin(created.id)
+    expect(pinned!.isPinned).toBe(true)
+
+    const unpinned = store.toggleCmuxWorkspacePin(created.id)
+    expect(unpinned!.isPinned).toBe(false)
+  })
+
+  it('ペインツリーを更新できる', () => {
+    const created = store.createCmuxWorkspace({ name: 'レイアウト', repoPath: '/tmp/test-repo' }, defaultPaneTree())
+
+    const newTree: PaneLeaf = {
+      kind: 'leaf',
+      id: 'new-pane',
+      surfaces: [{ id: 's1', type: 'terminal', target: 'session-1', label: 'Terminal' }],
+      activeSurfaceIndex: 0,
+      ratio: 0.5,
+    }
+
+    store.updateCmuxPaneTree(created.id, newTree, 'new-pane')
+    const updated = store.getCmuxWorkspace(created.id)
+    expect(updated!.activePaneId).toBe('new-pane')
+    expect(updated!.paneTree.kind).toBe('leaf')
+    if (updated!.paneTree.kind === 'leaf') {
+      expect(updated!.paneTree.surfaces).toHaveLength(1)
+    }
+  })
+
   it('ワークスペースを削除できる', () => {
-    const created = store.createWorkspace({ name: '削除用' }, [], [], [], { x: 0, y: 0, zoom: 1 })
-    expect(store.deleteWorkspace(created.id)).toBe(true)
-    expect(store.getWorkspace(created.id)).toBeNull()
+    const created = store.createCmuxWorkspace({ name: '削除用', repoPath: '/tmp/test-repo' }, defaultPaneTree())
+    expect(store.deleteCmuxWorkspace(created.id)).toBe(true)
+    expect(store.getCmuxWorkspace(created.id)).toBeNull()
   })
 
   it('存在しないワークスペースの削除はfalseを返す', () => {
-    expect(store.deleteWorkspace('nonexistent')).toBe(false)
+    expect(store.deleteCmuxWorkspace('nonexistent')).toBe(false)
+  })
+
+  it('repoPathを保持して作成できる', () => {
+    const ws = store.createCmuxWorkspace({ name: 'repo-test', repoPath: '/home/user/myrepo' }, defaultPaneTree())
+    expect(ws.repoPath).toBe('/home/user/myrepo')
+    expect(ws.sshHost).toBeNull()
+
+    const fetched = store.getCmuxWorkspace(ws.id)
+    expect(fetched!.repoPath).toBe('/home/user/myrepo')
+  })
+
+  it('sshHost付きで作成できる', () => {
+    const ws = store.createCmuxWorkspace(
+      { name: 'ssh-test', repoPath: '/data1/project', sshHost: 'elith-remote' },
+      defaultPaneTree(),
+    )
+    expect(ws.repoPath).toBe('/data1/project')
+    expect(ws.sshHost).toBe('elith-remote')
+
+    const fetched = store.getCmuxWorkspace(ws.id)
+    expect(fetched!.sshHost).toBe('elith-remote')
+  })
+
+  it('assignWorkspaceでセッションのworkspace_idを更新できる', () => {
+    const ws = store.createCmuxWorkspace({ name: 'assign-test', repoPath: '/tmp/test' }, defaultPaneTree())
+    const session = store.create({ name: 'sess', repoPath: '/tmp/test' })
+    expect(store.getById(session.id)!.workspaceId).toBeNull()
+
+    store.assignWorkspace(session.id, ws.id)
+    expect(store.getById(session.id)!.workspaceId).toBe(ws.id)
+  })
+
+  it('ワークスペース削除時にセッションのworkspace_idがnullになる', () => {
+    const ws = store.createCmuxWorkspace({ name: 'WS', repoPath: '/tmp/test-repo' }, defaultPaneTree())
+    const session = store.create({
+      name: 'セッション',
+      repoPath: '/path',
+      workspaceId: ws.id,
+    })
+
+    expect(store.getById(session.id)!.workspaceId).toBe(ws.id)
+
+    store.deleteCmuxWorkspace(ws.id)
+    expect(store.getById(session.id)!.workspaceId).toBeNull()
   })
 })
 
