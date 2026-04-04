@@ -1,0 +1,174 @@
+import { create } from 'zustand'
+import type { SplitDirection, Surface } from '@kurimats/shared'
+import {
+  splitLeaf,
+  closeLeaf,
+  resizeSplit,
+  addSurface as addSurfaceToTree,
+  removeSurface as removeSurfaceFromTree,
+  switchSurface as switchSurfaceInTree,
+  findAdjacentPane,
+  firstLeaf,
+  countLeaves,
+} from '../lib/pane-tree-utils'
+import { useWorkspaceStore } from './workspace-store'
+
+type Direction = 'up' | 'down' | 'left' | 'right'
+
+interface PaneState {
+  /** ズーム中のペインID（nullなら通常表示） */
+  zoomedPaneId: string | null
+  /** 通知リング状態: paneId → active */
+  attentionRings: Map<string, boolean>
+
+  // ペイン操作（アクティブワークスペースのツリーを操作）
+  splitPane: (paneId: string, direction: SplitDirection) => void
+  closePane: (paneId: string) => void
+  zoomPane: (paneId: string) => void
+  unzoom: () => void
+  toggleZoom: (paneId: string) => void
+  resizeSplit: (splitId: string, ratio: number) => void
+  focusPane: (paneId: string) => void
+  focusDirection: (direction: Direction) => void
+
+  // サーフェス操作
+  addSurface: (paneId: string, surface: Surface) => void
+  removeSurface: (paneId: string, surfaceId: string) => void
+  switchSurface: (paneId: string, index: number) => void
+
+  // 通知リング
+  setAttentionRing: (paneId: string, active: boolean) => void
+  clearAllRings: () => void
+}
+
+/** アクティブワークスペースのペインツリーを取得・更新するヘルパー */
+function withActiveWorkspace(
+  callback: (workspace: { paneTree: import('@kurimats/shared').PaneNode; activePaneId: string; id: string }) => {
+    tree: import('@kurimats/shared').PaneNode
+    activePaneId: string
+  } | null,
+) {
+  const wsStore = useWorkspaceStore.getState()
+  const workspace = wsStore.workspaces.find(w => w.id === wsStore.activeWorkspaceId)
+  if (!workspace) return
+
+  const result = callback(workspace)
+  if (!result) return
+
+  wsStore.updatePaneTree(workspace.id, result.tree, result.activePaneId)
+}
+
+export const usePaneStore = create<PaneState>((set, get) => ({
+  zoomedPaneId: null,
+  attentionRings: new Map(),
+
+  splitPane: (paneId, direction) => {
+    withActiveWorkspace((ws) => {
+      const newTree = splitLeaf(ws.paneTree, paneId, direction)
+      // 新しいリーフを見つける（splitLeafが作る新しいリーフのIDを取得）
+      // splitLeafは元のリーフの右（または下）に新しいリーフを挿入する
+      // 新しいリーフがアクティブになる
+      return { tree: newTree, activePaneId: ws.activePaneId }
+    })
+  },
+
+  closePane: (paneId) => {
+    withActiveWorkspace((ws) => {
+      if (countLeaves(ws.paneTree) <= 1) return null // 最後のペインは閉じない
+      const newTree = closeLeaf(ws.paneTree, paneId)
+      if (!newTree) return null
+      const newActive = ws.activePaneId === paneId
+        ? firstLeaf(newTree).id
+        : ws.activePaneId
+      return { tree: newTree, activePaneId: newActive }
+    })
+
+    // ズーム中のペインが閉じられたらアンズーム
+    if (get().zoomedPaneId === paneId) {
+      set({ zoomedPaneId: null })
+    }
+  },
+
+  zoomPane: (paneId) => {
+    set({ zoomedPaneId: paneId })
+  },
+
+  unzoom: () => {
+    set({ zoomedPaneId: null })
+  },
+
+  toggleZoom: (paneId) => {
+    if (get().zoomedPaneId === paneId) {
+      set({ zoomedPaneId: null })
+    } else {
+      set({ zoomedPaneId: paneId })
+    }
+  },
+
+  resizeSplit: (splitId, ratio) => {
+    withActiveWorkspace((ws) => ({
+      tree: resizeSplit(ws.paneTree, splitId, ratio),
+      activePaneId: ws.activePaneId,
+    }))
+  },
+
+  focusPane: (paneId) => {
+    withActiveWorkspace((ws) => ({
+      tree: ws.paneTree,
+      activePaneId: paneId,
+    }))
+
+    // フォーカスしたペインの通知リングを消去
+    const rings = new Map(get().attentionRings)
+    if (rings.has(paneId)) {
+      rings.delete(paneId)
+      set({ attentionRings: rings })
+    }
+  },
+
+  focusDirection: (direction) => {
+    const wsStore = useWorkspaceStore.getState()
+    const workspace = wsStore.workspaces.find(w => w.id === wsStore.activeWorkspaceId)
+    if (!workspace) return
+
+    const target = findAdjacentPane(workspace.paneTree, workspace.activePaneId, direction)
+    if (target) {
+      get().focusPane(target.id)
+    }
+  },
+
+  addSurface: (paneId, surface) => {
+    withActiveWorkspace((ws) => ({
+      tree: addSurfaceToTree(ws.paneTree, paneId, surface),
+      activePaneId: ws.activePaneId,
+    }))
+  },
+
+  removeSurface: (paneId, surfaceId) => {
+    withActiveWorkspace((ws) => ({
+      tree: removeSurfaceFromTree(ws.paneTree, paneId, surfaceId),
+      activePaneId: ws.activePaneId,
+    }))
+  },
+
+  switchSurface: (paneId, index) => {
+    withActiveWorkspace((ws) => ({
+      tree: switchSurfaceInTree(ws.paneTree, paneId, index),
+      activePaneId: ws.activePaneId,
+    }))
+  },
+
+  setAttentionRing: (paneId, active) => {
+    const rings = new Map(get().attentionRings)
+    if (active) {
+      rings.set(paneId, true)
+    } else {
+      rings.delete(paneId)
+    }
+    set({ attentionRings: rings })
+  },
+
+  clearAllRings: () => {
+    set({ attentionRings: new Map() })
+  },
+}))

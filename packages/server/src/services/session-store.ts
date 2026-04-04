@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { mkdirSync } from 'fs'
 import { fileURLToPath } from 'url'
-import type { Session, CreateSessionParams, Project, CreateProjectParams, LayoutState, BoardLayoutState, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams, Workspace, CreateWorkspaceParams, BoardNodePosition, BoardEdge, FileTilePosition } from '@kurimats/shared'
+import type { Session, CreateSessionParams, Project, CreateProjectParams, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams, CmuxWorkspace, CreateCmuxWorkspaceParams, PaneNode } from '@kurimats/shared'
 import { v4 as uuidv4 } from 'uuid'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -153,20 +153,24 @@ export class SessionStore {
     try { this.db.exec('ALTER TABLE projects ADD COLUMN ssh_preset_id TEXT') } catch { /* カラム既存 */ }
     try { this.db.exec('ALTER TABLE projects ADD COLUMN startup_template_id TEXT') } catch { /* カラム既存 */ }
 
-    // ワークスペーステーブル
+    // cmuxワークスペーステーブル（v3）
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS workspaces (
+      CREATE TABLE IF NOT EXISTS cmux_workspaces (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        board_nodes TEXT NOT NULL DEFAULT '[]',
-        file_tiles TEXT NOT NULL DEFAULT '[]',
-        edges TEXT NOT NULL DEFAULT '[]',
-        viewport_x REAL NOT NULL DEFAULT 0,
-        viewport_y REAL NOT NULL DEFAULT 0,
-        viewport_zoom REAL NOT NULL DEFAULT 1,
-        created_at INTEGER NOT NULL
+        project_id TEXT,
+        pane_tree TEXT NOT NULL DEFAULT '{}',
+        active_pane_id TEXT,
+        is_pinned INTEGER NOT NULL DEFAULT 0,
+        worktree_path TEXT,
+        branch TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
       );
     `)
+
+    // セッションにworkspace_id追加
+    try { this.db.exec('ALTER TABLE sessions ADD COLUMN workspace_id TEXT') } catch { /* カラム既存 */ }
   }
 
   // ==================== セッション ====================
@@ -179,6 +183,7 @@ export class SessionStore {
     projectId?: string | null
     sshHost?: string | null
     isRemote?: boolean
+    workspaceId?: string | null
   }): Session {
     const now = Date.now()
     const session: Session = {
@@ -193,18 +198,20 @@ export class SessionStore {
       projectId: params.projectId ?? null,
       sshHost: params.sshHost ?? null,
       isRemote: params.isRemote ?? false,
+      workspaceId: params.workspaceId ?? null,
       createdAt: now,
       lastActiveAt: now,
     }
 
     this.db.prepare(`
-      INSERT INTO sessions (id, name, repo_path, worktree_path, branch, status, claude_session_id, is_favorite, project_id, ssh_host, is_remote, created_at, last_active_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, name, repo_path, worktree_path, branch, status, claude_session_id, is_favorite, project_id, ssh_host, is_remote, workspace_id, created_at, last_active_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       session.id, session.name, session.repoPath, session.worktreePath,
       session.branch, session.status, session.claudeSessionId,
       session.isFavorite ? 1 : 0, session.projectId,
       session.sshHost, session.isRemote ? 1 : 0,
+      session.workspaceId,
       session.createdAt, session.lastActiveAt
     )
 
@@ -331,12 +338,10 @@ export class SessionStore {
     this.db.prepare('DELETE FROM projects WHERE id = ?').run(id)
   }
 
-  // ==================== レイアウト ====================
+  // ==================== レイアウト（旧: Phase 8で削除予定） ====================
 
-  /**
-   * レイアウト保存
-   */
-  saveLayout(state: LayoutState): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  saveLayout(state: any): void {
     this.db.prepare(`
       INSERT OR REPLACE INTO layout_state (id, mode, panels, active_panel_index, saved_at)
       VALUES ('default', ?, ?, ?, ?)
@@ -346,11 +351,12 @@ export class SessionStore {
   /**
    * レイアウト取得
    */
-  getLayout(): LayoutState | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getLayout(): any {
     const row = this.db.prepare('SELECT * FROM layout_state WHERE id = ?').get('default') as Record<string, unknown> | undefined
     if (!row) return null
     return {
-      mode: row.mode as LayoutState['mode'],
+      mode: row.mode as string,
       panels: JSON.parse(row.panels as string),
       activePanelIndex: row.active_panel_index as number,
       savedAt: row.saved_at as number,
@@ -362,7 +368,8 @@ export class SessionStore {
   /**
    * ボードレイアウト保存
    */
-  saveBoardLayout(state: BoardLayoutState): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  saveBoardLayout(state: any): void {
     this.db.prepare(`
       INSERT OR REPLACE INTO board_layout (id, nodes, edges, viewport_x, viewport_y, viewport_zoom, saved_at)
       VALUES ('default', ?, ?, ?, ?, ?, ?)
@@ -379,7 +386,8 @@ export class SessionStore {
   /**
    * ボードレイアウト取得
    */
-  getBoardLayout(): BoardLayoutState | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getBoardLayout(): any {
     const row = this.db.prepare('SELECT * FROM board_layout WHERE id = ?').get('default') as Record<string, unknown> | undefined
     if (!row) return null
     return {
@@ -412,6 +420,7 @@ export class SessionStore {
       projectId: row.project_id as string | null,
       sshHost: (row.ssh_host as string | null) ?? null,
       isRemote: Boolean(row.is_remote),
+      workspaceId: (row.workspace_id as string | null) ?? null,
       createdAt: row.created_at as number,
       lastActiveAt: row.last_active_at as number,
     }
@@ -616,57 +625,98 @@ export class SessionStore {
     this.db.prepare('UPDATE projects SET startup_template_id = ? WHERE id = ?').run(startupTemplateId, projectId)
   }
 
-  // ==================== ワークスペース ====================
+  // ==================== cmuxワークスペース ====================
 
-  /** 現在のキャンバス状態をワークスペースとして保存 */
-  createWorkspace(params: CreateWorkspaceParams, boardNodes: BoardNodePosition[], fileTiles: FileTilePosition[], edges: BoardEdge[], viewport: { x: number; y: number; zoom: number }): Workspace {
-    const workspace: Workspace = {
-      id: uuidv4(),
+  /** ワークスペース作成 */
+  createCmuxWorkspace(params: CreateCmuxWorkspaceParams, initialPaneTree: PaneNode): CmuxWorkspace {
+    const now = Date.now()
+    const id = uuidv4()
+    const activePaneId = this.findFirstLeafId(initialPaneTree)
+
+    const workspace: CmuxWorkspace = {
+      id,
       name: params.name,
-      boardNodes,
-      fileTiles,
-      edges,
-      viewport,
-      createdAt: Date.now(),
+      projectId: params.projectId ?? null,
+      paneTree: initialPaneTree,
+      activePaneId,
+      isPinned: false,
+      notificationCount: 0,
+      lastNotifiedAt: null,
+      worktreePath: null,
+      branch: null,
+      createdAt: now,
+      updatedAt: now,
     }
+
     this.db.prepare(`
-      INSERT INTO workspaces (id, name, board_nodes, file_tiles, edges, viewport_x, viewport_y, viewport_zoom, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(workspace.id, workspace.name, JSON.stringify(boardNodes), JSON.stringify(fileTiles), JSON.stringify(edges), viewport.x, viewport.y, viewport.zoom, workspace.createdAt)
+      INSERT INTO cmux_workspaces (id, name, project_id, pane_tree, active_pane_id, is_pinned, worktree_path, branch, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, workspace.name, workspace.projectId, JSON.stringify(initialPaneTree), activePaneId, 0, null, null, now, now)
+
     return workspace
   }
 
   /** 全ワークスペース取得 */
-  getAllWorkspaces(): Workspace[] {
-    return (this.db.prepare('SELECT * FROM workspaces ORDER BY created_at DESC').all() as Record<string, unknown>[])
-      .map(this.mapWorkspaceRow)
+  getAllCmuxWorkspaces(): CmuxWorkspace[] {
+    return (this.db.prepare('SELECT * FROM cmux_workspaces ORDER BY created_at DESC').all() as Record<string, unknown>[])
+      .map(this.mapCmuxWorkspaceRow)
   }
 
   /** ワークスペース取得 */
-  getWorkspace(id: string): Workspace | null {
-    const row = this.db.prepare('SELECT * FROM workspaces WHERE id = ?').get(id) as Record<string, unknown> | undefined
-    return row ? this.mapWorkspaceRow(row) : null
+  getCmuxWorkspace(id: string): CmuxWorkspace | null {
+    const row = this.db.prepare('SELECT * FROM cmux_workspaces WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    return row ? this.mapCmuxWorkspaceRow(row) : null
+  }
+
+  /** ワークスペース名変更 */
+  renameCmuxWorkspace(id: string, name: string): CmuxWorkspace | null {
+    this.db.prepare('UPDATE cmux_workspaces SET name = ?, updated_at = ? WHERE id = ?').run(name, Date.now(), id)
+    return this.getCmuxWorkspace(id)
+  }
+
+  /** ピン留めトグル */
+  toggleCmuxWorkspacePin(id: string): CmuxWorkspace | null {
+    const ws = this.getCmuxWorkspace(id)
+    if (!ws) return null
+    const newPinned = ws.isPinned ? 0 : 1
+    this.db.prepare('UPDATE cmux_workspaces SET is_pinned = ?, updated_at = ? WHERE id = ?').run(newPinned, Date.now(), id)
+    return this.getCmuxWorkspace(id)
+  }
+
+  /** ペインツリー更新 */
+  updateCmuxPaneTree(id: string, paneTree: PaneNode, activePaneId: string): void {
+    this.db.prepare('UPDATE cmux_workspaces SET pane_tree = ?, active_pane_id = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(paneTree), activePaneId, Date.now(), id)
   }
 
   /** ワークスペース削除 */
-  deleteWorkspace(id: string): boolean {
-    return this.db.prepare('DELETE FROM workspaces WHERE id = ?').run(id).changes > 0
+  deleteCmuxWorkspace(id: string): boolean {
+    // 関連セッションのworkspace_idをnullに
+    this.db.prepare('UPDATE sessions SET workspace_id = NULL WHERE workspace_id = ?').run(id)
+    return this.db.prepare('DELETE FROM cmux_workspaces WHERE id = ?').run(id).changes > 0
   }
 
-  private mapWorkspaceRow(row: Record<string, unknown>): Workspace {
+  private mapCmuxWorkspaceRow(row: Record<string, unknown>): CmuxWorkspace {
     return {
       id: row.id as string,
       name: row.name as string,
-      boardNodes: JSON.parse((row.board_nodes as string) || '[]'),
-      fileTiles: JSON.parse((row.file_tiles as string) || '[]'),
-      edges: JSON.parse((row.edges as string) || '[]'),
-      viewport: {
-        x: row.viewport_x as number,
-        y: row.viewport_y as number,
-        zoom: row.viewport_zoom as number,
-      },
+      projectId: (row.project_id as string | null) ?? null,
+      paneTree: JSON.parse((row.pane_tree as string) || '{}'),
+      activePaneId: (row.active_pane_id as string) ?? '',
+      isPinned: Boolean(row.is_pinned),
+      notificationCount: 0, // ランタイムのみ
+      lastNotifiedAt: null,
+      worktreePath: (row.worktree_path as string | null) ?? null,
+      branch: (row.branch as string | null) ?? null,
       createdAt: row.created_at as number,
+      updatedAt: row.updated_at as number,
     }
+  }
+
+  /** ペインツリーの最初のリーフIDを取得 */
+  private findFirstLeafId(node: PaneNode): string {
+    if (node.kind === 'leaf') return node.id
+    return this.findFirstLeafId(node.children[0])
   }
 
   close(): void {
