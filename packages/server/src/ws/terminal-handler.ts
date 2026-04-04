@@ -25,8 +25,18 @@ export function setupTerminalWs(
     const payload = JSON.stringify(msg)
     for (const ws of sessionClients) {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(payload)
+        try {
+          ws.send(payload)
+        } catch {
+          sessionClients.delete(ws)
+          ws.terminate()
+        }
+      } else if (ws.readyState !== WebSocket.CONNECTING) {
+        sessionClients.delete(ws)
       }
+    }
+    if (sessionClients.size === 0) {
+      clients.delete(sessionId)
     }
   }
 
@@ -70,7 +80,9 @@ export function setupTerminalWs(
 
     // 接続確認メッセージ
     const connMsg: ServerTerminalMessage = { type: 'connected', sessionId }
-    ws.send(JSON.stringify(connMsg))
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(connMsg))
+    }
 
     // リングバッファの内容を再送（再接続対応）
     const buffer = isRemote
@@ -78,7 +90,9 @@ export function setupTerminalWs(
       : ptyManager.getBuffer(sessionId)
     if (buffer) {
       const bufMsg: ServerTerminalMessage = { type: 'output', data: buffer }
-      ws.send(JSON.stringify(bufMsg))
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(bufMsg))
+      }
     }
 
     // クライアントからのメッセージ処理
@@ -107,6 +121,13 @@ export function setupTerminalWs(
     })
 
     ws.on('close', () => {
+      clients.get(sessionId)?.delete(ws)
+      if (clients.get(sessionId)?.size === 0) {
+        clients.delete(sessionId)
+      }
+    })
+
+    ws.on('error', () => {
       clients.get(sessionId)?.delete(ws)
       if (clients.get(sessionId)?.size === 0) {
         clients.delete(sessionId)

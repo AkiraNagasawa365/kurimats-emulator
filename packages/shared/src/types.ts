@@ -146,6 +146,97 @@ export interface AppLayoutState {
   savedAt: number
 }
 
+// ========== レガシーレイアウト / ボード ==========
+
+/** 分割ビューのレイアウト種別 */
+export type LayoutMode = '1x1' | '2x1' | '1x2' | '2x2' | '3x1'
+
+/** ボード自動配置のモード */
+export type AutoLayoutMode = 'grid' | 'flow' | 'tree'
+
+/** 旧レイアウトAPIのパネル情報 */
+export interface LayoutPanel {
+  sessionId: string | null
+  position: number
+}
+
+/** 旧レイアウトAPIの保存形式 */
+export interface LayoutState {
+  mode: LayoutMode
+  panels: LayoutPanel[]
+  activePanelIndex: number
+  savedAt: number
+}
+
+/** ボード上のセッションノード位置 */
+export interface BoardNodePosition {
+  sessionId: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** ボード上の接続線 */
+export interface BoardEdge {
+  id: string
+  source: string
+  target: string
+  label?: string
+}
+
+/** ボード上のファイルタイル位置 */
+export interface FileTilePosition {
+  id: string
+  filePath: string
+  language: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** ボードレイアウト保存形式 */
+export interface BoardLayoutState {
+  nodes: BoardNodePosition[]
+  edges: BoardEdge[]
+  fileTiles?: FileTilePosition[]
+  viewport: { x: number; y: number; zoom: number }
+  savedAt: number
+}
+
+/** 旧キャンバスワークスペース保存リクエスト */
+export interface CreateWorkspaceParams {
+  name: string
+}
+
+/** ボードキャンバスのフィルタ条件 */
+export interface CanvasFilterCriteria {
+  favoritesOnly: boolean
+  status: SessionStatus | 'all'
+  projectId: string | null
+}
+
+/** キャンバス表示判定 */
+export function matchesCanvasFilter(
+  session: Pick<Session, 'isFavorite' | 'status' | 'projectId'>,
+  filter: CanvasFilterCriteria,
+): boolean {
+  if (filter.favoritesOnly && !session.isFavorite) {
+    return false
+  }
+
+  if (filter.status !== 'all' && session.status !== filter.status) {
+    return false
+  }
+
+  if (filter.projectId !== null && session.projectId !== filter.projectId) {
+    return false
+  }
+
+  return true
+}
+
 // ========== プロジェクト ==========
 
 // プロジェクト

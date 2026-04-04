@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import express from 'express'
 import { createServer, type Server } from 'http'
 import { SessionStore } from '../services/session-store.js'
@@ -9,7 +9,9 @@ import { createSessionsRouter } from '../routes/sessions.js'
 import { createProjectsRouter } from '../routes/projects.js'
 import { createLayoutRouter } from '../routes/layout.js'
 
-describe('プロジェクト・お気に入り・レイアウトAPI', () => {
+const describeServer = process.env.CODEX_SANDBOX_NETWORK_DISABLED === '1' ? describe.skip : describe
+
+describeServer('プロジェクト・お気に入り・レイアウトAPI', () => {
   let server: Server
   let baseUrl: string
   let store: SessionStore
@@ -18,6 +20,9 @@ describe('プロジェクト・お気に入り・レイアウトAPI', () => {
   beforeEach(async () => {
     store = new SessionStore(':memory:')
     ptyManager = new PtyManager()
+    ptyManager._forceBackend('child_process')
+    vi.spyOn(ptyManager, 'initialize').mockResolvedValue('child_process')
+    vi.spyOn(ptyManager, 'spawn').mockResolvedValue()
     const sshManager = new SshManager()
     const worktreeService = new WorktreeService()
 
@@ -29,14 +34,15 @@ describe('プロジェクト・お気に入り・レイアウトAPI', () => {
 
     server = createServer(app)
     await new Promise<void>((resolve) => {
-      server.listen(0, () => resolve())
+      server.listen(0, '127.0.0.1', () => resolve())
     })
     const addr = server.address()
     const port = typeof addr === 'object' && addr ? addr.port : 0
-    baseUrl = `http://localhost:${port}`
+    baseUrl = `http://127.0.0.1:${port}`
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     ptyManager.killAll()
     store.close()
     server.close()

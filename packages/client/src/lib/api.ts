@@ -1,4 +1,4 @@
-import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams, CmuxWorkspace, CreateCmuxWorkspaceParams, PaneNode, SplitPaneRequest, SplitPaneResponse } from '@kurimats/shared'
+import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams, CmuxWorkspace, CreateCmuxWorkspaceParams, PaneNode, SplitPaneRequest, SplitPaneResponse, LayoutState, BoardLayoutState } from '@kurimats/shared'
 
 const BASE = '/api'
 
@@ -89,6 +89,22 @@ export const workspacesApi = {
     request<SplitPaneResponse>(`/workspaces/${id}/split-pane`, {
       method: 'POST',
       body: JSON.stringify(params),
+    }),
+}
+
+// 旧レイアウトAPI
+export const layoutApi = {
+  get: () => request<LayoutState | null>('/layout'),
+  save: (state: LayoutState) =>
+    request<{ ok: boolean }>('/layout', {
+      method: 'PUT',
+      body: JSON.stringify(state),
+    }),
+  getBoard: () => request<BoardLayoutState | null>('/layout/board'),
+  saveBoard: (state: BoardLayoutState) =>
+    request<{ ok: boolean }>('/layout/board', {
+      method: 'PUT',
+      body: JSON.stringify(state),
     }),
 }
 

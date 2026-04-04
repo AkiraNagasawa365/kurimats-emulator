@@ -2,8 +2,11 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { mkdirSync } from 'fs'
 import { fileURLToPath } from 'url'
-import type { Session, CreateSessionParams, Project, CreateProjectParams, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams, CmuxWorkspace, CreateCmuxWorkspaceParams, PaneNode } from '@kurimats/shared'
+import type { BoardLayoutState, CreateFeedbackParams, CreateProjectParams, CreateSessionParams, CreateSshPresetParams, CreateStartupTemplateParams, CreateCmuxWorkspaceParams, Feedback, LayoutState, PaneNode, Project, Session, SshPreset, StartupTemplate, CmuxWorkspace } from '@kurimats/shared'
 import { v4 as uuidv4 } from 'uuid'
+import { loadBoardLayoutState, loadLegacyLayout, saveBoardLayoutState, saveLegacyLayout } from './session-store-layout.js'
+import { mapCmuxWorkspaceRow, mapFeedbackRow, mapProjectRow, mapSessionRow, mapSshPresetRow, mapStartupTemplateRow } from './session-store-mappers.js'
+import { runSessionStoreMigrations } from './session-store-migrations.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DEFAULT_DB_PATH = path.join(__dirname, '..', '..', 'data', 'sessions.db')
@@ -29,152 +32,7 @@ export class SessionStore {
   }
 
   private migrate(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        repo_path TEXT NOT NULL,
-        worktree_path TEXT,
-        branch TEXT,
-        status TEXT NOT NULL DEFAULT 'active',
-        claude_session_id TEXT,
-        is_favorite INTEGER NOT NULL DEFAULT 0,
-        project_id TEXT,
-        created_at INTEGER NOT NULL,
-        last_active_at INTEGER NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS board_cards (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        type TEXT NOT NULL,
-        title TEXT NOT NULL,
-        content TEXT NOT NULL DEFAULT '{}',
-        position_x REAL NOT NULL DEFAULT 0,
-        position_y REAL NOT NULL DEFAULT 0,
-        width REAL NOT NULL DEFAULT 300,
-        height REAL NOT NULL DEFAULT 200,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY (session_id) REFERENCES sessions(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS projects (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        color TEXT NOT NULL DEFAULT '#3b82f6',
-        repo_path TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS layout_state (
-        id TEXT PRIMARY KEY DEFAULT 'default',
-        mode TEXT NOT NULL DEFAULT '1x1',
-        panels TEXT NOT NULL DEFAULT '[]',
-        active_panel_index INTEGER NOT NULL DEFAULT 0,
-        saved_at INTEGER NOT NULL
-      );
-    `)
-
-    // ボードレイアウト永続化テーブル
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS board_layout (
-        id TEXT PRIMARY KEY DEFAULT 'default',
-        nodes TEXT NOT NULL DEFAULT '[]',
-        edges TEXT NOT NULL DEFAULT '[]',
-        viewport_x REAL NOT NULL DEFAULT 0,
-        viewport_y REAL NOT NULL DEFAULT 0,
-        viewport_zoom REAL NOT NULL DEFAULT 1,
-        saved_at INTEGER NOT NULL DEFAULT 0
-      );
-    `)
-
-    // edgesカラム追加（既存DBの場合）
-    try { this.db.exec("ALTER TABLE board_layout ADD COLUMN edges TEXT NOT NULL DEFAULT '[]'") } catch { /* カラム既存 */ }
-
-    // 既存テーブルへのカラム追加（既にあればスキップ）
-    try { this.db.exec('ALTER TABLE sessions ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0') } catch { /* カラム既存 */ }
-    try { this.db.exec('ALTER TABLE sessions ADD COLUMN project_id TEXT') } catch { /* カラム既存 */ }
-    try { this.db.exec('ALTER TABLE sessions ADD COLUMN ssh_host TEXT') } catch { /* カラム既存 */ }
-    try { this.db.exec('ALTER TABLE sessions ADD COLUMN is_remote INTEGER NOT NULL DEFAULT 0') } catch { /* カラム既存 */ }
-
-    // フィードバックテーブル
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS feedback (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        detail TEXT NOT NULL DEFAULT '',
-        category TEXT NOT NULL DEFAULT 'feature_request',
-        priority TEXT NOT NULL DEFAULT 'medium',
-        created_at INTEGER NOT NULL
-      );
-    `)
-
-    // SSHホストテーブル
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS ssh_hosts (
-        name TEXT PRIMARY KEY,
-        hostname TEXT NOT NULL,
-        user TEXT NOT NULL DEFAULT 'root',
-        port INTEGER NOT NULL DEFAULT 22,
-        identity_file TEXT,
-        last_connected INTEGER
-      );
-    `)
-
-    // SSHプリセットテーブル
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS ssh_presets (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        hostname TEXT NOT NULL,
-        user TEXT NOT NULL DEFAULT 'root',
-        port INTEGER NOT NULL DEFAULT 22,
-        identity_file TEXT,
-        default_cwd TEXT NOT NULL DEFAULT '~',
-        startup_command TEXT,
-        env_vars TEXT NOT NULL DEFAULT '{}',
-        created_at INTEGER NOT NULL
-      );
-    `)
-
-    // 起動テンプレートテーブル
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS startup_templates (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        ssh_preset_id TEXT,
-        commands TEXT NOT NULL DEFAULT '[]',
-        env_vars TEXT NOT NULL DEFAULT '{}',
-        created_at INTEGER NOT NULL
-      );
-    `)
-
-    // プロジェクトにSSHプリセット・起動テンプレート紐付け
-    try { this.db.exec('ALTER TABLE projects ADD COLUMN ssh_preset_id TEXT') } catch { /* カラム既存 */ }
-    try { this.db.exec('ALTER TABLE projects ADD COLUMN startup_template_id TEXT') } catch { /* カラム既存 */ }
-
-    // cmuxワークスペーステーブル（v3）
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS cmux_workspaces (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        project_id TEXT,
-        repo_path TEXT NOT NULL DEFAULT '',
-        ssh_host TEXT,
-        pane_tree TEXT NOT NULL DEFAULT '{}',
-        active_pane_id TEXT,
-        is_pinned INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-    `)
-
-    // 既存テーブルへのカラム追加（v3.1移行用）
-    try { this.db.exec('ALTER TABLE cmux_workspaces ADD COLUMN repo_path TEXT NOT NULL DEFAULT \'\'') } catch { /* カラム既存 */ }
-    try { this.db.exec('ALTER TABLE cmux_workspaces ADD COLUMN ssh_host TEXT') } catch { /* カラム既存 */ }
-
-    // セッションにworkspace_id追加
-    try { this.db.exec('ALTER TABLE sessions ADD COLUMN workspace_id TEXT') } catch { /* カラム既存 */ }
+    runSessionStoreMigrations(this.db)
   }
 
   // ==================== セッション ====================
@@ -226,7 +84,7 @@ export class SessionStore {
    * 全セッション取得
    */
   getAll(): Session[] {
-    return (this.db.prepare('SELECT * FROM sessions ORDER BY last_active_at DESC').all() as Record<string, unknown>[]).map(this.mapRow)
+    return (this.db.prepare('SELECT * FROM sessions ORDER BY last_active_at DESC').all() as Record<string, unknown>[]).map(mapSessionRow)
   }
 
   /**
@@ -234,7 +92,7 @@ export class SessionStore {
    */
   getById(id: string): Session | null {
     const row = this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as Record<string, unknown> | undefined
-    return row ? this.mapRow(row) : null
+    return row ? mapSessionRow(row) : null
   }
 
   /**
@@ -256,8 +114,11 @@ export class SessionStore {
    * セッション削除
    */
   delete(id: string): void {
-    this.db.prepare('DELETE FROM board_cards WHERE session_id = ?').run(id)
-    this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
+    const tx = this.db.transaction((sessionId: string) => {
+      this.db.prepare('DELETE FROM board_cards WHERE session_id = ?').run(sessionId)
+      this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
+    })
+    tx(id)
   }
 
   /**
@@ -305,7 +166,7 @@ export class SessionStore {
    */
   getAllProjects(): Project[] {
     return (this.db.prepare('SELECT * FROM projects ORDER BY created_at DESC').all() as Record<string, unknown>[])
-      .map(this.mapProjectRow)
+      .map(mapProjectRow)
   }
 
   /**
@@ -313,7 +174,7 @@ export class SessionStore {
    */
   getProjectById(id: string): Project | null {
     const row = this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as Record<string, unknown> | undefined
-    return row ? this.mapProjectRow(row) : null
+    return row ? mapProjectRow(row) : null
   }
 
   /**
@@ -337,34 +198,26 @@ export class SessionStore {
    * プロジェクト削除
    */
   deleteProject(id: string): void {
-    // 関連セッションのproject_idをnullに
-    this.db.prepare('UPDATE sessions SET project_id = NULL WHERE project_id = ?').run(id)
-    this.db.prepare('DELETE FROM projects WHERE id = ?').run(id)
+    const tx = this.db.transaction((projectId: string) => {
+      this.db.prepare('UPDATE sessions SET project_id = NULL WHERE project_id = ?').run(projectId)
+      this.db.prepare('DELETE FROM projects WHERE id = ?').run(projectId)
+    })
+    tx(id)
   }
 
   // ==================== レイアウト（旧: Phase 8で削除予定） ====================
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  saveLayout(state: any): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO layout_state (id, mode, panels, active_panel_index, saved_at)
-      VALUES ('default', ?, ?, ?, ?)
-    `).run(state.mode, JSON.stringify(state.panels), state.activePanelIndex, state.savedAt)
+  saveLayout(state: LayoutState): void {
+    saveLegacyLayout(this.db, state)
   }
 
   /**
    * レイアウト取得
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getLayout(): any {
-    const row = this.db.prepare('SELECT * FROM layout_state WHERE id = ?').get('default') as Record<string, unknown> | undefined
-    if (!row) return null
-    return {
-      mode: row.mode as string,
-      panels: JSON.parse(row.panels as string),
-      activePanelIndex: row.active_panel_index as number,
-      savedAt: row.saved_at as number,
-    }
+  getLayout(): LayoutState | null {
+    return loadLegacyLayout(this.db)
   }
 
   // ==================== ボードレイアウト ====================
@@ -373,76 +226,16 @@ export class SessionStore {
    * ボードレイアウト保存
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  saveBoardLayout(state: any): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO board_layout (id, nodes, edges, viewport_x, viewport_y, viewport_zoom, saved_at)
-      VALUES ('default', ?, ?, ?, ?, ?, ?)
-    `).run(
-      JSON.stringify(state.nodes),
-      JSON.stringify(state.edges || []),
-      state.viewport.x,
-      state.viewport.y,
-      state.viewport.zoom,
-      state.savedAt,
-    )
+  saveBoardLayout(state: BoardLayoutState): void {
+    saveBoardLayoutState(this.db, state)
   }
 
   /**
    * ボードレイアウト取得
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getBoardLayout(): any {
-    const row = this.db.prepare('SELECT * FROM board_layout WHERE id = ?').get('default') as Record<string, unknown> | undefined
-    if (!row) return null
-    return {
-      nodes: JSON.parse(row.nodes as string),
-      edges: JSON.parse((row.edges as string) || '[]'),
-      viewport: {
-        x: row.viewport_x as number,
-        y: row.viewport_y as number,
-        zoom: row.viewport_zoom as number,
-      },
-      savedAt: row.saved_at as number,
-    }
-  }
-
-  // ==================== マッピング ====================
-
-  /**
-   * DBの行をSession型にマッピング
-   */
-  private mapRow(row: Record<string, unknown>): Session {
-    return {
-      id: row.id as string,
-      name: row.name as string,
-      repoPath: row.repo_path as string,
-      worktreePath: row.worktree_path as string | null,
-      branch: row.branch as string | null,
-      status: row.status as Session['status'],
-      claudeSessionId: row.claude_session_id as string | null,
-      isFavorite: Boolean(row.is_favorite),
-      projectId: row.project_id as string | null,
-      sshHost: (row.ssh_host as string | null) ?? null,
-      isRemote: Boolean(row.is_remote),
-      workspaceId: (row.workspace_id as string | null) ?? null,
-      createdAt: row.created_at as number,
-      lastActiveAt: row.last_active_at as number,
-    }
-  }
-
-  /**
-   * DBの行をProject型にマッピング
-   */
-  private mapProjectRow(row: Record<string, unknown>): Project {
-    return {
-      id: row.id as string,
-      name: row.name as string,
-      color: row.color as string,
-      repoPath: row.repo_path as string,
-      sshPresetId: (row.ssh_preset_id as string | null) ?? null,
-      startupTemplateId: (row.startup_template_id as string | null) ?? null,
-      createdAt: row.created_at as number,
-    }
+  getBoardLayout(): BoardLayoutState | null {
+    return loadBoardLayoutState(this.db)
   }
 
   // ==================== フィードバック ====================
@@ -473,7 +266,7 @@ export class SessionStore {
    */
   getAllFeedback(): Feedback[] {
     return (this.db.prepare('SELECT * FROM feedback ORDER BY created_at DESC').all() as Record<string, unknown>[])
-      .map(this.mapFeedbackRow)
+      .map(mapFeedbackRow)
   }
 
   /**
@@ -482,20 +275,6 @@ export class SessionStore {
   deleteFeedback(id: string): boolean {
     const result = this.db.prepare('DELETE FROM feedback WHERE id = ?').run(id)
     return result.changes > 0
-  }
-
-  /**
-   * DBの行をFeedback型にマッピング
-   */
-  private mapFeedbackRow(row: Record<string, unknown>): Feedback {
-    return {
-      id: row.id as string,
-      title: row.title as string,
-      detail: row.detail as string,
-      category: row.category as Feedback['category'],
-      priority: row.priority as Feedback['priority'],
-      createdAt: row.created_at as number,
-    }
   }
 
   // ==================== SSHプリセット ====================
@@ -524,13 +303,13 @@ export class SessionStore {
   /** 全SSHプリセット取得 */
   getAllSshPresets(): SshPreset[] {
     return (this.db.prepare('SELECT * FROM ssh_presets ORDER BY created_at DESC').all() as Record<string, unknown>[])
-      .map(this.mapSshPresetRow)
+      .map(mapSshPresetRow)
   }
 
   /** SSHプリセット取得 */
   getSshPreset(id: string): SshPreset | null {
     const row = this.db.prepare('SELECT * FROM ssh_presets WHERE id = ?').get(id) as Record<string, unknown> | undefined
-    return row ? this.mapSshPresetRow(row) : null
+    return row ? mapSshPresetRow(row) : null
   }
 
   /** SSHプリセット更新 */
@@ -555,21 +334,6 @@ export class SessionStore {
     return this.db.prepare('DELETE FROM ssh_presets WHERE id = ?').run(id).changes > 0
   }
 
-  private mapSshPresetRow(row: Record<string, unknown>): SshPreset {
-    return {
-      id: row.id as string,
-      name: row.name as string,
-      hostname: row.hostname as string,
-      user: row.user as string,
-      port: row.port as number,
-      identityFile: row.identity_file as string | null,
-      defaultCwd: row.default_cwd as string,
-      startupCommand: row.startup_command as string | null,
-      envVars: JSON.parse((row.env_vars as string) || '{}'),
-      createdAt: row.created_at as number,
-    }
-  }
-
   // ==================== 起動テンプレート ====================
 
   /** 起動テンプレート作成 */
@@ -592,29 +356,18 @@ export class SessionStore {
   /** 全起動テンプレート取得 */
   getAllStartupTemplates(): StartupTemplate[] {
     return (this.db.prepare('SELECT * FROM startup_templates ORDER BY created_at DESC').all() as Record<string, unknown>[])
-      .map(this.mapStartupTemplateRow)
+      .map(mapStartupTemplateRow)
   }
 
   /** 起動テンプレート取得 */
   getStartupTemplate(id: string): StartupTemplate | null {
     const row = this.db.prepare('SELECT * FROM startup_templates WHERE id = ?').get(id) as Record<string, unknown> | undefined
-    return row ? this.mapStartupTemplateRow(row) : null
+    return row ? mapStartupTemplateRow(row) : null
   }
 
   /** 起動テンプレート削除 */
   deleteStartupTemplate(id: string): boolean {
     return this.db.prepare('DELETE FROM startup_templates WHERE id = ?').run(id).changes > 0
-  }
-
-  private mapStartupTemplateRow(row: Record<string, unknown>): StartupTemplate {
-    return {
-      id: row.id as string,
-      name: row.name as string,
-      sshPresetId: row.ssh_preset_id as string | null,
-      commands: JSON.parse((row.commands as string) || '[]'),
-      envVars: JSON.parse((row.env_vars as string) || '{}'),
-      createdAt: row.created_at as number,
-    }
   }
 
   // ==================== プロジェクトSSH紐付け ====================
@@ -632,14 +385,13 @@ export class SessionStore {
   // ==================== cmuxワークスペース ====================
 
   /** ワークスペース作成 */
-  createCmuxWorkspace(params: CreateCmuxWorkspaceParams, initialPaneTree: PaneNode): CmuxWorkspace {
+  createCmuxWorkspace(params: CreateCmuxWorkspaceParams, initialPaneTree: PaneNode, id = uuidv4()): CmuxWorkspace {
     const now = Date.now()
-    const id = uuidv4()
     const activePaneId = this.findFirstLeafId(initialPaneTree)
 
     const workspace: CmuxWorkspace = {
       id,
-      name: params.name,
+      name: params.name ?? (path.basename(params.repoPath) || 'workspace'),
       projectId: params.projectId ?? null,
       repoPath: params.repoPath,
       sshHost: params.sshHost ?? null,
@@ -668,13 +420,13 @@ export class SessionStore {
   /** 全ワークスペース取得 */
   getAllCmuxWorkspaces(): CmuxWorkspace[] {
     return (this.db.prepare('SELECT * FROM cmux_workspaces ORDER BY created_at DESC').all() as Record<string, unknown>[])
-      .map(this.mapCmuxWorkspaceRow)
+      .map(mapCmuxWorkspaceRow)
   }
 
   /** ワークスペース取得 */
   getCmuxWorkspace(id: string): CmuxWorkspace | null {
     const row = this.db.prepare('SELECT * FROM cmux_workspaces WHERE id = ?').get(id) as Record<string, unknown> | undefined
-    return row ? this.mapCmuxWorkspaceRow(row) : null
+    return row ? mapCmuxWorkspaceRow(row) : null
   }
 
   /** ワークスペース名変更 */
@@ -700,32 +452,18 @@ export class SessionStore {
 
   /** ワークスペース削除 */
   deleteCmuxWorkspace(id: string): boolean {
-    // 関連セッションのworkspace_idをnullに
-    this.db.prepare('UPDATE sessions SET workspace_id = NULL WHERE workspace_id = ?').run(id)
-    return this.db.prepare('DELETE FROM cmux_workspaces WHERE id = ?').run(id).changes > 0
-  }
-
-  private mapCmuxWorkspaceRow(row: Record<string, unknown>): CmuxWorkspace {
-    return {
-      id: row.id as string,
-      name: row.name as string,
-      projectId: (row.project_id as string | null) ?? null,
-      repoPath: (row.repo_path as string) ?? '',
-      sshHost: (row.ssh_host as string | null) ?? null,
-      paneTree: JSON.parse((row.pane_tree as string) || '{}'),
-      activePaneId: (row.active_pane_id as string) ?? '',
-      isPinned: Boolean(row.is_pinned),
-      notificationCount: 0, // ランタイムのみ
-      lastNotifiedAt: null,
-      createdAt: row.created_at as number,
-      updatedAt: row.updated_at as number,
-    }
+    const tx = this.db.transaction((workspaceId: string) => {
+      this.db.prepare('UPDATE sessions SET workspace_id = NULL WHERE workspace_id = ?').run(workspaceId)
+      return this.db.prepare('DELETE FROM cmux_workspaces WHERE id = ?').run(workspaceId).changes > 0
+    })
+    return tx(id)
   }
 
   /** ペインツリーの最初のリーフIDを取得 */
   private findFirstLeafId(node: PaneNode): string {
     if (node.kind === 'leaf') return node.id
-    return this.findFirstLeafId(node.children[0])
+    const firstChild = node.children[0]
+    return firstChild ? this.findFirstLeafId(firstChild) : node.id
   }
 
   close(): void {

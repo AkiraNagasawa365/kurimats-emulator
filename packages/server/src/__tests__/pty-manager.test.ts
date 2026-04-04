@@ -219,6 +219,22 @@ describe('PtyManager', () => {
       expect(result.sessionId).toBe('exit-event')
       expect(typeof result.code).toBe('number')
     }, 15000)
+
+    it('終了済みセッションIDを再利用して再spawnできる', async () => {
+      const exitPromise = new Promise<void>((resolve) => {
+        manager.on('exit', (sessionId: string) => {
+          if (sessionId === 'respawn-id') resolve()
+        })
+      })
+
+      await manager.spawn('respawn-id', '/tmp', 120, 30, '/bin/sh', ['-lc', 'exit 0'])
+      await exitPromise
+
+      await expect(
+        manager.spawn('respawn-id', '/tmp', 120, 30, '/bin/sh', ['-lc', 'sleep 0.1']),
+      ).resolves.toBeUndefined()
+      expect(manager.isAlive('respawn-id')).toBe(true)
+    }, 15000)
   })
 
   // ========================================

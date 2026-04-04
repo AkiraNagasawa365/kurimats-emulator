@@ -16,7 +16,14 @@ export function setupNotificationWs(wss: WebSocketServer, sshManager: SshManager
     const payload = JSON.stringify(msg)
     for (const ws of clients) {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(payload)
+        try {
+          ws.send(payload)
+        } catch {
+          clients.delete(ws)
+          ws.terminate()
+        }
+      } else if (ws.readyState !== WebSocket.CONNECTING) {
+        clients.delete(ws)
       }
     }
   }
@@ -59,11 +66,17 @@ export function setupNotificationWs(wss: WebSocketServer, sshManager: SshManager
     for (const [host, status] of Object.entries(statuses)) {
       if (status !== 'offline') {
         const msg: NotificationMessage = { type: 'connection_status', host, status }
-        ws.send(JSON.stringify(msg))
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(msg))
+        }
       }
     }
 
     ws.on('close', () => {
+      clients.delete(ws)
+    })
+
+    ws.on('error', () => {
       clients.delete(ws)
     })
   })

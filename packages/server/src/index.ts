@@ -32,6 +32,21 @@ const worktreeService = new WorktreeService()
 const sessionStore = new SessionStore()
 const canvasStore = new CanvasStore()
 
+const markDisconnected = (sessionId: string) => {
+  const session = sessionStore.getById(sessionId)
+  if (session && session.status === 'active') {
+    sessionStore.updateStatus(sessionId, 'disconnected')
+  }
+}
+
+ptyManager.on('exit', (sessionId: string) => {
+  markDisconnected(sessionId)
+})
+
+sshManager.on('exit', (sessionId: string) => {
+  markDisconnected(sessionId)
+})
+
 // サーバー起動時: PTYが消失したactiveセッションをdisconnectedに変更
 const orphanedSessions = sessionStore.getAll().filter(s => s.status === 'active')
 if (orphanedSessions.length > 0) {
@@ -140,3 +155,12 @@ function shutdown() {
 
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason)
+})
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error)
+  shutdown()
+})

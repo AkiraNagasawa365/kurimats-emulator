@@ -1,35 +1,54 @@
 import { create } from 'zustand'
-import type { LayoutMode, AutoLayoutMode, BoardNodePosition, BoardEdge, FileTilePosition } from '@kurimats/shared'
+import type {
+  AutoLayoutMode,
+  BoardEdge,
+  BoardNodePosition,
+  FileTilePosition,
+  LayoutMode,
+  LayoutPanel,
+} from '@kurimats/shared'
+import {
+  detectOverlaps,
+  flowLayout,
+  gridLayout,
+  resolveOverlaps,
+  treeLayout,
+  type CardRect,
+} from '../lib/layout-engine'
+import {
+  clearLayoutPersistenceTimers,
+  persistBoardState,
+  persistLayoutState,
+  readBoardSavedAt,
+  readLayoutSavedAt,
+  readSavedBoardLayout,
+  readSavedLayout,
+} from './layout-store.persistence'
+import {
+  DEFAULT_FILE_TILE_HEIGHT,
+  DEFAULT_FILE_TILE_WIDTH,
+  DEFAULT_NODE_HEIGHT,
+  DEFAULT_NODE_WIDTH,
+  DEFAULT_VIEWPORT,
+  MODE_PROGRESSION,
+  findBoardNodePosition,
+  findFileTilePosition,
+  panelCountForMode,
+  toCardRects,
+} from './layout-store.utils'
 import { layoutApi } from '../lib/api'
-import { gridLayout, flowLayout, treeLayout, findOptimalPosition, detectOverlaps, resolveOverlaps, type CardRect } from '../lib/layout-engine'
-
-interface PanelInfo {
-  sessionId: string | null
-  position: number
-}
-
-// ボードノードのデフォルトサイズ（ターミナル表示に適した縦長）
-const DEFAULT_NODE_WIDTH = 520
-const DEFAULT_NODE_HEIGHT = 620
-
-// ファイルタイルのデフォルトサイズ
-const DEFAULT_FILE_TILE_WIDTH = 500
-const DEFAULT_FILE_TILE_HEIGHT = 400
 
 interface LayoutState {
   mode: LayoutMode
-  panels: PanelInfo[]
+  panels: LayoutPanel[]
   activePanelIndex: number
   autoLayoutMode: AutoLayoutMode
   maximizedPanelIndex: number | null
-
-  // ボードキャンバス用
   boardNodes: BoardNodePosition[]
   boardEdges: BoardEdge[]
   fileTiles: FileTilePosition[]
   activeSessionId: string | null
   viewport: { x: number; y: number; zoom: number }
-
   setMode: (mode: LayoutMode) => void
   assignSession: (panelIndex: number, sessionId: string) => void
   removeSession: (sessionId: string) => void
@@ -39,8 +58,6 @@ interface LayoutState {
   setAutoLayoutMode: (mode: AutoLayoutMode) => void
   autoArrange: (containerWidth: number, containerHeight: number) => CardRect[]
   toggleMaximize: (index: number) => void
-
-  // ボードキャンバス用アクション
   setActiveSession: (sessionId: string | null) => void
   updateNodePosition: (sessionId: string, x: number, y: number) => void
   updateNodeSize: (sessionId: string, width: number, height: number) => void
@@ -48,279 +65,212 @@ interface LayoutState {
   removeBoardNode: (sessionId: string) => void
   setViewport: (viewport: { x: number; y: number; zoom: number }) => void
   setBoardNodes: (nodes: BoardNodePosition[]) => void
-
-  // エッジ（コネクター線）用アクション
   addEdge: (edge: BoardEdge) => void
   removeEdge: (edgeId: string) => void
   setBoardEdges: (edges: BoardEdge[]) => void
-
-  // ファイルタイル用アクション
   addFileTile: (filePath: string, language: string) => void
   removeFileTile: (id: string) => void
   updateFileTilePosition: (id: string, x: number, y: number) => void
   updateFileTileSize: (id: string, width: number, height: number) => void
 }
 
-const STORAGE_KEY = 'kurimats-layout'
-const BOARD_STORAGE_KEY = 'kurimats-board-layout'
+const savedState = readSavedLayout()
+const savedBoardState = readSavedBoardLayout()
+let latestLoadRequestId = 0
 
-function panelCountForMode(mode: LayoutMode): number {
-  switch (mode) {
-    case '1x1': return 1
-    case '2x1':
-    case '1x2': return 2
-    case '2x2': return 4
-    case '3x1': return 3
+function buildBoardSnapshot(state: Pick<LayoutState, 'boardNodes' | 'boardEdges' | 'fileTiles' | 'viewport'>) {
+  return {
+    nodes: state.boardNodes,
+    edges: state.boardEdges,
+    fileTiles: state.fileTiles,
+    viewport: state.viewport,
   }
 }
 
-// レイアウト状態の永続化（デバウンス付き）
-let saveTimeout: ReturnType<typeof setTimeout> | null = null
+function persistCurrentBoardState(get: () => LayoutState): void {
+  persistBoardState(buildBoardSnapshot(get()))
+}
 
-function persistLayout(state: { mode: LayoutMode; panels: PanelInfo[]; activePanelIndex: number }) {
-  const layoutData = {
+function persistCurrentLayoutState(get: () => LayoutState): void {
+  const state = get()
+  persistLayoutState({
     mode: state.mode,
     panels: state.panels,
     activePanelIndex: state.activePanelIndex,
-    savedAt: Date.now(),
-  }
-
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(layoutData))
-  } catch {
-    // localStorage利用不可の場合は無視
-  }
-
-  if (saveTimeout) clearTimeout(saveTimeout)
-  saveTimeout = setTimeout(() => {
-    layoutApi.save(layoutData).catch(() => {
-      // サーバー保存失敗は無視
-    })
-  }, 1000)
+  })
 }
-
-let boardSaveTimeout: ReturnType<typeof setTimeout> | null = null
-
-function persistBoardLayout(nodes: BoardNodePosition[], edges: BoardEdge[], viewport: { x: number; y: number; zoom: number }, fileTiles?: FileTilePosition[]) {
-  const data = { nodes, edges, fileTiles: fileTiles || [], viewport, savedAt: Date.now() }
-  try {
-    localStorage.setItem(BOARD_STORAGE_KEY, JSON.stringify(data))
-  } catch {
-    // localStorage利用不可の場合は無視
-  }
-
-  if (boardSaveTimeout) clearTimeout(boardSaveTimeout)
-  boardSaveTimeout = setTimeout(() => {
-    layoutApi.saveBoard(data).catch(() => {
-      // サーバー保存失敗は無視
-    })
-  }, 1000)
-}
-
-function loadFromStorage(): Partial<LayoutState> | null {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      const data = JSON.parse(saved)
-      return {
-        mode: data.mode,
-        panels: data.panels,
-        activePanelIndex: data.activePanelIndex,
-      }
-    }
-  } catch {
-    // パースエラーは無視
-  }
-  return null
-}
-
-function loadBoardFromStorage(): { nodes: BoardNodePosition[]; edges: BoardEdge[]; fileTiles: FileTilePosition[]; viewport: { x: number; y: number; zoom: number } } | null {
-  try {
-    const saved = localStorage.getItem(BOARD_STORAGE_KEY)
-    if (saved) {
-      const data = JSON.parse(saved)
-      return {
-        nodes: data.nodes || [],
-        edges: data.edges || [],
-        fileTiles: data.fileTiles || [],
-        viewport: data.viewport || { x: 0, y: 0, zoom: 1 },
-      }
-    }
-  } catch {
-    // パースエラーは無視
-  }
-  return null
-}
-
-// 初期状態をlocalStorageから復元
-const savedState = loadFromStorage()
-const savedBoardState = loadBoardFromStorage()
 
 export const useLayoutStore = create<LayoutState>((set, get) => ({
   mode: savedState?.mode ?? '1x1',
   panels: savedState?.panels ?? [{ sessionId: null, position: 0 }],
   activePanelIndex: savedState?.activePanelIndex ?? 0,
-  autoLayoutMode: 'grid' as AutoLayoutMode,
-  maximizedPanelIndex: null as number | null,
-
-  // ボードキャンバス用
+  autoLayoutMode: 'grid',
+  maximizedPanelIndex: null,
   boardNodes: savedBoardState?.nodes ?? [],
   boardEdges: savedBoardState?.edges ?? [],
   fileTiles: savedBoardState?.fileTiles ?? [],
   activeSessionId: null,
-  viewport: savedBoardState?.viewport ?? { x: 0, y: 0, zoom: 1 },
+  viewport: savedBoardState?.viewport ?? DEFAULT_VIEWPORT,
 
   setMode: (mode) => {
     const count = panelCountForMode(mode)
-    const current = get().panels
-    const panels: PanelInfo[] = Array.from({ length: count }, (_, i) => ({
-      sessionId: current[i]?.sessionId ?? null,
-      position: i,
+    const currentPanels = get().panels
+    const panels: LayoutPanel[] = Array.from({ length: count }, (_, index) => ({
+      sessionId: currentPanels[index]?.sessionId ?? null,
+      position: index,
     }))
-    const newState = { mode, panels, activePanelIndex: Math.min(get().activePanelIndex, count - 1) }
-    set(newState)
-    persistLayout(newState)
+
+    set({
+      mode,
+      panels,
+      activePanelIndex: Math.min(get().activePanelIndex, count - 1),
+    })
+    persistCurrentLayoutState(get)
   },
 
   assignSession: (panelIndex, sessionId) => {
     const panels = [...get().panels]
-    if (panels[panelIndex]) {
-      panels[panelIndex] = { ...panels[panelIndex], sessionId }
+    if (!panels[panelIndex]) {
+      return
     }
+
+    panels[panelIndex] = { ...panels[panelIndex], sessionId }
     set({ panels })
-    persistLayout({ ...get(), panels })
+    persistCurrentLayoutState(get)
   },
 
   removeSession: (sessionId) => {
-    const panels = get().panels.map(p =>
-      p.sessionId === sessionId ? { ...p, sessionId: null } : p
+    const panels = get().panels.map((panel) =>
+      panel.sessionId === sessionId ? { ...panel, sessionId: null } : panel,
     )
-    set({ panels })
-    persistLayout({ ...get(), panels })
+    const boardNodes = get().boardNodes.filter((node) => node.sessionId !== sessionId)
+    const boardEdges = get().boardEdges.filter((edge) => edge.source !== sessionId && edge.target !== sessionId)
 
-    // ボードノードも削除、関連エッジも削除
-    const boardNodes = get().boardNodes.filter(n => n.sessionId !== sessionId)
-    const boardEdges = get().boardEdges.filter(e => e.source !== sessionId && e.target !== sessionId)
-    set({ boardNodes, boardEdges })
-    persistBoardLayout(boardNodes, boardEdges, get().viewport)
+    set({
+      panels,
+      boardNodes,
+      boardEdges,
+      activeSessionId: get().activeSessionId === sessionId ? null : get().activeSessionId,
+    })
+    persistCurrentLayoutState(get)
+    persistCurrentBoardState(get)
   },
 
   setActivePanel: (index) => {
     set({ activePanelIndex: index })
-    persistLayout({ ...get(), activePanelIndex: index })
+    persistCurrentLayoutState(get)
   },
 
-  addPanel: (sessionId, siblingSessionIds?: string[]) => {
-    const { panels, mode, boardNodes } = get()
+  addPanel: (sessionId, siblingSessionIds) => {
+    const state = get()
 
-    // ボードノードも追加（兄弟ノード指定があれば近くに配置）
-    if (!boardNodes.find(n => n.sessionId === sessionId)) {
-      get().addBoardNode(sessionId, siblingSessionIds)
+    if (!state.boardNodes.some((node) => node.sessionId === sessionId)) {
+      state.addBoardNode(sessionId, siblingSessionIds)
     } else {
       set({ activeSessionId: sessionId })
     }
 
-    // 既存グリッドレイアウトの空きパネルを探す
-    const emptyIndex = panels.findIndex(p => p.sessionId === null)
+    const emptyIndex = get().panels.findIndex((panel) => panel.sessionId === null)
     if (emptyIndex >= 0) {
-      const newPanels = [...panels]
-      newPanels[emptyIndex] = { ...newPanels[emptyIndex], sessionId }
-      set({ panels: newPanels, activePanelIndex: emptyIndex })
-      persistLayout({ ...get(), panels: newPanels, activePanelIndex: emptyIndex })
+      const panels = [...get().panels]
+      panels[emptyIndex] = { ...panels[emptyIndex], sessionId }
+      set({ panels, activePanelIndex: emptyIndex })
+      persistCurrentLayoutState(get)
       return
     }
-    // 空きがなければレイアウト拡張
-    const modeProgression: LayoutMode[] = ['1x1', '2x1', '2x2']
-    const currentIdx = modeProgression.indexOf(mode)
-    if (currentIdx < modeProgression.length - 1) {
-      const newMode = modeProgression[currentIdx + 1]
-      const count = panelCountForMode(newMode)
-      const newPanels: PanelInfo[] = Array.from({ length: count }, (_, i) => ({
-        sessionId: panels[i]?.sessionId ?? (i === panels.length ? sessionId : null),
-        position: i,
-      }))
-      const firstEmpty = newPanels.findIndex(p => p.sessionId === null)
-      if (firstEmpty >= 0) {
-        newPanels[firstEmpty] = { ...newPanels[firstEmpty], sessionId }
-      }
-      const newState = { mode: newMode, panels: newPanels, activePanelIndex: firstEmpty >= 0 ? firstEmpty : 0 }
-      set(newState)
-      persistLayout(newState)
+
+    const currentModeIndex = MODE_PROGRESSION.indexOf(get().mode)
+    if (currentModeIndex < 0 || currentModeIndex >= MODE_PROGRESSION.length - 1) {
+      return
     }
+
+    const nextMode = MODE_PROGRESSION[currentModeIndex + 1]
+    const nextPanelCount = panelCountForMode(nextMode)
+    const panels: LayoutPanel[] = Array.from({ length: nextPanelCount }, (_, index) => ({
+      sessionId: get().panels[index]?.sessionId ?? null,
+      position: index,
+    }))
+    const firstEmptyIndex = panels.findIndex((panel) => panel.sessionId === null)
+    const targetIndex = firstEmptyIndex >= 0 ? firstEmptyIndex : panels.length - 1
+    panels[targetIndex] = { ...panels[targetIndex], sessionId }
+
+    set({
+      mode: nextMode,
+      panels,
+      activePanelIndex: targetIndex,
+    })
+    persistCurrentLayoutState(get)
   },
 
   loadSavedLayout: async () => {
+    const requestId = ++latestLoadRequestId
+
     try {
       const serverLayout = await layoutApi.get()
-      if (serverLayout) {
-        const localSavedAt = (() => {
-          try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}').savedAt || 0 } catch { return 0 }
-        })()
-        if (serverLayout.savedAt > localSavedAt) {
-          set({
-            mode: serverLayout.mode,
-            panels: serverLayout.panels,
-            activePanelIndex: serverLayout.activePanelIndex,
-          })
-        }
+      if (requestId !== latestLoadRequestId) {
+        return
+      }
+
+      if (serverLayout && serverLayout.savedAt > readLayoutSavedAt()) {
+        set({
+          mode: serverLayout.mode,
+          panels: serverLayout.panels,
+          activePanelIndex: serverLayout.activePanelIndex,
+        })
       }
     } catch {
-      // サーバー取得失敗はlocalStorageの状態を維持
+      // 読み込み失敗時はローカル状態を維持する
     }
 
-    // ボードレイアウトも読み込み
     try {
       const serverBoard = await layoutApi.getBoard()
-      if (serverBoard) {
-        const localBoardSavedAt = (() => {
-          try { return JSON.parse(localStorage.getItem(BOARD_STORAGE_KEY) || '{}').savedAt || 0 } catch { return 0 }
-        })()
-        if (serverBoard.savedAt > localBoardSavedAt) {
-          set({
-            boardNodes: serverBoard.nodes,
-            boardEdges: serverBoard.edges || [],
-            viewport: serverBoard.viewport,
-          })
-        }
+      if (requestId !== latestLoadRequestId) {
+        return
+      }
+
+      if (serverBoard && serverBoard.savedAt > readBoardSavedAt()) {
+        set({
+          boardNodes: serverBoard.nodes,
+          boardEdges: serverBoard.edges ?? [],
+          fileTiles: serverBoard.fileTiles ?? [],
+          viewport: serverBoard.viewport,
+        })
       }
     } catch {
-      // サーバー取得失敗は無視
+      // 読み込み失敗時はローカル状態を維持する
     }
 
-    // 重なりを検出・自動解消
     const currentNodes = get().boardNodes
-    if (currentNodes.length > 1) {
-      const cards: CardRect[] = currentNodes.map(n => ({
-        id: n.sessionId,
-        x: n.x,
-        y: n.y,
-        width: n.width,
-        height: n.height,
-      }))
-      const overlaps = detectOverlaps(cards)
-      if (overlaps.length > 0) {
-        console.log(`⚠️ ${overlaps.length}件の重なりを検出、自動解消します`)
-        const resolved = resolveOverlaps(cards, 6000)
-        const newNodes = currentNodes.map(n => {
-          const r = resolved.find(c => c.id === n.sessionId)
-          return r ? { ...n, x: r.x, y: r.y } : n
-        })
-        set({ boardNodes: newNodes })
-        persistBoardLayout(newNodes, get().boardEdges, get().viewport, get().fileTiles)
-      }
+    if (currentNodes.length <= 1) {
+      return
     }
+
+    const overlaps = detectOverlaps(toCardRects(currentNodes))
+    if (overlaps.length === 0) {
+      return
+    }
+
+    console.log(`⚠️ ${overlaps.length}件の重なりを検出したため、自動補正します`)
+    const resolvedCards = resolveOverlaps(toCardRects(currentNodes), 6000)
+    const resolvedNodes = currentNodes.map((node) => {
+      const resolved = resolvedCards.find((card) => card.id === node.sessionId)
+      return resolved ? { ...node, x: resolved.x, y: resolved.y } : node
+    })
+
+    set({ boardNodes: resolvedNodes })
+    persistCurrentBoardState(get)
   },
 
-  setAutoLayoutMode: (mode: AutoLayoutMode) => {
+  setAutoLayoutMode: (mode) => {
     set({ autoLayoutMode: mode })
   },
 
-  autoArrange: (containerWidth: number, containerHeight: number): CardRect[] => {
+  autoArrange: (containerWidth, containerHeight) => {
     const { panels, autoLayoutMode } = get()
     const cards: CardRect[] = panels
-      .filter(p => p.sessionId !== null)
-      .map((p) => ({
-        id: p.sessionId!,
+      .filter((panel): panel is LayoutPanel & { sessionId: string } => panel.sessionId !== null)
+      .map((panel) => ({
+        id: panel.sessionId,
         x: 0,
         y: 0,
         width: 300,
@@ -340,163 +290,141 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     }
   },
 
-  toggleMaximize: (index: number) => {
-    const current = get().maximizedPanelIndex
-    set({ maximizedPanelIndex: current === index ? null : index })
+  toggleMaximize: (index) => {
+    set({ maximizedPanelIndex: get().maximizedPanelIndex === index ? null : index })
   },
 
-  // ボードキャンバス用アクション
   setActiveSession: (sessionId) => {
     set({ activeSessionId: sessionId })
   },
 
   updateNodePosition: (sessionId, x, y) => {
-    const boardNodes = get().boardNodes.map(n =>
-      n.sessionId === sessionId ? { ...n, x, y } : n
-    )
-    set({ boardNodes })
-    persistBoardLayout(boardNodes, get().boardEdges, get().viewport)
+    set({
+      boardNodes: get().boardNodes.map((node) =>
+        node.sessionId === sessionId ? { ...node, x, y } : node,
+      ),
+    })
+    persistCurrentBoardState(get)
   },
 
   updateNodeSize: (sessionId, width, height) => {
-    const boardNodes = get().boardNodes.map(n =>
-      n.sessionId === sessionId ? { ...n, width, height } : n
-    )
-    set({ boardNodes })
-    persistBoardLayout(boardNodes, get().boardEdges, get().viewport)
+    set({
+      boardNodes: get().boardNodes.map((node) =>
+        node.sessionId === sessionId ? { ...node, width, height } : node,
+      ),
+    })
+    persistCurrentBoardState(get)
   },
 
-  addBoardNode: (sessionId, siblingSessionIds?: string[]) => {
-    const { boardNodes } = get()
-    if (boardNodes.find(n => n.sessionId === sessionId)) return
-
-    let pos: { x: number; y: number }
-    const existingCards: CardRect[] = boardNodes.map(n => ({
-      id: n.sessionId,
-      x: n.x,
-      y: n.y,
-      width: n.width,
-      height: n.height,
-    }))
-
-    // 兄弟ノードがある場合、一番右のノードの隣に配置
-    const siblings = siblingSessionIds
-      ? boardNodes.filter(n => siblingSessionIds.includes(n.sessionId))
-      : []
-    if (siblings.length > 0) {
-      const rightmost = siblings.reduce((r, n) => n.x + n.width > r.x + r.width ? n : r)
-      const candidateX = rightmost.x + rightmost.width + 40
-      const candidateY = rightmost.y
-      // 候補位置が他ノードと重なっていないか簡易チェック
-      const overlaps = existingCards.some(c =>
-        candidateX < c.x + c.width && candidateX + DEFAULT_NODE_WIDTH > c.x &&
-        candidateY < c.y + c.height && candidateY + DEFAULT_NODE_HEIGHT > c.y
-      )
-      pos = overlaps
-        ? findOptimalPosition(existingCards, { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT }, 3000, 3000)
-        : { x: candidateX, y: candidateY }
-    } else {
-      pos = findOptimalPosition(existingCards, { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT }, 3000, 3000)
+  addBoardNode: (sessionId, siblingSessionIds) => {
+    const boardNodes = get().boardNodes
+    if (boardNodes.some((node) => node.sessionId === sessionId)) {
+      return
     }
 
-    const newNode: BoardNodePosition = {
-      sessionId,
-      x: pos.x,
-      y: pos.y,
-      width: DEFAULT_NODE_WIDTH,
-      height: DEFAULT_NODE_HEIGHT,
-    }
-    const newBoardNodes = [...boardNodes, newNode]
-    set({ boardNodes: newBoardNodes, activeSessionId: sessionId })
-    persistBoardLayout(newBoardNodes, get().boardEdges, get().viewport)
+    const position = findBoardNodePosition(boardNodes, siblingSessionIds)
+    const nextBoardNodes = [
+      ...boardNodes,
+      {
+        sessionId,
+        x: position.x,
+        y: position.y,
+        width: DEFAULT_NODE_WIDTH,
+        height: DEFAULT_NODE_HEIGHT,
+      },
+    ]
+
+    set({ boardNodes: nextBoardNodes, activeSessionId: sessionId })
+    persistCurrentBoardState(get)
   },
 
   removeBoardNode: (sessionId) => {
-    const boardNodes = get().boardNodes.filter(n => n.sessionId !== sessionId)
-    // 関連エッジも削除
-    const boardEdges = get().boardEdges.filter(e => e.source !== sessionId && e.target !== sessionId)
-    set({ boardNodes, boardEdges })
-    if (get().activeSessionId === sessionId) {
-      set({ activeSessionId: null })
-    }
-    persistBoardLayout(boardNodes, boardEdges, get().viewport)
+    set({
+      boardNodes: get().boardNodes.filter((node) => node.sessionId !== sessionId),
+      boardEdges: get().boardEdges.filter((edge) => edge.source !== sessionId && edge.target !== sessionId),
+      activeSessionId: get().activeSessionId === sessionId ? null : get().activeSessionId,
+    })
+    persistCurrentBoardState(get)
   },
 
   setViewport: (viewport) => {
     set({ viewport })
-    persistBoardLayout(get().boardNodes, get().boardEdges, viewport)
+    persistCurrentBoardState(get)
   },
 
-  setBoardNodes: (nodes) => {
-    set({ boardNodes: nodes })
-    persistBoardLayout(nodes, get().boardEdges, get().viewport)
+  setBoardNodes: (boardNodes) => {
+    set({ boardNodes })
+    persistCurrentBoardState(get)
   },
 
-  // エッジ（コネクター線）用アクション
   addEdge: (edge) => {
-    // 重複チェック（同じソース・ターゲットの接続は許可しない）
-    const existing = get().boardEdges.find(
-      e => e.source === edge.source && e.target === edge.target
+    const hasDuplicate = get().boardEdges.some(
+      (existingEdge) => existingEdge.source === edge.source && existingEdge.target === edge.target,
     )
-    if (existing) return
-    const boardEdges = [...get().boardEdges, edge]
-    set({ boardEdges })
-    persistBoardLayout(get().boardNodes, boardEdges, get().viewport)
+    if (hasDuplicate) {
+      return
+    }
+
+    set({ boardEdges: [...get().boardEdges, edge] })
+    persistCurrentBoardState(get)
   },
 
   removeEdge: (edgeId) => {
-    const boardEdges = get().boardEdges.filter(e => e.id !== edgeId)
+    set({ boardEdges: get().boardEdges.filter((edge) => edge.id !== edgeId) })
+    persistCurrentBoardState(get)
+  },
+
+  setBoardEdges: (boardEdges) => {
     set({ boardEdges })
-    persistBoardLayout(get().boardNodes, boardEdges, get().viewport)
+    persistCurrentBoardState(get)
   },
 
-  setBoardEdges: (edges) => {
-    set({ boardEdges: edges })
-    persistBoardLayout(get().boardNodes, edges, get().viewport, get().fileTiles)
-  },
-
-  // ファイルタイル用アクション
   addFileTile: (filePath, language) => {
-    const { fileTiles, boardNodes } = get()
-    // 同じファイルが既に開かれている場合は追加しない
-    if (fileTiles.find(t => t.filePath === filePath)) return
-
-    // 既存タイル（セッション + ファイル）を考慮した位置計算
-    const allCards: { id: string; x: number; y: number; width: number; height: number }[] = [
-      ...boardNodes.map(n => ({ id: n.sessionId, x: n.x, y: n.y, width: n.width, height: n.height })),
-      ...fileTiles.map(t => ({ id: t.id, x: t.x, y: t.y, width: t.width, height: t.height })),
-    ]
-    const pos = findOptimalPosition(allCards, { width: DEFAULT_FILE_TILE_WIDTH, height: DEFAULT_FILE_TILE_HEIGHT }, 3000, 3000)
-
-    const newTile: FileTilePosition = {
-      id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      filePath,
-      language,
-      x: pos.x,
-      y: pos.y,
-      width: DEFAULT_FILE_TILE_WIDTH,
-      height: DEFAULT_FILE_TILE_HEIGHT,
+    const { boardNodes, fileTiles } = get()
+    if (fileTiles.some((tile) => tile.filePath === filePath)) {
+      return
     }
-    const newFileTiles = [...fileTiles, newTile]
-    set({ fileTiles: newFileTiles })
-    persistBoardLayout(get().boardNodes, get().boardEdges, get().viewport, newFileTiles)
+
+    const position = findFileTilePosition(boardNodes, fileTiles)
+    const nextFileTiles = [
+      ...fileTiles,
+      {
+        id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        filePath,
+        language,
+        x: position.x,
+        y: position.y,
+        width: DEFAULT_FILE_TILE_WIDTH,
+        height: DEFAULT_FILE_TILE_HEIGHT,
+      },
+    ]
+
+    set({ fileTiles: nextFileTiles })
+    persistCurrentBoardState(get)
   },
 
   removeFileTile: (id) => {
-    const fileTiles = get().fileTiles.filter(t => t.id !== id)
-    set({ fileTiles })
-    persistBoardLayout(get().boardNodes, get().boardEdges, get().viewport, fileTiles)
+    set({ fileTiles: get().fileTiles.filter((tile) => tile.id !== id) })
+    persistCurrentBoardState(get)
   },
 
   updateFileTilePosition: (id, x, y) => {
-    const fileTiles = get().fileTiles.map(t => t.id === id ? { ...t, x, y } : t)
-    set({ fileTiles })
-    persistBoardLayout(get().boardNodes, get().boardEdges, get().viewport, fileTiles)
+    set({
+      fileTiles: get().fileTiles.map((tile) => (tile.id === id ? { ...tile, x, y } : tile)),
+    })
+    persistCurrentBoardState(get)
   },
 
   updateFileTileSize: (id, width, height) => {
-    const fileTiles = get().fileTiles.map(t => t.id === id ? { ...t, width, height } : t)
-    set({ fileTiles })
-    persistBoardLayout(get().boardNodes, get().boardEdges, get().viewport, fileTiles)
+    set({
+      fileTiles: get().fileTiles.map((tile) => (tile.id === id ? { ...tile, width, height } : tile)),
+    })
+    persistCurrentBoardState(get)
   },
 }))
+
+if (import.meta.vitest) {
+  import.meta.vitest.afterEach(() => {
+    clearLayoutPersistenceTimers()
+  })
+}

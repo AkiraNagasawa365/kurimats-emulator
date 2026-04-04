@@ -16,6 +16,8 @@ interface SshSession {
   channel: ClientChannel | null
   ringBuffer: string
   alive: boolean
+  cleanup: () => void
+  finalized: boolean
 }
 
 /**
@@ -26,6 +28,7 @@ interface SshConnection {
   host: SshHost
   status: SshConnectionStatus
   reconnectTimer: ReturnType<typeof setTimeout> | null
+  connectPromise: Promise<void> | null
 }
 
 /**
@@ -91,6 +94,9 @@ export class SshManager extends EventEmitter {
     if (existing?.status === 'online') {
       return
     }
+    if (existing?.connectPromise) {
+      return existing.connectPromise
+    }
 
     const host = this.hosts.find(h => h.name === hostName)
     if (!host) {
@@ -104,7 +110,7 @@ export class SshManager extends EventEmitter {
    * SSH接続を確立
    */
   private establishConnection(host: SshHost): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
+    const pending = new Promise<void>((resolve, reject) => {
       const client = new Client()
 
       const connInfo: SshConnection = {
@@ -112,6 +118,7 @@ export class SshManager extends EventEmitter {
         host,
         status: 'reconnecting',
         reconnectTimer: null,
+        connectPromise: null,
       }
 
       this.connections.set(host.name, connInfo)
@@ -128,6 +135,7 @@ export class SshManager extends EventEmitter {
       }
 
       client.on('ready', () => {
+        connInfo.connectPromise = null
         connInfo.status = 'online'
         this.emit('connection_status', host.name, 'online')
         this.emit('connect', host.name)
@@ -138,19 +146,28 @@ export class SshManager extends EventEmitter {
       client.on('error', (err) => {
         console.error(`SSH接続エラー (${host.name}):`, err.message)
         if (connInfo.status !== 'online') {
+          connInfo.connectPromise = null
           reject(new Error(`SSH接続に失敗: ${err.message}`))
         }
       })
 
       client.on('close', () => {
+        if (connInfo.reconnectTimer) {
+          clearTimeout(connInfo.reconnectTimer)
+          connInfo.reconnectTimer = null
+        }
+
         const wasOnline = connInfo.status === 'online'
         connInfo.status = 'offline'
+        connInfo.connectPromise = null
         this.emit('connection_status', host.name, 'offline')
         this.emit('disconnect', host.name)
 
         // このホストに紐づくセッションを終了
         for (const [sessionId, session] of this.sessions) {
           if (session.hostName === host.name && session.alive) {
+            session.cleanup()
+            session.finalized = true
             session.alive = false
             this.emit('exit', sessionId, 1)
           }
@@ -182,6 +199,11 @@ export class SshManager extends EventEmitter {
 
       client.connect(connectConfig as Parameters<typeof client.connect>[0])
     })
+    const conn = this.connections.get(host.name)
+    if (conn) {
+      conn.connectPromise = pending
+    }
+    return pending
   }
 
   /**
@@ -215,6 +237,7 @@ export class SshManager extends EventEmitter {
     // 再接続タイマーをクリア
     if (conn.reconnectTimer) {
       clearTimeout(conn.reconnectTimer)
+      conn.reconnectTimer = null
     }
 
     // このホストのセッションを全て終了
@@ -233,8 +256,13 @@ export class SshManager extends EventEmitter {
    * リモートシェルセッションを作成
    */
   spawn(sessionId: string, hostName: string, cwd: string, cols = 120, rows = 30): Promise<void> {
-    if (this.sessions.has(sessionId)) {
+    const existingSession = this.sessions.get(sessionId)
+    if (existingSession?.alive) {
       throw new Error(`セッション ${sessionId} は既に存在します`)
+    }
+    if (existingSession) {
+      existingSession.cleanup()
+      this.sessions.delete(sessionId)
     }
 
     const conn = this.connections.get(hostName)
@@ -261,12 +289,14 @@ export class SshManager extends EventEmitter {
             channel,
             ringBuffer: '',
             alive: true,
+            cleanup: () => {},
+            finalized: false,
           }
 
           // 作業ディレクトリの変更
           channel.write(`cd ${cwd} && clear\n`)
 
-          channel.on('data', (data: Buffer) => {
+          const onData = (data: Buffer) => {
             const str = data.toString()
             // リングバッファに蓄積
             session.ringBuffer += str
@@ -274,21 +304,34 @@ export class SshManager extends EventEmitter {
               session.ringBuffer = session.ringBuffer.slice(-RING_BUFFER_SIZE)
             }
             this.emit('data', sessionId, str)
-          })
+          }
 
-          channel.stderr.on('data', (data: Buffer) => {
+          const onStderr = (data: Buffer) => {
             const str = data.toString()
             session.ringBuffer += str
             if (session.ringBuffer.length > RING_BUFFER_SIZE) {
               session.ringBuffer = session.ringBuffer.slice(-RING_BUFFER_SIZE)
             }
             this.emit('data', sessionId, str)
-          })
+          }
 
-          channel.on('close', () => {
+          const onClose = () => {
+            if (session.finalized) return
+            session.finalized = true
+            session.cleanup()
             session.alive = false
             this.emit('exit', sessionId, 0)
-          })
+          }
+
+          channel.on('data', onData)
+          channel.stderr.on('data', onStderr)
+          channel.on('close', onClose)
+
+          session.cleanup = () => {
+            channel.off('data', onData)
+            channel.stderr.off('data', onStderr)
+            channel.off('close', onClose)
+          }
 
           this.sessions.set(sessionId, session)
           resolve()
@@ -336,8 +379,15 @@ export class SshManager extends EventEmitter {
     const session = this.sessions.get(sessionId)
     if (!session) return
     if (session.alive && session.channel) {
+      session.alive = false
+      session.finalized = true
+      session.cleanup()
       session.channel.close()
+      this.sessions.delete(sessionId)
+      this.emit('exit', sessionId, 0)
+      return
     }
+    session.cleanup()
     this.sessions.delete(sessionId)
   }
 
