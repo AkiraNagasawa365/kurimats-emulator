@@ -189,6 +189,14 @@ describe('closeLeaf', () => {
     }
   })
 
+  it('リーフ削除後にratioが均等化される', () => {
+    const result = closeLeaf(splitRoot, 'leaf-B')!
+    expect(result.kind).toBe('split')
+    if (result.kind === 'split') {
+      expect(result.ratio).toBe(0.5)
+    }
+  })
+
   it('最後のリーフは閉じない（nullを返す）', () => {
     const single = makeLeaf('only')
     expect(closeLeaf(single, 'only')).toBeNull()

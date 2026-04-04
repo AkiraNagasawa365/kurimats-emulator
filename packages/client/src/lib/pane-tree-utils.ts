@@ -180,13 +180,13 @@ export function closeLeaf(tree: PaneNode, leafId: string): PaneNode | null {
   // 再帰的に探索
   const newFirst = closeLeaf(first, leafId)
   if (newFirst !== first) {
-    // first側で変更があった
-    return newFirst === null ? second : { ...tree, children: [newFirst, second] }
+    // first側で変更があった — ratioを均等化
+    return newFirst === null ? second : { ...tree, children: [newFirst, second], ratio: 0.5 }
   }
 
   const newSecond = closeLeaf(second, leafId)
   if (newSecond !== second) {
-    return newSecond === null ? first : { ...tree, children: [first, newSecond] }
+    return newSecond === null ? first : { ...tree, children: [first, newSecond], ratio: 0.5 }
   }
 
   return tree
