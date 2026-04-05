@@ -103,6 +103,14 @@ export class SessionStore {
   }
 
   /**
+   * セッションのブランチ更新
+   */
+  updateBranch(id: string, branch: string | null): void {
+    this.db.prepare('UPDATE sessions SET branch = ?, last_active_at = ? WHERE id = ?')
+      .run(branch, Date.now(), id)
+  }
+
+  /**
    * セッション名変更
    */
   rename(id: string, name: string): void {
