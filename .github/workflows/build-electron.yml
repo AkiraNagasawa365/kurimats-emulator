@@ -1,0 +1,61 @@
+name: Electron Mac ビルド
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 依存関係インストール
+        run: npm ci
+
+      - name: Electronアプリビルド
+        run: npm run build:electron
+
+      - name: バージョン取得
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "バージョン: v${VERSION}-${SHORT_SHA}"
+
+      - name: GitHub Release 作成
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: kurimats ${{ steps.version.outputs.tag }}
+          body: |
+            ## kurimats ${{ steps.version.outputs.tag }}
+
+            mainブランチ `${{ github.sha }}` からの自動ビルドです。
+
+            ### インストール方法
+            1. `kurimats-*-mac-arm64.dmg` をダウンロード
+            2. DMGを開いてアプリをApplicationsにドラッグ
+            3. 初回起動時: `xattr -cr /Applications/kurimats.app` を実行
+
+            ### 注意
+            このビルドはコード署名されていません。macOS Gatekeeperの警告が表示された場合は上記コマンドで解除してください。
+          files: |
+            packages/electron/dist/*.dmg
+            packages/electron/dist/*.zip
+          draft: false
+          prerelease: false
