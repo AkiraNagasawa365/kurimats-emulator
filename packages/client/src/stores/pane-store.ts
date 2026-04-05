@@ -1,14 +1,11 @@
 import { create } from 'zustand'
 import type { SplitDirection, Surface } from '@kurimats/shared'
 import {
-  closeLeaf,
   resizeSplit,
   addSurface as addSurfaceToTree,
   removeSurface as removeSurfaceFromTree,
   switchSurface as switchSurfaceInTree,
   findAdjacentPane,
-  firstLeaf,
-  countLeaves,
 } from '../lib/pane-tree-utils'
 import { useWorkspaceStore } from './workspace-store'
 import { workspacesApi } from '../lib/api'
@@ -23,7 +20,7 @@ interface PaneState {
 
   // ペイン操作（アクティブワークスペースのツリーを操作）
   splitPane: (paneId: string, direction: SplitDirection, opts?: { sshHost?: string; repoPath?: string }) => Promise<void>
-  closePane: (paneId: string) => void
+  closePane: (paneId: string) => Promise<void>
   zoomPane: (paneId: string) => void
   unzoom: () => void
   toggleZoom: (paneId: string) => void
@@ -77,16 +74,19 @@ export const usePaneStore = create<PaneState>((set, get) => ({
     }
   },
 
-  closePane: (paneId) => {
-    withActiveWorkspace((ws) => {
-      if (countLeaves(ws.paneTree) <= 1) return null // 最後のペインは閉じない
-      const newTree = closeLeaf(ws.paneTree, paneId)
-      if (!newTree) return null
-      const newActive = ws.activePaneId === paneId
-        ? firstLeaf(newTree).id
-        : ws.activePaneId
-      return { tree: newTree, activePaneId: newActive }
-    })
+  closePane: async (paneId) => {
+    const wsStore = useWorkspaceStore.getState()
+    const workspace = wsStore.workspaces.find(w => w.id === wsStore.activeWorkspaceId)
+    if (!workspace) return
+
+    try {
+      // サーバーAPIでセッション/PTY/worktreeも連動削除
+      const result = await workspacesApi.closePane(workspace.id, { paneId })
+      // サーバーが返した新しいペインツリーをストアに反映
+      wsStore.updatePaneTree(workspace.id, result.paneTree, result.activePaneId)
+    } catch (e) {
+      console.error('ペイン閉じエラー:', e)
+    }
 
     // ズーム中のペインが閉じられたらアンズーム
     if (get().zoomedPaneId === paneId) {
