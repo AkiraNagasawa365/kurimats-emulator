@@ -243,6 +243,16 @@ export function createSessionsRouter(
       }
 
       store.updateStatus(session.id, 'active')
+
+      // worktreeがある場合、現在のブランチ名を最新化
+      if (session.worktreePath) {
+        const currentBranch = worktreeService.getBranch(session.worktreePath)
+        if (currentBranch && currentBranch !== session.branch) {
+          store.updateBranch(session.id, currentBranch)
+          console.log(`🌿 ブランチ更新: ${session.branch} → ${currentBranch}`)
+        }
+      }
+
       console.log(`🔄 セッション "${session.name}" (${session.id.slice(0, 8)}...) を再接続しました`)
       res.json({ ok: true, session: store.getById(session.id) })
     } catch (e) {

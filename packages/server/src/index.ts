@@ -112,6 +112,27 @@ try {
   console.error('⚠️ 孤立セッション削除中にエラー（サーバー起動は続行）:', e)
 }
 
+// サーバー起動時: worktreeセッションのブランチ名を最新化
+try {
+  const allSessionsForBranch = sessionStore.getAll()
+  let branchFixCount = 0
+  for (const s of allSessionsForBranch) {
+    if (s.worktreePath) {
+      const currentBranch = worktreeService.getBranch(s.worktreePath)
+      if (currentBranch && currentBranch !== s.branch) {
+        sessionStore.updateBranch(s.id, currentBranch)
+        console.log(`   🌿 ブランチ修正: "${s.name}" ${s.branch} → ${currentBranch}`)
+        branchFixCount++
+      }
+    }
+  }
+  if (branchFixCount > 0) {
+    console.log(`✅ ${branchFixCount}件のセッションブランチを修正`)
+  }
+} catch (e) {
+  console.error('⚠️ ブランチ修正中にエラー（サーバー起動は続行）:', e)
+}
+
 // Express設定
 const app = express()
 app.use(cors())
