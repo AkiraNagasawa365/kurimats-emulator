@@ -19,9 +19,11 @@ import { createFeedbackRouter } from './routes/feedback.js'
 import { createWorkspacesRouter } from './routes/workspaces.js'
 import { CanvasStore } from './services/canvas-store.js'
 
-// ペイン番号からポートを自動算出（PANE_NUMBER未設定時はデフォルト3001を維持）
+// ペイン番号からポートを自動算出（PANE_NUMBERが設定されていれば既存PORTより優先）
 const PANE_NUMBER = parseInt(process.env.PANE_NUMBER || '0', 10)
-const PORT = parseInt(process.env.PORT || String(PANE_NUMBER > 0 ? 14000 + PANE_NUMBER : 3001), 10)
+const PORT = PANE_NUMBER > 0
+  ? 14000 + PANE_NUMBER
+  : parseInt(process.env.PORT || '3001', 10)
 const HOST = process.env.HOST || 'localhost'
 
 // トークン認証（リモートアクセス用、オプション）

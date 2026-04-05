@@ -53,8 +53,10 @@ interface PtySession {
 
 const RING_BUFFER_SIZE = 50 * 1024 // 50KB
 
-/** Playwright MCPポートのベース値。セッションごとにインクリメントして割当 */
+/** Playwright MCPポートのベース値。ペイン番号 or セッション通し番号で割当 */
 const PLAYWRIGHT_PORT_BASE = 3550
+/** ペイン番号（環境変数から取得、0=main） */
+const PANE_NUMBER = parseInt(process.env.PANE_NUMBER || '0', 10)
 
 // node-ptyの動的読み込み結果をキャッシュ
 let nodePty: INodePty | null = null
@@ -147,9 +149,12 @@ export class PtyManager extends EventEmitter {
 
     await this.initialize()
 
-    // セッションごとにPlaywright MCPポートを割当
+    // Playwright MCPポートを割当
+    // PANE_NUMBER が設定されている場合はペイン番号ベース、なければ通し番号
     this._portCounter++
-    const playwrightPort = PLAYWRIGHT_PORT_BASE + this._portCounter
+    const playwrightPort = PANE_NUMBER > 0
+      ? PLAYWRIGHT_PORT_BASE + PANE_NUMBER
+      : PLAYWRIGHT_PORT_BASE + this._portCounter
 
     if (this._backend === 'node-pty' && nodePty) {
       try {
@@ -188,6 +193,7 @@ export class PtyManager extends EventEmitter {
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
         ...(playwrightPort ? { PLAYWRIGHT_MCP_PORT: String(playwrightPort) } : {}),
+        ...(PANE_NUMBER > 0 ? { PANE_NUMBER: String(PANE_NUMBER) } : {}),
       } as Record<string, string>,
     })
 
@@ -252,6 +258,7 @@ export class PtyManager extends EventEmitter {
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
         ...(playwrightPort ? { PLAYWRIGHT_MCP_PORT: String(playwrightPort) } : {}),
+        ...(PANE_NUMBER > 0 ? { PANE_NUMBER: String(PANE_NUMBER) } : {}),
         COLUMNS: String(cols),
         LINES: String(rows),
         PTY_CWD: cwd,
