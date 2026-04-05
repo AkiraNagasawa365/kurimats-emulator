@@ -47,11 +47,16 @@ async function createSessionWithClaude(
     }
   }
 
+  // worktree作成後は実際のブランチ名を取得（baseBranchは作成元であり実ブランチではない）
+  const actualBranch = worktreePath
+    ? worktreeService.getBranch(worktreePath) ?? params.baseBranch
+    : params.baseBranch
+
   // セッション作成（DB保存）
   const session = store.create({
     name: params.name,
     repoPath: params.repoPath,
-    baseBranch: params.baseBranch,
+    baseBranch: actualBranch,
     worktreePath,
     sshHost: params.sshHost ?? null,
     isRemote,

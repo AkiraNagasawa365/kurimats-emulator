@@ -50,6 +50,21 @@ export class WorktreeService {
   }
 
   /**
+   * worktreeの現在のブランチ名を取得
+   */
+  getBranch(worktreePath: string): string | null {
+    try {
+      return execSync('git branch --show-current', {
+        cwd: worktreePath,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      }).trim() || null
+    } catch {
+      return null
+    }
+  }
+
+  /**
    * worktree一覧を取得
    */
   list(repoPath: string): WorktreeInfo[] {

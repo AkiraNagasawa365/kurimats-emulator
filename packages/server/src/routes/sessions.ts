@@ -109,10 +109,15 @@ export function createSessionsRouter(
       }
     }
 
+    // worktree作成後は実際のブランチ名を取得（baseBranchは作成元であり実ブランチではない）
+    const actualBranch = worktreePath
+      ? worktreeService.getBranch(worktreePath) ?? params.baseBranch
+      : params.baseBranch
+
     const session = store.create({
       name: params.name,
       repoPath: params.repoPath,
-      baseBranch: params.baseBranch,
+      baseBranch: actualBranch,
       useWorktree: params.useWorktree,
       worktreePath,
       sshHost: params.sshHost || null,
