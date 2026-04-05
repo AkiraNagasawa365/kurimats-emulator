@@ -61,9 +61,17 @@ npm run build:electron   # Electron配布ビルド
 - **Issueなしでブランチを切らない**
 - ブランチ名: `feat/`, `fix/`, `refactor/`, `chore/`, `docs/`, `test/`
 
-### Playwright（並列実行時のポート分離）
-- 複数セッションが同時にPlaywrightを使う場合、**ポートが衝突しないようにする**
-- kurimats-emulator経由の場合: PTY環境変数 `PLAYWRIGHT_MCP_PORT` が自動設定される（3551〜）
-- 手動worktreeで作業する場合: ペイン番号に応じてポートを使い分ける
-  - pane1: `3551`, pane2: `3552`, pane3: `3553`, ...
-  - 起動例: `PLAYWRIGHT_MCP_PORT=3553 claude`
+### ポート分離（並列開発）
+- `PANE_NUMBER` 環境変数で全ポートを自動算出（PTYにも伝播）
+- **本番(Electron)とは帯域が完全に分離されている**
+- **mainブランチでは `npm run dev` しない**（本番ブランチ）
+
+| サービス | 計算式 | develop(N=0) | pane1 | pane2 | pane3 | 本番(Electron) |
+|---------|--------|-------------|-------|-------|-------|---------------|
+| Server | 14000+N | 14000 | 14001 | 14002 | 14003 | 13001 |
+| Client | 5180+N | 5180 | 5181 | 5182 | 5183 | 5173 |
+| Playwright | 3550+N | 3550 | 3551 | 3552 | 3553 | - |
+
+- develop起動例: `PANE_NUMBER=0 npm run dev` → Server:14000, Client:5180
+- pane起動例: `PANE_NUMBER=3 npm run dev` → Server:14003, Client:5183, Playwright:3553
+- kurimats-emulator経由の場合: PTY起動時に `PANE_NUMBER` が自動設定される
