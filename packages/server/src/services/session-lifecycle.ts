@@ -129,8 +129,8 @@ export async function createAndSpawnSession(
     worktreePath,
     sshHost: params.sshHost ?? null,
     isRemote,
-    workspaceId: params.workspaceId ?? undefined,
-    projectId: params.projectId ?? undefined,
+    workspaceId: params.workspaceId ?? null,
+    projectId: params.projectId ?? null,
   })
 
   const cwd = worktreePath || params.repoPath

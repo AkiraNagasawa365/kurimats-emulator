@@ -40,7 +40,7 @@ export class SessionStore {
   /**
    * セッション作成
    */
-  create(params: Omit<CreateSessionParams, 'sshHost'> & {
+  create(params: Omit<CreateSessionParams, 'sshHost' | 'workspaceId'> & {
     worktreePath?: string | null
     projectId?: string | null
     sshHost?: string | null
