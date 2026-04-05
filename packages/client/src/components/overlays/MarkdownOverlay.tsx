@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { filesApi } from '../../lib/api'
-import { useSessionStore } from '../../stores/session-store'
-import { useLayoutStore } from '../../stores/layout-store'
+import { useWorkspaceStore } from '../../stores/workspace-store'
 import { OverlayContainer } from './OverlayContainer'
 
 interface Props {
@@ -17,8 +16,7 @@ interface Props {
  * マークダウンファイルの編集・プレビュー
  */
 export function MarkdownOverlay({ onClose, filePath: initialPath, fullScreen }: Props) {
-  const { sessions } = useSessionStore()
-  const { panels, activePanelIndex } = useLayoutStore()
+  const { workspaces, activeWorkspaceId } = useWorkspaceStore()
   const [filePath, setFilePath] = useState(initialPath || '')
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(false)
@@ -33,19 +31,14 @@ export function MarkdownOverlay({ onClose, filePath: initialPath, fullScreen }: 
       return
     }
 
-    // アクティブセッションのリポジトリからREADME.mdを探す
-    const activePanel = panels[activePanelIndex]
-    const activeSession = activePanel?.sessionId
-      ? sessions.find(s => s.id === activePanel.sessionId)
-      : sessions[0]
-    // repoPath（元リポジトリ）を優先。worktreePathはREADME.mdが存在しない場合がある
-    const root = activeSession?.repoPath || activeSession?.worktreePath
+    // アクティブワークスペースのrepoPathからREADME.md/CLAUDE.mdを探す
+    const activeWs = workspaces.find(w => w.id === activeWorkspaceId)
+    const root = activeWs?.repoPath
     if (root) {
-      // README.md → CLAUDE.md の順で試行
       const candidates = [`${root}/README.md`, `${root}/CLAUDE.md`]
       tryLoadFirst(candidates)
     }
-  }, [initialPath, sessions, panels, activePanelIndex])
+  }, [initialPath, workspaces, activeWorkspaceId])
 
   // 候補パスを順に試行し、最初に見つかったファイルを読み込む
   const tryLoadFirst = useCallback(async (candidates: string[]) => {

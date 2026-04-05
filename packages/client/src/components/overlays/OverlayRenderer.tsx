@@ -17,7 +17,6 @@ export function OverlayRenderer() {
       return (
         <FileTreeOverlay
           onClose={closeOverlay}
-          sessionId={overlayProps.sessionId as string | undefined}
         />
       )
     case 'markdown':

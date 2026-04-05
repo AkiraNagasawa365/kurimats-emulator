@@ -2,22 +2,19 @@ import { useState, useEffect, useCallback } from 'react'
 import type { FileNode } from '@kurimats/shared'
 import { filesApi } from '../../lib/api'
 import { useOverlayStore } from '../../stores/overlay-store'
-import { useSessionStore } from '../../stores/session-store'
-import { useLayoutStore } from '../../stores/layout-store'
+import { useWorkspaceStore } from '../../stores/workspace-store'
 import { OverlayContainer } from './OverlayContainer'
 
 interface Props {
   onClose: () => void
-  sessionId?: string
 }
 
 /**
  * ファイルツリーオーバーレイ
  * リポジトリのファイル構造を表示
  */
-export function FileTreeOverlay({ onClose, sessionId }: Props) {
-  const { sessions } = useSessionStore()
-  const { panels, activePanelIndex } = useLayoutStore()
+export function FileTreeOverlay({ onClose }: Props) {
+  const { workspaces, activeWorkspaceId } = useWorkspaceStore()
   const { openOverlay } = useOverlayStore()
   const [tree, setTree] = useState<FileNode[]>([])
   const [loading, setLoading] = useState(true)
@@ -25,21 +22,10 @@ export function FileTreeOverlay({ onClose, sessionId }: Props) {
   const [filter, setFilter] = useState('')
   const [workingDir, setWorkingDir] = useState('')
 
-  // セッションのリポジトリパスを取得（sessionId指定時はそのセッション優先）
+  // アクティブワークスペースのrepoPathを使用
   useEffect(() => {
-    let activeSession
-    if (sessionId) {
-      activeSession = sessions.find(s => s.id === sessionId)
-    } else {
-      const activePanel = panels[activePanelIndex]
-      activeSession = activePanel?.sessionId
-        ? sessions.find(s => s.id === activePanel.sessionId)
-        : sessions[0]
-    }
-
-    // ファイルツリーではrepoPath（元リポジトリ）を優先
-    // worktreePathはgit管理ファイルのみで不完全なため
-    const root = activeSession?.repoPath || ''
+    const activeWs = workspaces.find(w => w.id === activeWorkspaceId)
+    const root = activeWs?.repoPath || ''
     setWorkingDir(root)
 
     if (!root) {
@@ -59,7 +45,7 @@ export function FileTreeOverlay({ onClose, sessionId }: Props) {
         setError(String(e))
         setLoading(false)
       })
-  }, [sessions, panels, activePanelIndex])
+  }, [workspaces, activeWorkspaceId])
 
   const handleFileClick = useCallback((path: string) => {
     if (path.endsWith('.md')) {
