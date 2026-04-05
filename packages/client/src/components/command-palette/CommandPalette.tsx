@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useCommandPaletteStore, type Command } from '../../stores/command-palette-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { usePaneStore } from '../../stores/pane-store'
+import { useOverlayStore } from '../../stores/overlay-store'
 
 /**
  * コマンドパレット（cmux v3）
@@ -17,6 +18,7 @@ export function CommandPalette() {
 
   const { workspaces, workspaceOrder, switchWorkspace, activeWorkspaceId } = useWorkspaceStore()
   const { splitPane, closePane, toggleZoom, focusDirection } = usePaneStore()
+  const { openOverlay } = useOverlayStore()
 
   // アクティブワークスペース
   const activeWs = workspaces.find(w => w.id === activeWorkspaceId)
@@ -38,6 +40,12 @@ export function CommandPalette() {
       { id: 'pane-focus-down', label: '下のペインへ移動', shortcut: '⌘⌥↓', category: 'ナビゲーション', action: () => { focusDirection('down'); close() } },
     )
 
+    // オーバーレイコマンド
+    cmds.push(
+      { id: 'overlay-filetree', label: 'ファイルツリーを開く', shortcut: '⌘⇧E', category: 'ファイル', action: () => { openOverlay('file-tree'); close() } },
+      { id: 'overlay-markdown', label: 'Markdownプレビューを開く', shortcut: '⌘⇧M', category: 'ファイル', action: () => { openOverlay('markdown'); close() } },
+    )
+
     // ワークスペースコマンド
     cmds.push(
       { id: 'ws-new', label: '新規ワークスペース', shortcut: '⌘N', category: 'ワークスペース', action: () => { window.dispatchEvent(new CustomEvent('create-workspace')); close() } },
@@ -57,7 +65,7 @@ export function CommandPalette() {
     })
 
     return cmds
-  }, [activePaneId, workspaces, workspaceOrder, splitPane, closePane, toggleZoom, focusDirection, switchWorkspace, close])
+  }, [activePaneId, workspaces, workspaceOrder, splitPane, closePane, toggleZoom, focusDirection, switchWorkspace, openOverlay, close])
 
   // 検索フィルタ
   const filteredCommands = useMemo(() => {
