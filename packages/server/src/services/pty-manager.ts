@@ -53,6 +53,9 @@ interface PtySession {
 
 const RING_BUFFER_SIZE = 50 * 1024 // 50KB
 
+/** Playwright MCPポートのベース値。セッションごとにインクリメントして割当 */
+const PLAYWRIGHT_PORT_BASE = 3550
+
 // node-ptyの動的読み込み結果をキャッシュ
 let nodePty: INodePty | null = null
 let nodePtyChecked = false
@@ -91,6 +94,7 @@ export class PtyManager extends EventEmitter {
   private sessions = new Map<string, PtySession>()
   private _backend: PtyBackend = 'child_process'
   private _initialized = false
+  private _portCounter = 0
 
   /**
    * 現在のバックエンド種別を取得
@@ -143,16 +147,20 @@ export class PtyManager extends EventEmitter {
 
     await this.initialize()
 
+    // セッションごとにPlaywright MCPポートを割当
+    this._portCounter++
+    const playwrightPort = PLAYWRIGHT_PORT_BASE + this._portCounter
+
     if (this._backend === 'node-pty' && nodePty) {
       try {
-        this._spawnWithNodePty(sessionId, cwd, cols, rows, command, args)
+        this._spawnWithNodePty(sessionId, cwd, cols, rows, command, args, playwrightPort)
       } catch (e) {
         console.warn('node-ptyでのspawnに失敗。child_processにフォールバックします:', e)
         this._backend = 'child_process'
-        this._spawnWithChildProcess(sessionId, cwd, cols, rows, command, args)
+        this._spawnWithChildProcess(sessionId, cwd, cols, rows, command, args, playwrightPort)
       }
     } else {
-      this._spawnWithChildProcess(sessionId, cwd, cols, rows, command, args)
+      this._spawnWithChildProcess(sessionId, cwd, cols, rows, command, args, playwrightPort)
     }
   }
 
@@ -166,6 +174,7 @@ export class PtyManager extends EventEmitter {
     rows: number,
     command?: string,
     args?: string[],
+    playwrightPort?: number,
   ): void {
     const cmd = command || process.env.SHELL || '/bin/zsh'
     const cmdArgs = args || []
@@ -178,6 +187,7 @@ export class PtyManager extends EventEmitter {
         ...process.env,
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
+        ...(playwrightPort ? { PLAYWRIGHT_MCP_PORT: String(playwrightPort) } : {}),
       } as Record<string, string>,
     })
 
@@ -227,6 +237,7 @@ export class PtyManager extends EventEmitter {
     rows: number,
     command?: string,
     args?: string[],
+    playwrightPort?: number,
   ): void {
     const cmd = command || process.env.SHELL || '/bin/zsh'
     const cmdArgs = args || []
@@ -240,6 +251,7 @@ export class PtyManager extends EventEmitter {
         ...process.env,
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
+        ...(playwrightPort ? { PLAYWRIGHT_MCP_PORT: String(playwrightPort) } : {}),
         COLUMNS: String(cols),
         LINES: String(rows),
         PTY_CWD: cwd,

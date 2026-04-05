@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { useTerminalWs } from '../../hooks/useTerminalWs'
@@ -59,10 +60,13 @@ export function TerminalComponent({ sessionId, isActive, onFocus }: Props) {
     })
 
     const fitAddon = new FitAddon()
+    const unicode11Addon = new Unicode11Addon()
     const webLinksAddon = new WebLinksAddon((_event, uri) => {
       window.open(uri, '_blank')
     })
     term.loadAddon(fitAddon)
+    term.loadAddon(unicode11Addon)
+    term.unicode.activeVersion = '11'
     term.loadAddon(webLinksAddon)
     fitAddonRef.current = fitAddon
 
