@@ -14,15 +14,20 @@ import type { WorktreeService } from './worktree-service.js'
  * 表示されたらclaude --continueを実行する。最大5秒のタイムアウト付き。
  * --continueにより、前回の会話履歴がある場合は自動復元される。
  */
+/**
+ * @param continueSession trueの場合 `claude --continue`、falseの場合 `claude` を実行
+ */
 export function waitForShellReady(
   sessionId: string,
   ptyManager: PtyManager,
   sshManager: SshManager,
   isRemote: boolean,
+  continueSession = false,
 ): void {
   const manager = isRemote ? sshManager : ptyManager
   let resolved = false
   let timeoutId: ReturnType<typeof setTimeout> | null = null
+  const claudeCmd = continueSession ? 'claude --continue\r' : 'claude\r'
 
   const cleanup = () => {
     manager.removeListener('data', onData)
@@ -36,9 +41,9 @@ export function waitForShellReady(
   const launchClaude = () => {
     cleanup()
     if (isRemote) {
-      sshManager.write(sessionId, 'claude --continue\r')
+      sshManager.write(sessionId, claudeCmd)
     } else {
-      ptyManager.write(sessionId, 'claude --continue\r')
+      ptyManager.write(sessionId, claudeCmd)
     }
   }
 
@@ -66,7 +71,7 @@ export function waitForShellReady(
   timeoutId = setTimeout(() => {
     if (!resolved) {
       resolved = true
-      console.warn(`⚠️ セッション ${sessionId.slice(0, 8)}... のシェルプロンプト検出タイムアウト。claude --continueを強制送信します。`)
+      console.warn(`⚠️ セッション ${sessionId.slice(0, 8)}... のシェルプロンプト検出タイムアウト。claudeを強制送信します。`)
       launchClaude()
     }
   }, 5000)

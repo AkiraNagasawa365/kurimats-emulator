@@ -88,12 +88,12 @@ export function createSessionsRouter(
       if (session.isRemote && session.sshHost) {
         await sshManager.connect(session.sshHost)
         await sshManager.spawn(session.id, session.sshHost, cwd, 120, 30)
-        waitForShellReady(session.id, ptyManager, sshManager, true)
+        waitForShellReady(session.id, ptyManager, sshManager, true, true)
       } else {
         if (ptyManager.backend === 'node-pty') {
           const shell = process.env.SHELL || '/bin/zsh'
           await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
-          waitForShellReady(session.id, ptyManager, sshManager, false)
+          waitForShellReady(session.id, ptyManager, sshManager, false, true)
         } else {
           await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--continue'])
         }

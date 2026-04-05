@@ -85,23 +85,6 @@ export function PaneLeafView({ leaf }: PaneLeafViewProps) {
         activeSurfaceIndex={leaf.activeSurfaceIndex}
       />
 
-      {/* ターミナルヘッダー（セッション名＋ブランチ） */}
-      {session && (
-        <div className={`flex items-center justify-between px-3 py-1 text-xs border-b flex-shrink-0 ${
-          isActive ? 'bg-tile-header border-accent' : 'bg-tile-header border-border'
-        }`}>
-          <div className="flex items-center gap-2 min-w-0">
-            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-              session.status === 'active' ? 'bg-green-500' : 'bg-gray-400'
-            }`} />
-            <span className="truncate font-medium text-text-primary">{session.name}</span>
-            {session.branch && (
-              <span className="text-text-muted truncate">[{session.branch}]</span>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* サーフェスコンテンツ */}
       <div className="flex-1 overflow-hidden">
         <SurfaceContent surface={activeSurface} paneId={leaf.id} />
