@@ -22,10 +22,17 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": ["dmg", "zip"],
-      "icon": "resources/icon.icns"
+      "icon": "resources/icon.icns",
+      "artifactName": "kurimats-${version}-mac-${arch}.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "AkiraNagasawa365",
+      "repo": "kurimats-emulator"
     },
     "files": [
-      "dist/**/*",
+      "dist/main.js",
+      "dist/main.js.map",
       "resources/**/*",
       "!node_modules"
     ],

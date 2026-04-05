@@ -227,6 +227,166 @@ describe('ペイン閉じ時のセッション1:1整合��', () => {
   })
 })
 
+describe('孤立セッションクリーンアップ', () => {
+  let store: SessionStore
+
+  beforeEach(() => {
+    store = new SessionStore(':memory:')
+  })
+
+  afterEach(() => {
+    store.close()
+  })
+
+  /** ペインツリーからセッションIDを収集（index.tsの起動時ロジックと同じ） */
+  function collectSessionIdsFromTree(node: PaneNode): string[] {
+    if (!node) return []
+    if (node.kind === 'leaf') {
+      return node.surfaces.filter(s => s.type === 'terminal').map(s => s.target)
+    }
+    if (!node.children || node.children.length < 2) return []
+    return [...collectSessionIdsFromTree(node.children[0]), ...collectSessionIdsFromTree(node.children[1])]
+  }
+
+  it('ペインツリーに含まれないセッションが孤立として検出される', () => {
+    // ペインツリーに含まれるセッション
+    const referenced = store.create({ name: 'referenced', repoPath: '/tmp' })
+    // ペインツリーに含まれないセッション（孤立）
+    const orphaned = store.create({ name: 'orphaned', repoPath: '/tmp' })
+
+    const tree: PaneLeaf = {
+      kind: 'leaf',
+      id: 'pane-1',
+      surfaces: [{ id: 's1', type: 'terminal', target: referenced.id, label: 'Term' }],
+      activeSurfaceIndex: 0,
+      ratio: 0.5,
+    }
+    store.createCmuxWorkspace({ name: 'WS', repoPath: '/tmp' }, tree)
+
+    // クリーンアップロジック
+    const workspaces = store.getAllCmuxWorkspaces()
+    const referencedIds = new Set<string>()
+    for (const ws of workspaces) {
+      for (const id of collectSessionIdsFromTree(ws.paneTree)) {
+        referencedIds.add(id)
+      }
+    }
+
+    const allSessions = store.getAll()
+    const orphanedSessions = allSessions.filter(s => !referencedIds.has(s.id))
+
+    expect(orphanedSessions).toHaveLength(1)
+    expect(orphanedSessions[0].id).toBe(orphaned.id)
+
+    // 孤立セッションを削除
+    for (const s of orphanedSessions) {
+      store.delete(s.id)
+    }
+
+    expect(store.getById(orphaned.id)).toBeNull()
+    expect(store.getById(referenced.id)).not.toBeNull()
+  })
+
+  it('スプリットツリーの全リーフからセッションIDを収集できる', () => {
+    const s1 = store.create({ name: 's1', repoPath: '/tmp' })
+    const s2 = store.create({ name: 's2', repoPath: '/tmp' })
+    const s3 = store.create({ name: 's3', repoPath: '/tmp' })
+
+    const splitTree: PaneSplit = {
+      kind: 'split',
+      id: 'split-1',
+      direction: 'vertical',
+      ratio: 0.5,
+      children: [
+        {
+          kind: 'leaf',
+          id: 'pane-1',
+          surfaces: [{ id: 's1', type: 'terminal', target: s1.id, label: 'T1' }],
+          activeSurfaceIndex: 0,
+          ratio: 0.5,
+        },
+        {
+          kind: 'split',
+          id: 'split-2',
+          direction: 'horizontal',
+          ratio: 0.5,
+          children: [
+            {
+              kind: 'leaf',
+              id: 'pane-2',
+              surfaces: [{ id: 's2', type: 'terminal', target: s2.id, label: 'T2' }],
+              activeSurfaceIndex: 0,
+              ratio: 0.5,
+            },
+            {
+              kind: 'leaf',
+              id: 'pane-3',
+              surfaces: [{ id: 's3', type: 'terminal', target: s3.id, label: 'T3' }],
+              activeSurfaceIndex: 0,
+              ratio: 0.5,
+            },
+          ],
+        },
+      ],
+    }
+
+    const ids = collectSessionIdsFromTree(splitTree)
+    expect(ids).toHaveLength(3)
+    expect(ids).toContain(s1.id)
+    expect(ids).toContain(s2.id)
+    expect(ids).toContain(s3.id)
+  })
+
+  it('壊れたペインツリーでもクラッシュしない', () => {
+    // null/undefinedガードのテスト
+    expect(collectSessionIdsFromTree(null as unknown as PaneNode)).toEqual([])
+    expect(collectSessionIdsFromTree({ kind: 'split', id: 'broken', direction: 'vertical', ratio: 0.5 } as unknown as PaneNode)).toEqual([])
+  })
+})
+
+describe('セッションブランチ更新', () => {
+  let store: SessionStore
+
+  beforeEach(() => {
+    store = new SessionStore(':memory:')
+  })
+
+  afterEach(() => {
+    store.close()
+  })
+
+  it('updateBranchでセッションのブランチを更新できる', () => {
+    const session = store.create({ name: 'branch-test', repoPath: '/tmp', baseBranch: 'main' })
+    expect(session.branch).toBe('main')
+
+    store.updateBranch(session.id, 'kurimats/branch-test')
+    const updated = store.getById(session.id)
+    expect(updated?.branch).toBe('kurimats/branch-test')
+  })
+
+  it('updateBranchでnullを設定できる', () => {
+    const session = store.create({ name: 'null-branch', repoPath: '/tmp', baseBranch: 'develop' })
+    expect(session.branch).toBe('develop')
+
+    store.updateBranch(session.id, null)
+    const updated = store.getById(session.id)
+    expect(updated?.branch).toBeNull()
+  })
+
+  it('baseBranchではなく実ブランチが保存されるべき（セッション作成の意図確認）', () => {
+    // baseBranch='main'で作成した場合、store.create()はそのまま保存する
+    // 呼び出し側がactualBranchを渡す責務を持つ
+    const session = store.create({
+      name: 'actual-branch',
+      repoPath: '/tmp',
+      baseBranch: 'kurimats/actual-branch', // 呼び出し側がactualBranchを渡した場合
+      worktreePath: '/tmp/worktrees/actual-branch',
+    })
+    expect(session.branch).toBe('kurimats/actual-branch')
+    expect(session.worktreePath).toBe('/tmp/worktrees/actual-branch')
+  })
+})
+
 describe('プロジェクトSSH紐付けAPI', () => {
   let store: SessionStore
 

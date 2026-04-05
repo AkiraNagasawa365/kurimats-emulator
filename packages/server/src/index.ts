@@ -18,8 +18,17 @@ import { createSshRouter } from './routes/ssh.js'
 import { createFeedbackRouter } from './routes/feedback.js'
 import { createWorkspacesRouter } from './routes/workspaces.js'
 import { CanvasStore } from './services/canvas-store.js'
+import { SERVER_PORT_BASE, calculatePort } from './utils/ports.js'
+import { runStartupTasks } from './startup.js'
 
-const PORT = parseInt(process.env.PORT || '3001', 10)
+// PANE_NUMBERからポートを自動算出（develop=0, paneN=N）
+// 設定時は既存PORT環境変数より優先。未設定時のみPORTにフォールバック
+const PANE_NUMBER = process.env.PANE_NUMBER != null
+  ? parseInt(process.env.PANE_NUMBER, 10)
+  : null
+const PORT = PANE_NUMBER != null
+  ? calculatePort(SERVER_PORT_BASE, PANE_NUMBER)
+  : parseInt(process.env.PORT || '3001', 10)
 const HOST = process.env.HOST || 'localhost'
 
 // トークン認証（リモートアクセス用、オプション）
@@ -47,18 +56,8 @@ sshManager.on('exit', (sessionId: string) => {
   markDisconnected(sessionId)
 })
 
-// サーバー起動時: PTYが消失したactiveセッションをdisconnectedに変更
-const orphanedSessions = sessionStore.getAll().filter(s => s.status === 'active')
-if (orphanedSessions.length > 0) {
-  console.log(`⚠️  ${orphanedSessions.length}件のorphanedセッションを検出 → disconnectedに変更`)
-  for (const s of orphanedSessions) {
-    sessionStore.updateStatus(s.id, 'disconnected')
-    console.log(`   ↳ セッション "${s.name}" (${s.id.slice(0, 8)}...) → disconnected`)
-  }
-  console.log('✅ orphanedセッションの復元処理完了。UIから再接続可能です。')
-} else {
-  console.log('✅ orphanedセッションなし')
-}
+// サーバー起動時の初期化タスク（orphanedセッション復元、孤立削除、ブランチ修正）
+runStartupTasks(sessionStore, worktreeService)
 
 // Express設定
 const app = express()
@@ -83,7 +82,7 @@ app.use('/api/files', createFilesRouter())
 app.use('/api/worktrees', createWorktreesRouter(worktreeService))
 app.use('/api/projects', createProjectsRouter(sessionStore))
 app.use('/api/layout', createLayoutRouter(sessionStore, canvasStore))
-app.use('/api/tab', createTabRouter(sessionStore, ptyManager, sshManager))
+app.use('/api/tab', createTabRouter(sessionStore, ptyManager, sshManager, worktreeService))
 app.use('/api/ssh', createSshRouter(sshManager, sessionStore))
 app.use('/api/feedback', createFeedbackRouter(sessionStore))
 app.use('/api/workspaces', createWorkspacesRouter(sessionStore, ptyManager, sshManager, worktreeService))

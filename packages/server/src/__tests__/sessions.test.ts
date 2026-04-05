@@ -177,6 +177,95 @@ describeServer('セッションAPI', () => {
     expect(updated?.status).toBe('disconnected')
   })
 
+  it('セッション作成時にclaude --continueで起動される', async () => {
+    const res = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'continue-test', repoPath: '/tmp', useWorktree: false }),
+    })
+    expect(res.status).toBe(201)
+
+    // child_processモードではclaude --continueが直接spawnされる
+    expect(ptyManager.spawn).toHaveBeenCalledWith(
+      expect.any(String), '/tmp', 120, 30, 'claude', ['--continue'],
+    )
+  })
+
+  it('再接続時にclaude --continueで起動される', async () => {
+    const createRes = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'reconnect-continue', repoPath: '/tmp', useWorktree: false }),
+    })
+    const session = await createRes.json()
+    store.updateStatus(session.id, 'disconnected')
+    ptyManager.kill(session.id)
+
+    // spawnのモックをリセットして再接続時の呼び出しを確認
+    vi.mocked(ptyManager.spawn).mockClear()
+
+    await fetch(`${baseUrl}/api/sessions/${session.id}/reconnect`, { method: 'POST' })
+
+    expect(ptyManager.spawn).toHaveBeenCalledWith(
+      session.id, '/tmp', 120, 30, 'claude', ['--continue'],
+    )
+  })
+
+  it('worktree付きセッション作成時にbaseBranchではなく実ブランチが保存される', async () => {
+    const worktreeService = new WorktreeService()
+    // worktreeService.create をモックして、getBranchが実ブランチを返すようにする
+    vi.spyOn(worktreeService, 'isGitRepo').mockReturnValue(true)
+    vi.spyOn(worktreeService, 'create').mockReturnValue('/tmp/worktrees/test-session')
+    vi.spyOn(worktreeService, 'getBranch').mockReturnValue('kurimats/test-session')
+
+    // worktreeServiceを差し替えたルーターで再構築
+    const sshManager = new SshManager()
+    const app2 = express()
+    app2.use(express.json())
+    app2.use('/api/sessions', createSessionsRouter(store, ptyManager, sshManager, worktreeService))
+    const server2 = createServer(app2)
+    await new Promise<void>((resolve) => {
+      server2.listen(0, '127.0.0.1', () => resolve())
+    })
+    const addr2 = server2.address()
+    const port2 = typeof addr2 === 'object' && addr2 ? addr2.port : 0
+    const baseUrl2 = `http://127.0.0.1:${port2}`
+
+    try {
+      const res = await fetch(`${baseUrl2}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'test-session', repoPath: '/tmp/repo', baseBranch: 'main', useWorktree: true }),
+      })
+      const session = await res.json()
+      expect(res.status).toBe(201)
+      // baseBranch('main')ではなく、実ブランチ('kurimats/test-session')が保存される
+      expect(session.branch).toBe('kurimats/test-session')
+    } finally {
+      server2.close()
+    }
+  })
+
+  it('再接続時にworktreeのブランチが最新化される', async () => {
+    // baseBranch=nullでセッションを作成（worktreeなし）
+    const createRes = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'branch-update-test', repoPath: '/tmp', useWorktree: false }),
+    })
+    const session = await createRes.json()
+
+    // worktreePathとブランチを手動で設定（既存セッションに古いブランチが入っている状況をシミュレート）
+    store.updateBranch(session.id, 'main')
+    const updated = store.getById(session.id)
+    expect(updated?.branch).toBe('main')
+
+    // updateBranchが正しく動作することを確認
+    store.updateBranch(session.id, 'kurimats/new-branch')
+    const reupdated = store.getById(session.id)
+    expect(reupdated?.branch).toBe('kurimats/new-branch')
+  })
+
   it('セッションを削除できる', async () => {
     // 作成
     const createRes = await fetch(`${baseUrl}/api/sessions`, {

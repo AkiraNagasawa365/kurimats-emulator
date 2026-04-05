@@ -2,7 +2,9 @@ import { useCallback } from 'react'
 import type { PaneLeaf } from '@kurimats/shared'
 import { usePaneStore } from '../../stores/pane-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
+import { useSessionStore } from '../../stores/session-store'
 import { SurfaceTabs } from './SurfaceTabs'
+import { PaneToolbar } from './PaneToolbar'
 import { TerminalSurface } from '../surfaces/TerminalSurface'
 import { BrowserSurface } from '../surfaces/BrowserSurface'
 import { EditorSurface } from '../surfaces/EditorSurface'
@@ -27,11 +29,17 @@ export function PaneLeafView({ leaf }: PaneLeafViewProps) {
   const isActive = activeWorkspace?.activePaneId === leaf.id
   const hasAttention = attentionRings.get(leaf.id) ?? false
 
+  const sessions = useSessionStore(s => s.sessions)
+
   const handleClick = useCallback(() => {
     if (!isActive) focusPane(leaf.id)
   }, [isActive, leaf.id, focusPane])
 
   const activeSurface = leaf.surfaces[leaf.activeSurfaceIndex]
+
+  // ターミナルサーフェスの場合、対応するセッション情報を取得
+  const sessionId = activeSurface?.type === 'terminal' ? activeSurface.target : null
+  const session = sessionId ? sessions.find(s => s.id === sessionId) : null
 
   // 空のペイン表示
   if (!activeSurface) {
@@ -65,6 +73,11 @@ export function PaneLeafView({ leaf }: PaneLeafViewProps) {
       `}
       onClick={handleClick}
     >
+      {/* ペインツールバー（ターミナルセッション時のみ） */}
+      {session && (
+        <PaneToolbar session={session} paneId={leaf.id} />
+      )}
+
       {/* サーフェスタブバー */}
       <SurfaceTabs
         paneId={leaf.id}

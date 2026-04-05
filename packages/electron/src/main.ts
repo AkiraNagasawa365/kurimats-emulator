@@ -11,6 +11,7 @@ import Store from 'electron-store'
 import { loadWindowState, saveWindowState, extractWindowState } from './window-state'
 import { buildMenuTemplate } from './menu'
 import { ServerProcessManager, resolveServerDir } from './server-process'
+import { checkForUpdates } from './update-checker'
 
 const APP_NAME = 'kurimats'
 const DEV_CLIENT_URL = 'http://localhost:5173'
@@ -216,6 +217,13 @@ app.whenReady().then(async () => {
 
   // メインウインドウを作成
   createWindow()
+
+  // 更新チェック（本番のみ、バックグラウンドで実行）
+  if (!IS_DEV) {
+    checkForUpdates().catch((err) => {
+      console.error('更新チェックに失敗:', err)
+    })
+  }
 
   // macOS: ドックアイコンクリックでウインドウ再作成
   app.on('activate', () => {

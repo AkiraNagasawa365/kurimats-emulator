@@ -1,5 +1,5 @@
-import { execSync } from 'child_process'
-import { existsSync } from 'fs'
+import { execFileSync } from 'child_process'
+import { existsSync, mkdirSync, readFileSync, appendFileSync } from 'fs'
 import path from 'path'
 import type { WorktreeInfo } from '@kurimats/shared'
 
@@ -22,31 +22,45 @@ export class WorktreeService {
     }
 
     // worktreeディレクトリがなければ作成
-    execSync(`mkdir -p "${worktreeBase}"`, { cwd: repoPath })
+    mkdirSync(worktreeBase, { recursive: true })
 
     // gitignoreに追加（まだなければ）
     const gitignorePath = path.join(repoPath, '.gitignore')
     if (existsSync(gitignorePath)) {
-      const content = execSync(`cat "${gitignorePath}"`, { encoding: 'utf-8' })
+      const content = readFileSync(gitignorePath, 'utf-8')
       if (!content.includes(WORKTREE_DIR)) {
-        execSync(`echo "\n${WORKTREE_DIR}/" >> "${gitignorePath}"`)
+        appendFileSync(gitignorePath, `\n${WORKTREE_DIR}/\n`)
       }
     }
 
+    const branchName = `kurimats/${name}`
     try {
-      execSync(
-        `git worktree add "${worktreePath}" -b "kurimats/${name}" "${baseBranch}"`,
-        { cwd: repoPath, encoding: 'utf-8', stdio: 'pipe' }
-      )
+      execFileSync('git', ['worktree', 'add', worktreePath, '-b', branchName, baseBranch], {
+        cwd: repoPath, encoding: 'utf-8', stdio: 'pipe',
+      })
     } catch {
       // ブランチが既に存在する場合、ブランチなしで追加
-      execSync(
-        `git worktree add "${worktreePath}" "kurimats/${name}"`,
-        { cwd: repoPath, encoding: 'utf-8', stdio: 'pipe' }
-      )
+      execFileSync('git', ['worktree', 'add', worktreePath, branchName], {
+        cwd: repoPath, encoding: 'utf-8', stdio: 'pipe',
+      })
     }
 
     return worktreePath
+  }
+
+  /**
+   * worktreeの現在のブランチ名を取得
+   */
+  getBranch(worktreePath: string): string | null {
+    try {
+      return execFileSync('git', ['branch', '--show-current'], {
+        cwd: worktreePath,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      }).trim() || null
+    } catch {
+      return null
+    }
   }
 
   /**
@@ -54,7 +68,7 @@ export class WorktreeService {
    */
   list(repoPath: string): WorktreeInfo[] {
     try {
-      const output = execSync('git worktree list --porcelain', {
+      const output = execFileSync('git', ['worktree', 'list', '--porcelain'], {
         cwd: repoPath,
         encoding: 'utf-8',
         stdio: 'pipe',
@@ -94,7 +108,7 @@ export class WorktreeService {
    * worktreeを削除
    */
   remove(repoPath: string, worktreePath: string): void {
-    execSync(`git worktree remove "${worktreePath}" --force`, {
+    execFileSync('git', ['worktree', 'remove', worktreePath, '--force'], {
       cwd: repoPath,
       encoding: 'utf-8',
       stdio: 'pipe',
@@ -105,7 +119,7 @@ export class WorktreeService {
    * 不要なworktreeをクリーンアップ
    */
   prune(repoPath: string): void {
-    execSync('git worktree prune', {
+    execFileSync('git', ['worktree', 'prune'], {
       cwd: repoPath,
       encoding: 'utf-8',
       stdio: 'pipe',
@@ -117,7 +131,7 @@ export class WorktreeService {
    */
   isGitRepo(dirPath: string): boolean {
     try {
-      execSync('git rev-parse --is-inside-work-tree', {
+      execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
         cwd: dirPath,
         encoding: 'utf-8',
         stdio: 'pipe',

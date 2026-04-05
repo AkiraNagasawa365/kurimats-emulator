@@ -5,6 +5,7 @@ import { createServer, type Server } from 'http'
 import { SessionStore } from '../services/session-store.js'
 import { PtyManager } from '../services/pty-manager.js'
 import { SshManager } from '../services/ssh-manager.js'
+import { WorktreeService } from '../services/worktree-service.js'
 import { createTabRouter } from '../routes/tab.js'
 import { createLayoutRouter } from '../routes/layout.js'
 
@@ -37,7 +38,8 @@ describeServer('tabコマンドAPI', () => {
 
     const app = express()
     app.use(express.json())
-    app.use('/api/tab', createTabRouter(store, ptyManager, sshManager))
+    const worktreeService = new WorktreeService()
+    app.use('/api/tab', createTabRouter(store, ptyManager, sshManager, worktreeService))
     app.use('/api/layout', createLayoutRouter(store))
 
     server = createServer(app)

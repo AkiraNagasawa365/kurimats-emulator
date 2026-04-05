@@ -7,12 +7,29 @@ import { v4 as uuidv4 } from 'uuid'
 import { loadBoardLayoutState, loadLegacyLayout, saveBoardLayoutState, saveLegacyLayout } from './session-store-layout.js'
 import { mapCmuxWorkspaceRow, mapFeedbackRow, mapProjectRow, mapSessionRow, mapSshPresetRow, mapStartupTemplateRow } from './session-store-mappers.js'
 import { runSessionStoreMigrations } from './session-store-migrations.js'
+import { findFirstLeafId } from '../utils/pane-tree.js'
 
-const DEFAULT_DB_PATH = path.join(homedir(), '.kurimats', 'sessions.db')
+/**
+ * PANE_NUMBERに応じたDBパスを算出
+ * - 未設定（本番Electron）: sessions.db
+ * - 0（develop）: sessions-dev.db
+ * - N（paneN）: sessions-paneN.db
+ */
+function getDefaultDbPath(): string {
+  const baseDir = path.join(homedir(), '.kurimats')
+  const paneNumber = process.env.PANE_NUMBER != null
+    ? parseInt(process.env.PANE_NUMBER, 10)
+    : null
+  if (paneNumber === null) return path.join(baseDir, 'sessions.db')
+  if (paneNumber === 0) return path.join(baseDir, 'sessions-dev.db')
+  return path.join(baseDir, `sessions-pane${paneNumber}.db`)
+}
+
+const DEFAULT_DB_PATH = getDefaultDbPath()
 
 /**
  * SQLiteベースのセッション永続化
- * @param dbPath DBファイルパス（省略時はdata/sessions.db、':memory:'でインメモリ）
+ * @param dbPath DBファイルパス（省略時はPANE_NUMBERに応じたDB、':memory:'でインメモリ）
  */
 export class SessionStore {
   private db: Database.Database
@@ -39,7 +56,7 @@ export class SessionStore {
   /**
    * セッション作成
    */
-  create(params: Omit<CreateSessionParams, 'sshHost'> & {
+  create(params: Omit<CreateSessionParams, 'sshHost' | 'workspaceId'> & {
     worktreePath?: string | null
     projectId?: string | null
     sshHost?: string | null
@@ -100,6 +117,14 @@ export class SessionStore {
   updateStatus(id: string, status: Session['status']): void {
     this.db.prepare('UPDATE sessions SET status = ?, last_active_at = ? WHERE id = ?')
       .run(status, Date.now(), id)
+  }
+
+  /**
+   * セッションのブランチ更新
+   */
+  updateBranch(id: string, branch: string | null): void {
+    this.db.prepare('UPDATE sessions SET branch = ?, last_active_at = ? WHERE id = ?')
+      .run(branch, Date.now(), id)
   }
 
   /**
@@ -206,7 +231,6 @@ export class SessionStore {
 
   // ==================== レイアウト（旧: Phase 8で削除予定） ====================
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   saveLayout(state: LayoutState): void {
     saveLegacyLayout(this.db, state)
   }
@@ -214,7 +238,6 @@ export class SessionStore {
   /**
    * レイアウト取得
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getLayout(): LayoutState | null {
     return loadLegacyLayout(this.db)
   }
@@ -224,7 +247,6 @@ export class SessionStore {
   /**
    * ボードレイアウト保存
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   saveBoardLayout(state: BoardLayoutState): void {
     saveBoardLayoutState(this.db, state)
   }
@@ -232,7 +254,6 @@ export class SessionStore {
   /**
    * ボードレイアウト取得
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getBoardLayout(): BoardLayoutState | null {
     return loadBoardLayoutState(this.db)
   }
@@ -386,7 +407,7 @@ export class SessionStore {
   /** ワークスペース作成 */
   createCmuxWorkspace(params: CreateCmuxWorkspaceParams, initialPaneTree: PaneNode, id = uuidv4()): CmuxWorkspace {
     const now = Date.now()
-    const activePaneId = this.findFirstLeafId(initialPaneTree)
+    const activePaneId = findFirstLeafId(initialPaneTree)
 
     const workspace: CmuxWorkspace = {
       id,
@@ -456,13 +477,6 @@ export class SessionStore {
       return this.db.prepare('DELETE FROM cmux_workspaces WHERE id = ?').run(workspaceId).changes > 0
     })
     return tx(id)
-  }
-
-  /** ペインツリーの最初のリーフIDを取得 */
-  private findFirstLeafId(node: PaneNode): string {
-    if (node.kind === 'leaf') return node.id
-    const firstChild = node.children[0]
-    return firstChild ? this.findFirstLeafId(firstChild) : node.id
   }
 
   close(): void {
