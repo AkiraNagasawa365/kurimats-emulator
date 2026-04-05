@@ -27,7 +27,7 @@
     "files": [
       "dist/**/*",
       "resources/**/*",
-      "node_modules/**/*"
+      "!node_modules"
     ],
     "extraResources": [
       {
