@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { loadBoardLayoutState, loadLegacyLayout, saveBoardLayoutState, saveLegacyLayout } from './session-store-layout.js'
 import { mapCmuxWorkspaceRow, mapFeedbackRow, mapProjectRow, mapSessionRow, mapSshPresetRow, mapStartupTemplateRow } from './session-store-mappers.js'
 import { runSessionStoreMigrations } from './session-store-migrations.js'
+import { findFirstLeafId } from '../utils/pane-tree.js'
 
 const DEFAULT_DB_PATH = path.join(homedir(), '.kurimats', 'sessions.db')
 
@@ -214,7 +215,6 @@ export class SessionStore {
 
   // ==================== レイアウト（旧: Phase 8で削除予定） ====================
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   saveLayout(state: LayoutState): void {
     saveLegacyLayout(this.db, state)
   }
@@ -222,7 +222,6 @@ export class SessionStore {
   /**
    * レイアウト取得
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getLayout(): LayoutState | null {
     return loadLegacyLayout(this.db)
   }
@@ -232,7 +231,6 @@ export class SessionStore {
   /**
    * ボードレイアウト保存
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   saveBoardLayout(state: BoardLayoutState): void {
     saveBoardLayoutState(this.db, state)
   }
@@ -240,7 +238,6 @@ export class SessionStore {
   /**
    * ボードレイアウト取得
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getBoardLayout(): BoardLayoutState | null {
     return loadBoardLayoutState(this.db)
   }
@@ -394,7 +391,7 @@ export class SessionStore {
   /** ワークスペース作成 */
   createCmuxWorkspace(params: CreateCmuxWorkspaceParams, initialPaneTree: PaneNode, id = uuidv4()): CmuxWorkspace {
     const now = Date.now()
-    const activePaneId = this.findFirstLeafId(initialPaneTree)
+    const activePaneId = findFirstLeafId(initialPaneTree)
 
     const workspace: CmuxWorkspace = {
       id,
@@ -464,13 +461,6 @@ export class SessionStore {
       return this.db.prepare('DELETE FROM cmux_workspaces WHERE id = ?').run(workspaceId).changes > 0
     })
     return tx(id)
-  }
-
-  /** ペインツリーの最初のリーフIDを取得 */
-  private findFirstLeafId(node: PaneNode): string {
-    if (node.kind === 'leaf') return node.id
-    const firstChild = node.children[0]
-    return firstChild ? this.findFirstLeafId(firstChild) : node.id
   }
 
   close(): void {
