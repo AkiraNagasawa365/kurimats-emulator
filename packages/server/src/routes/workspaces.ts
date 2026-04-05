@@ -291,6 +291,64 @@ export function createWorkspacesRouter(
     }
   })
 
+  // ペイン閉じ（セッション/PTY/worktreeも連動削除）
+  router.post('/:id/close-pane', (req, res) => {
+    const { paneId } = req.body as { paneId: string }
+    if (!paneId) {
+      res.status(400).json({ error: 'paneId は必須です' })
+      return
+    }
+
+    const workspace = store.getCmuxWorkspace(req.params.id)
+    if (!workspace) {
+      res.status(404).json({ error: 'ワークスペースが見つかりません' })
+      return
+    }
+
+    // 最後のペインは閉じない
+    if (countLeaves(workspace.paneTree) <= 1) {
+      res.status(400).json({ error: '最後のペインは閉じられません' })
+      return
+    }
+
+    // 閉じるペインからセッションIDを取得
+    const targetLeaf = findLeaf(workspace.paneTree, paneId)
+    if (!targetLeaf) {
+      res.status(400).json({ error: '指定されたペインが見つかりません' })
+      return
+    }
+
+    // ターミナルサーフェスに紐づくセッションIDを取得
+    const terminalSurface = targetLeaf.surfaces.find(s => s.type === 'terminal')
+    const sessionId = terminalSurface?.target ?? null
+
+    // ペインツリーからリーフを削除
+    const newTree = closeLeafInTree(workspace.paneTree, paneId)
+    if (!newTree) {
+      res.status(500).json({ error: 'ペインツリー更新に失敗しました' })
+      return
+    }
+
+    const rebalanced = rebalanceRatios(newTree)
+    const newActivePaneId = workspace.activePaneId === paneId
+      ? findFirstLeafId(rebalanced)
+      : workspace.activePaneId
+
+    // DB更新
+    store.updateCmuxPaneTree(workspace.id, rebalanced, newActivePaneId)
+
+    // セッション/PTY/worktreeをクリーンアップ
+    if (sessionId) {
+      cleanupSession(store, ptyManager, sshManager, worktreeService, sessionId)
+    }
+
+    res.json({
+      paneTree: rebalanced,
+      activePaneId: newActivePaneId,
+      deletedSessionId: sessionId,
+    })
+  })
+
   // ワークスペース名変更
   router.patch('/:id', (req, res) => {
     const { name } = req.body
@@ -327,17 +385,76 @@ export function createWorkspacesRouter(
     res.json({ ok: true })
   })
 
-  // ワークスペース削除
+  // ワークスペース削除（全セッション/PTY/worktreeも連動クリーンアップ）
   router.delete('/:id', (req, res) => {
-    const deleted = store.deleteCmuxWorkspace(req.params.id)
-    if (!deleted) {
+    const workspace = store.getCmuxWorkspace(req.params.id)
+    if (!workspace) {
       res.status(404).json({ error: 'ワークスペースが見つかりません' })
       return
     }
-    res.json({ ok: true })
+
+    // ペインツリー内の全セッションをクリーンアップ
+    const sessionIds = collectSessionIds(workspace.paneTree)
+    for (const sessionId of sessionIds) {
+      cleanupSession(store, ptyManager, sshManager, worktreeService, sessionId)
+    }
+
+    const deleted = store.deleteCmuxWorkspace(req.params.id)
+    if (!deleted) {
+      res.status(404).json({ error: 'ワークスペース削除に失敗しました' })
+      return
+    }
+    res.json({ ok: true, deletedSessionIds: sessionIds })
   })
 
   return router
+}
+
+// ========== セッションクリーンアップ ==========
+
+/** セッションのPTY/SSH kill + worktree削除 + DB削除 */
+function cleanupSession(
+  store: SessionStore,
+  ptyManager: PtyManager,
+  sshManager: SshManager,
+  worktreeService: WorktreeService,
+  sessionId: string,
+): void {
+  const session = store.getById(sessionId)
+  if (!session) return
+
+  // PTY/SSH kill
+  if (sshManager.hasSession(sessionId)) {
+    sshManager.kill(sessionId)
+  } else {
+    ptyManager.kill(sessionId)
+  }
+
+  // worktree削除
+  if (session.worktreePath && session.repoPath) {
+    try {
+      worktreeService.remove(session.repoPath, session.worktreePath)
+      console.log(`🗑️ worktree削除: ${session.worktreePath}`)
+    } catch (e) {
+      console.warn(`⚠️ worktree削除エラー (無視): ${e}`)
+    }
+  }
+
+  // DB削除
+  store.delete(sessionId)
+}
+
+/** ペインツリーから全ターミナルサーフェスのセッションIDを収集 */
+function collectSessionIds(node: PaneNode): string[] {
+  if (node.kind === 'leaf') {
+    return node.surfaces
+      .filter(s => s.type === 'terminal')
+      .map(s => s.target)
+  }
+  return [
+    ...collectSessionIds(node.children[0]),
+    ...collectSessionIds(node.children[1]),
+  ]
 }
 
 // ========== ペインツリー操作ヘルパー ==========
@@ -364,6 +481,44 @@ function rebalanceRatios(tree: PaneNode): PaneNode {
 function countLeaves(node: PaneNode): number {
   if (node.kind === 'leaf') return 1
   return countLeaves(node.children[0]) + countLeaves(node.children[1])
+}
+
+/** IDでリーフを検索 */
+function findLeaf(node: PaneNode, leafId: string): PaneLeaf | null {
+  if (node.kind === 'leaf') return node.id === leafId ? node : null
+  return findLeaf(node.children[0], leafId) ?? findLeaf(node.children[1], leafId)
+}
+
+/** リーフを閉じて兄弟を昇格（closeLeafと同等のサーバー側実装） */
+function closeLeafInTree(tree: PaneNode, leafId: string): PaneNode | null {
+  if (tree.kind === 'leaf') {
+    return tree.id === leafId ? null : tree
+  }
+
+  const [first, second] = tree.children
+
+  if (first.id === leafId) return second.kind === 'leaf' ? { ...second, ratio: 0.5 } : second
+  if (second.id === leafId) return first.kind === 'leaf' ? { ...first, ratio: 0.5 } : first
+
+  const newFirst = closeLeafInTree(first, leafId)
+  if (newFirst !== first) {
+    if (newFirst === null) return second.kind === 'leaf' ? { ...second, ratio: 0.5 } : second
+    return { ...tree, children: [newFirst, second] }
+  }
+
+  const newSecond = closeLeafInTree(second, leafId)
+  if (newSecond !== second) {
+    if (newSecond === null) return first.kind === 'leaf' ? { ...first, ratio: 0.5 } : first
+    return { ...tree, children: [first, newSecond] }
+  }
+
+  return tree
+}
+
+/** ツリーの最初のリーフIDを取得 */
+function findFirstLeafId(node: PaneNode): string {
+  if (node.kind === 'leaf') return node.id
+  return findFirstLeafId(node.children[0])
 }
 
 function containsLeafId(node: PaneNode, leafId: string): boolean {

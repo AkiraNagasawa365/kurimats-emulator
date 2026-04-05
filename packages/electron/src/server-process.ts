@@ -3,7 +3,7 @@
  * packages/server をバックグラウンドで起動・停止する
  */
 
-import { ChildProcess } from 'child_process'
+import { ChildProcess, execSync } from 'child_process'
 import * as path from 'path'
 
 /** サーバープロセスの状態 */
@@ -22,10 +22,14 @@ export class ServerProcessManager {
   private _status: ServerStatus = 'stopped'
   private spawnFn: SpawnFunction
   private serverDir: string
+  private clientDir: string | null
+  private isDev: boolean
 
-  constructor(options: { spawnFn: SpawnFunction; serverDir?: string }) {
+  constructor(options: { spawnFn: SpawnFunction; serverDir?: string; clientDir?: string; isDev?: boolean }) {
     this.spawnFn = options.spawnFn
     this.serverDir = options.serverDir || path.resolve(__dirname, '../../server')
+    this.clientDir = options.clientDir || null
+    this.isDev = options.isDev ?? true
   }
 
   /** 現在の状態を取得 */
@@ -52,13 +56,42 @@ export class ServerProcessManager {
     console.log(`サーバーを起動中... (ポート: ${port})`)
 
     try {
+      const command = this.isDev ? 'npx' : 'node'
+      const args = this.isDev ? ['tsx', 'watch', 'src/index.ts'] : ['index.js']
+
+      // 本番時はクライアント静的ファイルのパスを渡す
+      // Finder/Launchpadから起動するとPATHにHomebrew等が含まれないため補完する
+      const nodePaths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin']
+      const currentPath = process.env.PATH || ''
+      const augmentedPath = [...nodePaths, currentPath].join(':')
+
+      // SSH_AUTH_SOCKがない場合はlaunchctlから取得（Finder起動時に必要）
+      let sshAuthSock = process.env.SSH_AUTH_SOCK
+      if (!sshAuthSock) {
+        try {
+          sshAuthSock = execSync('launchctl getenv SSH_AUTH_SOCK', { encoding: 'utf-8' }).trim()
+        } catch {
+          // 取得失敗時は無視
+        }
+      }
+
+      const env: Record<string, string | undefined> = {
+        ...process.env,
+        PATH: augmentedPath,
+        PORT: String(port),
+        ...(sshAuthSock ? { SSH_AUTH_SOCK: sshAuthSock } : {}),
+      }
+      if (!this.isDev && this.clientDir) {
+        env.STATIC_DIR = this.clientDir
+      }
+
       this.process = this.spawnFn(
-        'npx',
-        ['tsx', 'watch', 'src/index.ts'],
+        command,
+        args,
         {
           cwd: this.serverDir,
           stdio: 'pipe',
-          env: { ...process.env, PORT: String(port) },
+          env,
         }
       )
 
@@ -129,10 +162,10 @@ export class ServerProcessManager {
  * サーバーディレクトリのパスを解決する
  * 開発時とビルド後で異なるパスに対応
  */
-export function resolveServerDir(isDev: boolean, appPath: string): string {
+export function resolveServerDir(isDev: boolean, resourcesPath: string): string {
   if (isDev) {
     return path.resolve(__dirname, '../../server')
   }
-  // ビルド後はアプリバンドル内のパスを使用
-  return path.join(appPath, 'packages', 'server')
+  // ビルド後はextraResources内のサーバーを使用
+  return path.join(resourcesPath, 'app-content', 'server')
 }

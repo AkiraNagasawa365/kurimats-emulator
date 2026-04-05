@@ -156,6 +156,7 @@ export function splitLeaf(
     const split: PaneSplit = {
       kind: 'split',
       id: generateSplitId(),
+      ratio: 0.5,
       direction,
       children: [originalLeaf, newLeaf],
     }
@@ -172,20 +173,25 @@ export function closeLeaf(tree: PaneNode, leafId: string): PaneNode | null {
 
   const [first, second] = tree.children
 
-  // 直接の子が対象なら兄弟を返す
-  if (first.id === leafId) return second
-  if (second.id === leafId) return first
+  // 直接の子が対象なら兄弟を返す（leafならratioを0.5にリセット）
+  if (first.id === leafId) return second.kind === 'leaf' ? { ...second, ratio: 0.5 } : second
+  if (second.id === leafId) return first.kind === 'leaf' ? { ...first, ratio: 0.5 } : first
 
   // 再帰的に探索
   const newFirst = closeLeaf(first, leafId)
   if (newFirst !== first) {
-    // first側で変更があった
-    return newFirst === null ? second : { ...tree, children: [newFirst, second] }
+    if (newFirst === null) return second.kind === 'leaf' ? { ...second, ratio: 0.5 } : second
+    const resetFirst = newFirst.kind === 'leaf' ? { ...newFirst, ratio: 0.5 } : newFirst
+    const resetSecond = second.kind === 'leaf' ? { ...second, ratio: 0.5 } : second
+    return { ...tree, children: [resetFirst, resetSecond], ratio: 0.5 }
   }
 
   const newSecond = closeLeaf(second, leafId)
   if (newSecond !== second) {
-    return newSecond === null ? first : { ...tree, children: [first, newSecond] }
+    if (newSecond === null) return first.kind === 'leaf' ? { ...first, ratio: 0.5 } : first
+    const resetFirst = first.kind === 'leaf' ? { ...first, ratio: 0.5 } : first
+    const resetSecond = newSecond.kind === 'leaf' ? { ...newSecond, ratio: 0.5 } : newSecond
+    return { ...tree, children: [resetFirst, resetSecond], ratio: 0.5 }
   }
 
   return tree

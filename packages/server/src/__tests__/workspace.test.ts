@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SessionStore } from '../services/session-store'
-import type { PaneLeaf } from '@kurimats/shared'
+import type { PaneLeaf, PaneSplit, PaneNode } from '@kurimats/shared'
 
 /** テスト用のデフォルトペインツリー */
 function defaultPaneTree(): PaneLeaf {
@@ -144,6 +144,86 @@ describe('cmuxワークスペース', () => {
 
     store.deleteCmuxWorkspace(ws.id)
     expect(store.getById(session.id)!.workspaceId).toBeNull()
+  })
+})
+
+describe('ペイン閉じ時のセッション1:1整合��', () => {
+  let store: SessionStore
+
+  beforeEach(() => {
+    store = new SessionStore(':memory:')
+  })
+
+  afterEach(() => {
+    store.close()
+  })
+
+  it('ペインツリー更新でリーフを削除してもセッションはDB上に残る（APIで明示削除が必要）', () => {
+    const ws = store.createCmuxWorkspace({ name: 'WS', repoPath: '/tmp/test' }, defaultPaneTree())
+    const session = store.create({ name: 'sess', repoPath: '/tmp/test', workspaceId: ws.id })
+
+    // ペインツリーに2リーフを持つスプリットを設定
+    const leaf1: PaneLeaf = {
+      kind: 'leaf',
+      id: 'pane-1',
+      surfaces: [{ id: 's1', type: 'terminal', target: session.id, label: 'Term 1' }],
+      activeSurfaceIndex: 0,
+      ratio: 0.5,
+    }
+    const leaf2: PaneLeaf = {
+      kind: 'leaf',
+      id: 'pane-2',
+      surfaces: [],
+      activeSurfaceIndex: 0,
+      ratio: 0.5,
+    }
+    const splitTree: PaneSplit = {
+      kind: 'split',
+      id: 'split-1',
+      direction: 'vertical',
+      ratio: 0.5,
+      children: [leaf1, leaf2],
+    }
+
+    store.updateCmuxPaneTree(ws.id, splitTree, 'pane-1')
+
+    // pane-2を閉じてpane-1だけ残す
+    store.updateCmuxPaneTree(ws.id, leaf1, 'pane-1')
+
+    // セッションはDBに残っている（close-pane APIで明示削除する設計）
+    expect(store.getById(session.id)).not.toBeNull()
+  })
+
+  it('ワークスペース削除後もセッション自体はDBに残る（workspace_idがnull化）', () => {
+    const ws = store.createCmuxWorkspace({ name: 'WS', repoPath: '/tmp/test' }, defaultPaneTree())
+    const session = store.create({ name: 'sess', repoPath: '/tmp/test', workspaceId: ws.id })
+
+    store.deleteCmuxWorkspace(ws.id)
+
+    // セッションは残っている（PTY/worktree削除はルーター層の責務）
+    const remaining = store.getById(session.id)
+    expect(remaining).not.toBeNull()
+    expect(remaining!.workspaceId).toBeNull()
+  })
+
+  it('セッションがターミナルサーフェスのtargetとして正しく紐づく', () => {
+    const ws = store.createCmuxWorkspace({ name: 'WS', repoPath: '/tmp/test' }, defaultPaneTree())
+    const session = store.create({ name: 'sess', repoPath: '/tmp/test', workspaceId: ws.id })
+
+    const leafWithTerminal: PaneLeaf = {
+      kind: 'leaf',
+      id: 'pane-1',
+      surfaces: [{ id: 's1', type: 'terminal', target: session.id, label: session.name }],
+      activeSurfaceIndex: 0,
+      ratio: 0.5,
+    }
+
+    store.updateCmuxPaneTree(ws.id, leafWithTerminal, 'pane-1')
+
+    const updated = store.getCmuxWorkspace(ws.id)!
+    const tree = updated.paneTree as PaneLeaf
+    expect(tree.surfaces[0].target).toBe(session.id)
+    expect(tree.surfaces[0].type).toBe('terminal')
   })
 })
 

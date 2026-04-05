@@ -188,6 +188,57 @@ describe('ServerProcessManager', () => {
     })
   })
 
+  describe('本番モード', () => {
+    function createProdManager(clientDir?: string) {
+      return new ServerProcessManager({
+        spawnFn: mockSpawn as unknown as SpawnFunction,
+        serverDir: '/app/Resources/app-content/server',
+        clientDir: clientDir || '/app/Resources/app-content/client',
+        isDev: false,
+      })
+    }
+
+    it('本番時はnodeコマンドでindex.jsを実行する', () => {
+      const manager = createProdManager()
+      manager.start(13001)
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'node',
+        ['index.js'],
+        expect.objectContaining({
+          cwd: '/app/Resources/app-content/server',
+          env: expect.objectContaining({ PORT: '13001' }),
+        })
+      )
+    })
+
+    it('本番時はSTATIC_DIR環境変数が設定される', () => {
+      const manager = createProdManager('/app/Resources/app-content/client')
+      manager.start(13001)
+
+      const envArg = mockSpawn.mock.calls[0][2].env
+      expect(envArg.STATIC_DIR).toBe('/app/Resources/app-content/client')
+    })
+
+    it('PATHにHomebrew等のパスが補完される', () => {
+      const manager = createProdManager()
+      manager.start(13001)
+
+      const envArg = mockSpawn.mock.calls[0][2].env
+      expect(envArg.PATH).toContain('/opt/homebrew/bin')
+      expect(envArg.PATH).toContain('/usr/local/bin')
+    })
+
+    it('SSH_AUTH_SOCKが環境変数に含まれる', () => {
+      const manager = createProdManager()
+      manager.start(13001)
+
+      const envArg = mockSpawn.mock.calls[0][2].env
+      // process.envにSSH_AUTH_SOCKがあればそれが渡される、なければlaunchctl経由
+      expect(envArg).toHaveProperty('SSH_AUTH_SOCK')
+    })
+  })
+
   describe('spawnFnエラーハンドリング', () => {
     it('spawnFnが例外を投げた場合、状態がerrorになる', () => {
       const throwingSpawn = vi.fn(() => {
@@ -211,8 +262,8 @@ describe('resolveServerDir', () => {
     expect(result).toContain('server')
   })
 
-  it('ビルドモードではappPath配下のパスを返す', () => {
-    const result = resolveServerDir(false, '/Applications/kurimats.app')
-    expect(result).toBe('/Applications/kurimats.app/packages/server')
+  it('ビルドモードではresourcesPath配下のパスを返す', () => {
+    const result = resolveServerDir(false, '/Applications/kurimats.app/Contents/Resources')
+    expect(result).toBe('/Applications/kurimats.app/Contents/Resources/app-content/server')
   })
 })

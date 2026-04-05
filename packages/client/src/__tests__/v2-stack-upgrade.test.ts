@@ -60,7 +60,7 @@ describe('v2 スタック最新化', () => {
   describe('Electron 41', () => {
     it('electron が v41 に更新されている', () => {
       const version = electronPkg.devDependencies.electron
-      expect(version).toMatch(/^\^41/)
+      expect(version).toMatch(/^[\^~]?41/)
     })
   })
 })

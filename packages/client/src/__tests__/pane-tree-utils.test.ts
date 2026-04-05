@@ -23,8 +23,8 @@ function makeLeaf(id: string, ratio = 0.5, surfaces: Surface[] = []): PaneLeaf {
   return { kind: 'leaf', id, surfaces, activeSurfaceIndex: 0, ratio }
 }
 
-function makeSplit(id: string, direction: 'horizontal' | 'vertical', children: [PaneNode, PaneNode]): PaneSplit {
-  return { kind: 'split', id, direction, children }
+function makeSplit(id: string, direction: 'horizontal' | 'vertical', children: [PaneNode, PaneNode], ratio = 0.5): PaneSplit {
+  return { kind: 'split', id, direction, children, ratio }
 }
 
 function makeTerminalSurface(id: string, sessionId: string): Surface {
@@ -186,6 +186,20 @@ describe('closeLeaf', () => {
     if (result.kind === 'split') {
       expect(result.children[0].id).toBe('leaf-A')
       expect(result.children[1].id).toBe('leaf-C')
+    }
+  })
+
+  it('リーフ削除後にratioが均等化される', () => {
+    const result = closeLeaf(splitRoot, 'leaf-B')!
+    expect(result.kind).toBe('split')
+    if (result.kind === 'split') {
+      expect(result.ratio).toBe(0.5)
+      // 昇格した子leafのratioも0.5にリセット
+      for (const child of result.children) {
+        if (child.kind === 'leaf') {
+          expect(child.ratio).toBe(0.5)
+        }
+      }
     }
   })
 

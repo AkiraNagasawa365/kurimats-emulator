@@ -88,6 +88,21 @@ app.use('/api/ssh', createSshRouter(sshManager, sessionStore))
 app.use('/api/feedback', createFeedbackRouter(sessionStore))
 app.use('/api/workspaces', createWorkspacesRouter(sessionStore, ptyManager, sshManager, worktreeService))
 
+// 本番時: 静的ファイル配信（Electronビルド or スタンドアロン）
+const STATIC_DIR = process.env.STATIC_DIR
+if (STATIC_DIR) {
+  const { resolve } = await import('path')
+  const staticPath = resolve(STATIC_DIR)
+  app.use(express.static(staticPath))
+  // SPA フォールバック: API/WS以外のリクエストをindex.htmlに転送
+  app.get('/{*path}', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/ws')) {
+      return next()
+    }
+    res.sendFile(resolve(staticPath, 'index.html'))
+  })
+}
+
 // ヘルスチェック
 app.get('/api/health', (_req, res) => {
   res.json({

@@ -423,8 +423,9 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   },
 }))
 
-if (import.meta.vitest) {
-  import.meta.vitest.afterEach(() => {
+// vitest のインラインテスト用クリーンアップ
+if ((import.meta as any).vitest) {
+  ;(import.meta as any).vitest.afterEach(() => {
     clearLayoutPersistenceTimers()
   })
 }

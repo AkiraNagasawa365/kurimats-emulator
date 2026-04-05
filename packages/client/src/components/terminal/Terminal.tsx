@@ -59,7 +59,9 @@ export function TerminalComponent({ sessionId, isActive, onFocus }: Props) {
     })
 
     const fitAddon = new FitAddon()
-    const webLinksAddon = new WebLinksAddon()
+    const webLinksAddon = new WebLinksAddon((_event, uri) => {
+      window.open(uri, '_blank')
+    })
     term.loadAddon(fitAddon)
     term.loadAddon(webLinksAddon)
     fitAddonRef.current = fitAddon

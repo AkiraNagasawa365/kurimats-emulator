@@ -128,6 +128,19 @@ export interface SplitPaneResponse {
   newSession: Session
 }
 
+/** ペイン閉じリクエスト */
+export interface ClosePaneRequest {
+  paneId: string
+}
+
+/** ペイン閉じレスポンス */
+export interface ClosePaneResponse {
+  paneTree: PaneNode
+  activePaneId: string
+  /** 削除されたセッションID（ペインにターミナルサーフェスがあった場合） */
+  deletedSessionId: string | null
+}
+
 /** ペイン通知情報 */
 export interface PaneNotification {
   paneId: string
