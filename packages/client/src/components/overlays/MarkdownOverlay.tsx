@@ -38,13 +38,36 @@ export function MarkdownOverlay({ onClose, filePath: initialPath, fullScreen }: 
     const activeSession = activePanel?.sessionId
       ? sessions.find(s => s.id === activePanel.sessionId)
       : sessions[0]
-    const root = activeSession?.worktreePath || activeSession?.repoPath
+    // repoPath（元リポジトリ）を優先。worktreePathはREADME.mdが存在しない場合がある
+    const root = activeSession?.repoPath || activeSession?.worktreePath
     if (root) {
-      const readmePath = `${root}/README.md`
-      setFilePath(readmePath)
-      loadFile(readmePath)
+      // README.md → CLAUDE.md の順で試行
+      const candidates = [`${root}/README.md`, `${root}/CLAUDE.md`]
+      tryLoadFirst(candidates)
     }
   }, [initialPath, sessions, panels, activePanelIndex])
+
+  // 候補パスを順に試行し、最初に見つかったファイルを読み込む
+  const tryLoadFirst = useCallback(async (candidates: string[]) => {
+    for (const path of candidates) {
+      try {
+        setLoading(true)
+        const data = await filesApi.content(path)
+        setFilePath(path)
+        setContent(data.content)
+        setLoading(false)
+        setError(null)
+        return
+      } catch {
+        // 次の候補を試す
+      }
+    }
+    // 全候補が見つからない場合は空状態
+    setFilePath(candidates[0] || '')
+    setContent('')
+    setLoading(false)
+    setError(null)
+  }, [])
 
   const loadFile = useCallback((path: string) => {
     if (!path) return
