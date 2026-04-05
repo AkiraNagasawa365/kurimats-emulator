@@ -17,8 +17,8 @@ export function PaneRenderer({ node }: PaneRendererProps) {
 
   return (
     <PaneSplitView split={node}>
-      <PaneRenderer node={node.children[0]} />
-      <PaneRenderer node={node.children[1]} />
+      <PaneRenderer key={node.children[0].id} node={node.children[0]} />
+      <PaneRenderer key={node.children[1].id} node={node.children[1]} />
     </PaneSplitView>
   )
 }

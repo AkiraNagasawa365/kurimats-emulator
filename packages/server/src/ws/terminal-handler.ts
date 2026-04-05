@@ -4,9 +4,13 @@ import type { PtyManager } from '../services/pty-manager.js'
 import type { SshManager } from '../services/ssh-manager.js'
 import type { ClientTerminalMessage, ServerTerminalMessage } from '@kurimats/shared'
 
+/** Heartbeat間隔（30秒） */
+const HEARTBEAT_INTERVAL_MS = 30_000
+
 /**
  * ターミナルWebSocketハンドラー
  * xterm.js ↔ PTY/SSH をWebSocketで橋渡しする
+ * Heartbeat (ping/pong) で死んだ接続を早期検出する
  */
 export function setupTerminalWs(
   wss: WebSocketServer,
@@ -15,6 +19,8 @@ export function setupTerminalWs(
 ): void {
   // セッションID → 接続中のWebSocketクライアント群
   const clients = new Map<string, Set<WebSocket>>()
+  // 各WebSocketの生存フラグ
+  const aliveMap = new WeakMap<WebSocket, boolean>()
 
   /**
    * セッションクライアントへメッセージ送信
@@ -58,6 +64,36 @@ export function setupTerminalWs(
     sendToClients(sessionId, { type: 'exit', code })
   })
 
+  // Heartbeat: 30秒ごとにpingを送り、応答がない接続を切断
+  const heartbeatInterval = setInterval(() => {
+    for (const [sessionId, sessionClients] of clients) {
+      for (const ws of sessionClients) {
+        if (!aliveMap.get(ws)) {
+          // 前回のpingに応答がなかった → 死んだ接続を切断
+          sessionClients.delete(ws)
+          ws.terminate()
+          continue
+        }
+        // 次のpingを送信
+        aliveMap.set(ws, false)
+        try {
+          ws.ping()
+        } catch {
+          sessionClients.delete(ws)
+          ws.terminate()
+        }
+      }
+      if (sessionClients.size === 0) {
+        clients.delete(sessionId)
+      }
+    }
+  }, HEARTBEAT_INTERVAL_MS)
+
+  // サーバー終了時にheartbeatを停止
+  wss.on('close', () => {
+    clearInterval(heartbeatInterval)
+  })
+
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     // URLからセッションIDを抽出: /ws/terminal/:sessionId
     const url = new URL(req.url || '', `http://${req.headers.host}`)
@@ -77,6 +113,14 @@ export function setupTerminalWs(
       clients.set(sessionId, new Set())
     }
     clients.get(sessionId)!.add(ws)
+
+    // Heartbeat: 初期化（生存フラグをtrueに設定）
+    aliveMap.set(ws, true)
+
+    // pong応答で生存フラグを更新
+    ws.on('pong', () => {
+      aliveMap.set(ws, true)
+    })
 
     // 接続確認メッセージ
     const connMsg: ServerTerminalMessage = { type: 'connected', sessionId }
