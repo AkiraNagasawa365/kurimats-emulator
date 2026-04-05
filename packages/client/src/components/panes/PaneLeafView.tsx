@@ -26,11 +26,6 @@ export function PaneLeafView({ leaf }: PaneLeafViewProps) {
     return ws
   })
 
-  const session = useSessionStore(s => {
-    const termSurface = leaf.surfaces.find(sf => sf.type === 'terminal')
-    return termSurface ? s.sessions.find(sess => sess.id === termSurface.target) : undefined
-  })
-
   const isActive = activeWorkspace?.activePaneId === leaf.id
   const hasAttention = attentionRings.get(leaf.id) ?? false
 
