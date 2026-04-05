@@ -177,6 +177,40 @@ describeServer('セッションAPI', () => {
     expect(updated?.status).toBe('disconnected')
   })
 
+  it('セッション作成時にclaude --continueで起動される', async () => {
+    const res = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'continue-test', repoPath: '/tmp', useWorktree: false }),
+    })
+    expect(res.status).toBe(201)
+
+    // child_processモードではclaude --continueが直接spawnされる
+    expect(ptyManager.spawn).toHaveBeenCalledWith(
+      expect.any(String), '/tmp', 120, 30, 'claude', ['--continue'],
+    )
+  })
+
+  it('再接続時にclaude --continueで起動される', async () => {
+    const createRes = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'reconnect-continue', repoPath: '/tmp', useWorktree: false }),
+    })
+    const session = await createRes.json()
+    store.updateStatus(session.id, 'disconnected')
+    ptyManager.kill(session.id)
+
+    // spawnのモックをリセットして再接続時の呼び出しを確認
+    vi.mocked(ptyManager.spawn).mockClear()
+
+    await fetch(`${baseUrl}/api/sessions/${session.id}/reconnect`, { method: 'POST' })
+
+    expect(ptyManager.spawn).toHaveBeenCalledWith(
+      session.id, '/tmp', 120, 30, 'claude', ['--continue'],
+    )
+  })
+
   it('セッションを削除できる', async () => {
     // 作成
     const createRes = await fetch(`${baseUrl}/api/sessions`, {

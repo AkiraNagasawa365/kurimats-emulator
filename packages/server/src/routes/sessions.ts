@@ -6,9 +6,10 @@ import type { WorktreeService } from '../services/worktree-service.js'
 import type { CreateSessionParams } from '@kurimats/shared'
 
 /**
- * シェルの初期化完了を検出してclaudeコマンドを送信する
+ * シェルの初期化完了を検出してclaude --continueコマンドを送信する
  * シェルのプロンプト出力（$ や % や > の末尾文字）を監視し、
- * 表示されたらclaudeを実行する。最大5秒のタイムアウト付き。
+ * 表示されたらclaude --continueを実行する。最大5秒のタイムアウト付き。
+ * --continueにより、前回の会話履歴がある場合は自動復元される。
  */
 export function waitForShellReady(
   sessionId: string,
@@ -32,9 +33,9 @@ export function waitForShellReady(
   const launchClaude = () => {
     cleanup()
     if (isRemote) {
-      sshManager.write(sessionId, 'claude\r')
+      sshManager.write(sessionId, 'claude --continue\r')
     } else {
-      ptyManager.write(sessionId, 'claude\r')
+      ptyManager.write(sessionId, 'claude --continue\r')
     }
   }
 
@@ -62,7 +63,7 @@ export function waitForShellReady(
   timeoutId = setTimeout(() => {
     if (!resolved) {
       resolved = true
-      console.warn(`⚠️ セッション ${sessionId.slice(0, 8)}... のシェルプロンプト検出タイムアウト。claudeを強制送信します。`)
+      console.warn(`⚠️ セッション ${sessionId.slice(0, 8)}... のシェルプロンプト検出タイムアウト。claude --continueを強制送信します。`)
       launchClaude()
     }
   }, 5000)
@@ -137,8 +138,8 @@ export function createSessionsRouter(
           await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
           waitForShellReady(session.id, ptyManager, sshManager, false)
         } else {
-          // child_processモード（python3 pty.spawn）: claudeを直接起動
-          await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', [])
+          // child_processモード（python3 pty.spawn）: claude --continueを直接起動
+          await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--continue'])
         }
       }
     } catch (e) {
@@ -232,7 +233,7 @@ export function createSessionsRouter(
           await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
           waitForShellReady(session.id, ptyManager, sshManager, false)
         } else {
-          await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', [])
+          await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--continue'])
         }
       }
 

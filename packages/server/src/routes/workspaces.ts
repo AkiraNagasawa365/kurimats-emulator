@@ -77,7 +77,7 @@ async function createSessionWithClaude(
         await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
         waitForShellReady(session.id, ptyManager, sshManager, false)
       } else {
-        await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', [])
+        await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--continue'])
       }
     }
   } catch (e) {
