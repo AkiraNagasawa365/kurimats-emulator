@@ -6,19 +6,6 @@ import { useSessionStore } from '../../stores/session-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { OverlayContainer } from './OverlayContainer'
 
-/** 拡張子からMonaco Editor言語を推定 */
-function getLanguage(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase() || ''
-  const map: Record<string, string> = {
-    ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
-    json: 'json', css: 'css', html: 'html', md: 'markdown',
-    py: 'python', rs: 'rust', go: 'go', sh: 'bash', bash: 'bash',
-    yml: 'yaml', yaml: 'yaml', toml: 'toml', sql: 'sql',
-    dockerfile: 'dockerfile', makefile: 'makefile',
-  }
-  return map[ext] || 'plaintext'
-}
-
 interface Props {
   onClose: () => void
   sessionId?: string
@@ -74,19 +61,15 @@ export function FileTreeOverlay({ onClose, sessionId }: Props) {
       })
   }, [sessions, panels, activePanelIndex])
 
-  const { addFileTile } = useLayoutStore()
-
   const handleFileClick = useCallback((path: string) => {
-    // Markdownファイルなら全画面markdownオーバーレイ
     if (path.endsWith('.md')) {
+      // Markdownファイルなら全画面markdownオーバーレイ
       openOverlay('markdown', { filePath: path, fullScreen: true })
     } else {
-      // キャンバス上にMonaco Editorタイルとして開く
-      const language = getLanguage(path)
-      addFileTile(path, language)
-      onClose()
+      // コードビューアオーバーレイで開く
+      openOverlay('code-viewer', { filePath: path })
     }
-  }, [openOverlay, addFileTile, onClose])
+  }, [openOverlay])
 
   return (
     <OverlayContainer isOpen={true} onClose={onClose} title="ファイルツリー">

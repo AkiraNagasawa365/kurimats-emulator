@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useCommandPaletteStore } from '../stores/command-palette-store'
 import { usePaneStore } from '../stores/pane-store'
 import { useWorkspaceStore } from '../stores/workspace-store'
+import { useOverlayStore } from '../stores/overlay-store'
 
 /**
  * cmux型キーボードショートカット
@@ -37,6 +38,30 @@ export function useKeyboardShortcuts() {
       if (meta && e.shiftKey && e.key.toLowerCase() === 'p') {
         e.preventDefault()
         openPalette()
+        return
+      }
+
+      // Cmd+Shift+E → ファイルツリーオーバーレイ
+      if (meta && e.shiftKey && e.key.toLowerCase() === 'e') {
+        e.preventDefault()
+        const overlay = useOverlayStore.getState()
+        if (overlay.activeOverlay === 'file-tree') {
+          overlay.closeOverlay()
+        } else {
+          overlay.openOverlay('file-tree')
+        }
+        return
+      }
+
+      // Cmd+Shift+M → Markdownプレビューオーバーレイ
+      if (meta && e.shiftKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault()
+        const overlay = useOverlayStore.getState()
+        if (overlay.activeOverlay === 'markdown') {
+          overlay.closeOverlay()
+        } else {
+          overlay.openOverlay('markdown')
+        }
         return
       }
 

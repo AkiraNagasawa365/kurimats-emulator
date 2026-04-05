@@ -46,6 +46,51 @@ describe('オーバーレイストア', () => {
   })
 })
 
+describe('オーバーレイ切替（キーボードショートカット相当）', () => {
+  beforeEach(() => {
+    useOverlayStore.setState({ activeOverlay: null, overlayProps: {} })
+  })
+
+  it('ファイルツリーをトグルで開閉できる', () => {
+    const store = useOverlayStore.getState()
+    // 開く
+    store.openOverlay('file-tree')
+    expect(useOverlayStore.getState().activeOverlay).toBe('file-tree')
+    // 同じタイプなら閉じる（トグル動作）
+    const current = useOverlayStore.getState()
+    if (current.activeOverlay === 'file-tree') {
+      current.closeOverlay()
+    }
+    expect(useOverlayStore.getState().activeOverlay).toBeNull()
+  })
+
+  it('Markdownをトグルで開閉できる', () => {
+    const store = useOverlayStore.getState()
+    store.openOverlay('markdown')
+    expect(useOverlayStore.getState().activeOverlay).toBe('markdown')
+    const current = useOverlayStore.getState()
+    if (current.activeOverlay === 'markdown') {
+      current.closeOverlay()
+    }
+    expect(useOverlayStore.getState().activeOverlay).toBeNull()
+  })
+
+  it('ファイルツリーからMarkdownへの切り替えでpropsも更新される', () => {
+    useOverlayStore.getState().openOverlay('file-tree', { sessionId: 'sess-1' })
+    expect(useOverlayStore.getState().overlayProps).toEqual({ sessionId: 'sess-1' })
+    useOverlayStore.getState().openOverlay('markdown', { filePath: '/test.md', fullScreen: true })
+    expect(useOverlayStore.getState().activeOverlay).toBe('markdown')
+    expect(useOverlayStore.getState().overlayProps).toEqual({ filePath: '/test.md', fullScreen: true })
+  })
+
+  it('コードビューアをファイルパス付きで開ける', () => {
+    useOverlayStore.getState().openOverlay('code-viewer', { filePath: '/src/index.ts' })
+    const state = useOverlayStore.getState()
+    expect(state.activeOverlay).toBe('code-viewer')
+    expect(state.overlayProps.filePath).toBe('/src/index.ts')
+  })
+})
+
 describe('コマンドパレットストア', () => {
   beforeEach(() => {
     useCommandPaletteStore.setState({ isOpen: false, search: '' })

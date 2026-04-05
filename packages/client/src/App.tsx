@@ -5,6 +5,7 @@ import { PaneContainer } from './components/panes/PaneContainer'
 import { StatusBar } from './components/layout/StatusBar'
 import { CommandPalette } from './components/command-palette/CommandPalette'
 import { NotificationToast } from './components/notifications/NotificationToast'
+import { OverlayRenderer } from './components/overlays/OverlayRenderer'
 import { useSessionStore } from './stores/session-store'
 import { useWorkspaceStore } from './stores/workspace-store'
 import { useCommandPaletteStore } from './stores/command-palette-store'
@@ -58,6 +59,9 @@ export default function App() {
 
       {/* コマンドパレット */}
       {isPaletteOpen && <CommandPalette />}
+
+      {/* オーバーレイ（ファイルツリー/Markdown/コードビューア） */}
+      <OverlayRenderer />
 
       {/* 通知トースト */}
       <NotificationToast />
