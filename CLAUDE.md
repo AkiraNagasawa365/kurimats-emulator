@@ -60,3 +60,10 @@ npm run build:electron   # Electron配布ビルド
 - **main への直接コミット・プッシュ禁止** — フィーチャーブランチからPR経由
 - **Issueなしでブランチを切らない**
 - ブランチ名: `feat/`, `fix/`, `refactor/`, `chore/`, `docs/`, `test/`
+
+### Playwright（並列実行時のポート分離）
+- 複数セッションが同時にPlaywrightを使う場合、**ポートが衝突しないようにする**
+- kurimats-emulator経由の場合: PTY環境変数 `PLAYWRIGHT_MCP_PORT` が自動設定される（3551〜）
+- 手動worktreeで作業する場合: ペイン番号に応じてポートを使い分ける
+  - pane1: `3551`, pane2: `3552`, pane3: `3553`, ...
+  - 起動例: `PLAYWRIGHT_MCP_PORT=3553 claude`

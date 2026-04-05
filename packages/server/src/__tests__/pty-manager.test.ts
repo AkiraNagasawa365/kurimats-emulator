@@ -259,6 +259,40 @@ describe('PtyManager', () => {
       expect(manager.getSessionSize('nothing')).toBeNull()
     })
   })
+
+  // ========================================
+  // Playwrightポート割当テスト
+  // ========================================
+  describe('Playwrightポート割当', () => {
+    it('セッションごとに異なるPLAYWRIGHT_MCP_PORTが設定される', async () => {
+      const ports: string[] = []
+
+      const collectPort = (sessionId: string, data: string) => {
+        const match = data.match(/PWPORT=(\d+)/)
+        if (match) ports.push(`${sessionId}:${match[1]}`)
+      }
+      manager.on('data', collectPort)
+
+      // 3セッションを起動し、各セッションで環境変数を出力
+      await manager.spawn('pw-1', '/tmp', 120, 30, '/bin/sh', ['-c', 'echo PWPORT=$PLAYWRIGHT_MCP_PORT'])
+      await manager.spawn('pw-2', '/tmp', 120, 30, '/bin/sh', ['-c', 'echo PWPORT=$PLAYWRIGHT_MCP_PORT'])
+      await manager.spawn('pw-3', '/tmp', 120, 30, '/bin/sh', ['-c', 'echo PWPORT=$PLAYWRIGHT_MCP_PORT'])
+
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+      manager.removeListener('data', collectPort)
+
+      // 各セッションに異なるポートが割り当てられていることを確認
+      const portValues = ports.map((p) => p.split(':')[1])
+      expect(portValues.length).toBeGreaterThanOrEqual(3)
+      const uniquePorts = new Set(portValues)
+      expect(uniquePorts.size).toBeGreaterThanOrEqual(3)
+
+      // ポートが3551から連番であることを確認
+      expect(uniquePorts).toContain('3551')
+      expect(uniquePorts).toContain('3552')
+      expect(uniquePorts).toContain('3553')
+    }, 10000)
+  })
 })
 
 // ========================================
