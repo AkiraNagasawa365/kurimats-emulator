@@ -9,11 +9,27 @@ import { mapCmuxWorkspaceRow, mapFeedbackRow, mapProjectRow, mapSessionRow, mapS
 import { runSessionStoreMigrations } from './session-store-migrations.js'
 import { findFirstLeafId } from '../utils/pane-tree.js'
 
-const DEFAULT_DB_PATH = path.join(homedir(), '.kurimats', 'sessions.db')
+/**
+ * PANE_NUMBERに応じたDBパスを算出
+ * - 未設定（本番Electron）: sessions.db
+ * - 0（develop）: sessions-dev.db
+ * - N（paneN）: sessions-paneN.db
+ */
+function getDefaultDbPath(): string {
+  const baseDir = path.join(homedir(), '.kurimats')
+  const paneNumber = process.env.PANE_NUMBER != null
+    ? parseInt(process.env.PANE_NUMBER, 10)
+    : null
+  if (paneNumber === null) return path.join(baseDir, 'sessions.db')
+  if (paneNumber === 0) return path.join(baseDir, 'sessions-dev.db')
+  return path.join(baseDir, `sessions-pane${paneNumber}.db`)
+}
+
+const DEFAULT_DB_PATH = getDefaultDbPath()
 
 /**
  * SQLiteベースのセッション永続化
- * @param dbPath DBファイルパス（省略時はdata/sessions.db、':memory:'でインメモリ）
+ * @param dbPath DBファイルパス（省略時はPANE_NUMBERに応じたDB、':memory:'でインメモリ）
  */
 export class SessionStore {
   private db: Database.Database
