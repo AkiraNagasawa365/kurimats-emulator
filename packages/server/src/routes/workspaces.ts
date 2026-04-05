@@ -106,7 +106,7 @@ export function createWorkspacesRouter(
       const { session, surface, paneId } = await createWorkspaceSession(
         store, ptyManager, sshManager, worktreeService,
         {
-          name: `${name}-main`,
+          name: `${name}-pane1`,
           repoPath,
           sshHost,
           useWorktree,
