@@ -4,70 +4,7 @@ import { type PtyManager } from '../services/pty-manager.js'
 import { type SshManager } from '../services/ssh-manager.js'
 import type { WorktreeService } from '../services/worktree-service.js'
 import type { CreateSessionParams } from '@kurimats/shared'
-
-/**
- * シェルの初期化完了を検出してclaude --continueコマンドを送信する
- * シェルのプロンプト出力（$ や % や > の末尾文字）を監視し、
- * 表示されたらclaude --continueを実行する。最大5秒のタイムアウト付き。
- * --continueにより、前回の会話履歴がある場合は自動復元される。
- */
-export function waitForShellReady(
-  sessionId: string,
-  ptyManager: PtyManager,
-  sshManager: SshManager,
-  isRemote: boolean,
-): void {
-  const manager = isRemote ? sshManager : ptyManager
-  let resolved = false
-  let timeoutId: ReturnType<typeof setTimeout> | null = null
-
-  const cleanup = () => {
-    manager.removeListener('data', onData)
-    manager.removeListener('exit', onExit)
-    if (timeoutId) {
-      clearTimeout(timeoutId)
-      timeoutId = null
-    }
-  }
-
-  const launchClaude = () => {
-    cleanup()
-    if (isRemote) {
-      sshManager.write(sessionId, 'claude --continue\r')
-    } else {
-      ptyManager.write(sessionId, 'claude --continue\r')
-    }
-  }
-
-  const onData = (_sid: string, data: string) => {
-    if (_sid !== sessionId || resolved) return
-    // シェルプロンプトの一般的なパターン（$ % > #）を検出
-    const cleanData = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim()
-    if (cleanData.match(/[$%>#]\s*$/) || cleanData.includes('❯')) {
-      resolved = true
-      // プロンプト検出後、少し待ってからclaudeを送信
-      timeoutId = setTimeout(launchClaude, 100)
-    }
-  }
-
-  const onExit = (_sid: string) => {
-    if (_sid !== sessionId || resolved) return
-    resolved = true
-    cleanup()
-  }
-
-  manager.on('data', onData)
-  manager.on('exit', onExit)
-
-  // タイムアウト: 5秒以内にプロンプトが検出されなければ強制送信
-  timeoutId = setTimeout(() => {
-    if (!resolved) {
-      resolved = true
-      console.warn(`⚠️ セッション ${sessionId.slice(0, 8)}... のシェルプロンプト検出タイムアウト。claude --continueを強制送信します。`)
-      launchClaude()
-    }
-  }, 5000)
-}
+import { createAndSpawnSession, cleanupSession, waitForShellReady } from '../services/session-lifecycle.js'
 
 export function createSessionsRouter(
   store: SessionStore,
@@ -92,85 +29,22 @@ export function createSessionsRouter(
       return
     }
 
-    const isRemote = !!params.sshHost
-
-    let worktreePath: string | null = null
-
-    // ローカルセッションの場合のみworktreeを使用
-    if (!isRemote && params.useWorktree !== false && worktreeService.isGitRepo(params.repoPath)) {
-      try {
-        worktreePath = worktreeService.create(
-          params.repoPath,
-          params.name.replace(/\s+/g, '-').toLowerCase(),
-          params.baseBranch
-        )
-      } catch (e) {
-        console.error('Worktree作成エラー:', e)
-      }
-    }
-
-    // worktree作成後は実際のブランチ名を取得（baseBranchは作成元であり実ブランチではない）
-    const actualBranch = worktreePath
-      ? worktreeService.getBranch(worktreePath) ?? params.baseBranch
-      : params.baseBranch
-
-    const session = store.create({
-      name: params.name,
-      repoPath: params.repoPath,
-      baseBranch: actualBranch,
-      useWorktree: params.useWorktree,
-      worktreePath,
-      sshHost: params.sshHost || null,
-      isRemote,
-    })
-
-    const cwd = worktreePath || params.repoPath
-
     try {
-      // バックエンド初期化（node-pty or child_process判定）
-      await ptyManager.initialize()
-
-      if (isRemote && params.sshHost) {
-        // リモートSSHセッション: SshManager経由で接続・シェル起動
-        await sshManager.connect(params.sshHost)
-        await sshManager.spawn(session.id, params.sshHost, cwd, 120, 30)
-        waitForShellReady(session.id, ptyManager, sshManager, true)
-      } else {
-        // ローカルPTYセッション
-        if (ptyManager.backend === 'node-pty') {
-          // node-ptyモード: シェル起動→プロンプト検出→claude送信
-          const shell = process.env.SHELL || '/bin/zsh'
-          await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
-          waitForShellReady(session.id, ptyManager, sshManager, false)
-        } else {
-          // child_processモード（python3 pty.spawn）: claude --continueを直接起動
-          await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--continue'])
-        }
-      }
+      const session = await createAndSpawnSession(
+        store, ptyManager, sshManager, worktreeService,
+        {
+          name: params.name,
+          repoPath: params.repoPath,
+          sshHost: params.sshHost,
+          useWorktree: params.useWorktree,
+          baseBranch: params.baseBranch,
+        },
+      )
+      res.status(201).json(session)
     } catch (e) {
-      console.error(`${isRemote ? 'SSH接続/リモートシェル' : 'PTY'}起動エラー:`, e)
-      if (sshManager.hasSession(session.id)) {
-        sshManager.kill(session.id)
-      } else {
-        ptyManager.kill(session.id)
-      }
-      try {
-        store.delete(session.id)
-      } catch (deleteErr) {
-        console.error('セッション削除エラー:', deleteErr)
-      }
-      if (worktreePath) {
-        try {
-          worktreeService.remove(params.repoPath, worktreePath)
-        } catch (cleanupErr) {
-          console.error('worktree削除エラー:', cleanupErr)
-        }
-      }
+      const isRemote = !!params.sshHost
       res.status(500).json({ error: `${isRemote ? 'SSH接続/リモートシェル' : 'PTY'}起動エラー: ${e}` })
-      return
     }
-
-    res.status(201).json(session)
   })
 
   // セッション取得
@@ -191,24 +65,7 @@ export function createSessionsRouter(
       return
     }
 
-    // リモートセッションはSshManager、ローカルはPtyManagerで終了
-    if (sshManager.hasSession(session.id)) {
-      sshManager.kill(session.id)
-    } else {
-      ptyManager.kill(session.id)
-    }
-
-    // worktreeのクリーンアップ
-    if (session.worktreePath && session.repoPath) {
-      try {
-        worktreeService.remove(session.repoPath, session.worktreePath)
-        console.log(`🗑️ worktree削除: ${session.worktreePath}`)
-      } catch (e) {
-        console.warn(`worktree削除エラー (無視): ${e}`)
-      }
-    }
-
-    store.delete(session.id)
+    cleanupSession(store, ptyManager, sshManager, worktreeService, session.id)
     res.json({ ok: true })
   })
 
@@ -231,12 +88,12 @@ export function createSessionsRouter(
       if (session.isRemote && session.sshHost) {
         await sshManager.connect(session.sshHost)
         await sshManager.spawn(session.id, session.sshHost, cwd, 120, 30)
-        waitForShellReady(session.id, ptyManager, sshManager, true)
+        waitForShellReady(session.id, ptyManager, sshManager, true, true)
       } else {
         if (ptyManager.backend === 'node-pty') {
           const shell = process.env.SHELL || '/bin/zsh'
           await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
-          waitForShellReady(session.id, ptyManager, sshManager, false)
+          waitForShellReady(session.id, ptyManager, sshManager, false, true)
         } else {
           await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--continue'])
         }

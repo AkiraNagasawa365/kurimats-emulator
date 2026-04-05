@@ -4,15 +4,21 @@ import type { PtyManager } from '../services/pty-manager.js'
 import type { SshManager } from '../services/ssh-manager.js'
 import type { WorktreeService } from '../services/worktree-service.js'
 import type { PaneNode, PaneLeaf, Surface, SplitDirection, Session } from '@kurimats/shared'
-import { waitForShellReady } from './sessions.js'
+import { createAndSpawnSession, cleanupSession } from '../services/session-lifecycle.js'
+import {
+  genId,
+  collectSessionIds,
+  countLeaves,
+  findLeaf,
+  findFirstLeafId,
+  containsLeafId,
+  rebalanceRatios,
+  splitLeafInTree,
+  closeLeafInTree,
+} from '../utils/pane-tree.js'
 
-/** 一意なID生成 */
-function genId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-}
-
-/** セッションを作成し、PTY/SSHを起動してClaude Codeを自動実行する */
-async function createSessionWithClaude(
+/** セッションを作成し、PTY/SSHを起動してClaude Codeを自動実行し、サーフェス情報を返す */
+async function createWorkspaceSession(
   store: SessionStore,
   ptyManager: PtyManager,
   sshManager: SshManager,
@@ -26,82 +32,17 @@ async function createSessionWithClaude(
     workspaceId: string
   },
 ): Promise<{ session: Session; surface: Surface; paneId: string }> {
-  const isRemote = !!params.sshHost
-
-  // ワークツリー作成（ローカルセッションのみ）
-  let worktreePath: string | null = null
-  if (!isRemote && params.useWorktree !== false) {
-    try {
-      const isGit = worktreeService.isGitRepo(params.repoPath)
-      if (isGit) {
-        const wtName = params.name.replace(/\s+/g, '-').toLowerCase()
-        worktreePath = await worktreeService.create(
-          params.repoPath,
-          wtName,
-          params.baseBranch,
-        )
-        console.log(`📁 ワークツリー作成: ${worktreePath}`)
-      }
-    } catch (e) {
-      console.warn(`⚠️ ワークツリー作成スキップ: ${e}`)
-    }
-  }
-
-  // worktree作成後は実際のブランチ名を取得（baseBranchは作成元であり実ブランチではない）
-  const actualBranch = worktreePath
-    ? worktreeService.getBranch(worktreePath) ?? params.baseBranch
-    : params.baseBranch
-
-  // セッション作成（DB保存）
-  const session = store.create({
-    name: params.name,
-    repoPath: params.repoPath,
-    baseBranch: actualBranch,
-    worktreePath,
-    sshHost: params.sshHost ?? null,
-    isRemote,
-    workspaceId: params.workspaceId,
-  })
-
-  const cwd = worktreePath || params.repoPath
-
-  // PTY/SSH起動
-  try {
-    await ptyManager.initialize()
-
-    if (isRemote && params.sshHost) {
-      // SSH経由
-      await sshManager.connect(params.sshHost)
-      await sshManager.spawn(session.id, params.sshHost, cwd, 120, 30)
-      waitForShellReady(session.id, ptyManager, sshManager, true)
-    } else {
-      // ローカルPTY
-      const backend = ptyManager.backend
-      if (backend === 'node-pty') {
-        const shell = process.env.SHELL || '/bin/zsh'
-        await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
-        waitForShellReady(session.id, ptyManager, sshManager, false)
-      } else {
-        await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--continue'])
-      }
-    }
-  } catch (e) {
-    console.error(`PTY/SSH起動エラー:`, e)
-    if (sshManager.hasSession(session.id)) {
-      sshManager.kill(session.id)
-    } else {
-      ptyManager.kill(session.id)
-    }
-    try { store.delete(session.id) } catch { /* ignore */ }
-    if (worktreePath) {
-      try {
-        worktreeService.remove(params.repoPath, worktreePath)
-      } catch {
-        // ignore cleanup errors
-      }
-    }
-    throw e
-  }
+  const session = await createAndSpawnSession(
+    store, ptyManager, sshManager, worktreeService,
+    {
+      name: params.name,
+      repoPath: params.repoPath,
+      sshHost: params.sshHost,
+      useWorktree: params.useWorktree,
+      baseBranch: params.baseBranch,
+      workspaceId: params.workspaceId,
+    },
+  )
 
   // サーフェス・ペイン情報を返す
   const paneId = genId('pane')
@@ -162,10 +103,10 @@ export function createWorkspacesRouter(
       const workspaceId = genId('ws')
 
       // セッション+PTY/SSH+Claude Code起動
-      const { session, surface, paneId } = await createSessionWithClaude(
+      const { session, surface, paneId } = await createWorkspaceSession(
         store, ptyManager, sshManager, worktreeService,
         {
-          name: `${name}-main`,
+          name: `${name}-pane1`,
           repoPath,
           sshHost,
           useWorktree,
@@ -233,7 +174,7 @@ export function createWorkspacesRouter(
       const sessionName = `${workspace.name}-pane${paneCount + 1}`
 
       // 新セッション+PTY/SSH+Claude Code起動（独自worktree付き）
-      const created = await createSessionWithClaude(
+      const created = await createWorkspaceSession(
         store, ptyManager, sshManager, worktreeService,
         {
           name: sessionName,
@@ -257,12 +198,7 @@ export function createWorkspacesRouter(
 
       const splitTree = splitLeafInTree(workspace.paneTree, paneId, direction, newLeaf)
       if (!splitTree) {
-        if (sshManager.hasSession(session.id)) {
-          sshManager.kill(session.id)
-        } else {
-          ptyManager.kill(session.id)
-        }
-        store.delete(session.id)
+        cleanupSession(store, ptyManager, sshManager, worktreeService, session.id)
         res.status(400).json({ error: '指定されたペインが見つかりません' })
         return
       }
@@ -280,16 +216,7 @@ export function createWorkspacesRouter(
       })
     } catch (e) {
       if (session) {
-        if (sshManager.hasSession(session.id)) {
-          sshManager.kill(session.id)
-        } else {
-          ptyManager.kill(session.id)
-        }
-        try {
-          store.delete(session.id)
-        } catch {
-          // ignore cleanup errors
-        }
+        cleanupSession(store, ptyManager, sshManager, worktreeService, session.id)
       }
       console.error('ペイン分割エラー:', e)
       res.status(500).json({ error: `ペイン分割に失敗: ${e}` })
@@ -415,152 +342,4 @@ export function createWorkspacesRouter(
   return router
 }
 
-// ========== セッションクリーンアップ ==========
-
-/** セッションのPTY/SSH kill + worktree削除 + DB削除 */
-function cleanupSession(
-  store: SessionStore,
-  ptyManager: PtyManager,
-  sshManager: SshManager,
-  worktreeService: WorktreeService,
-  sessionId: string,
-): void {
-  const session = store.getById(sessionId)
-  if (!session) return
-
-  // PTY/SSH kill
-  if (sshManager.hasSession(sessionId)) {
-    sshManager.kill(sessionId)
-  } else {
-    ptyManager.kill(sessionId)
-  }
-
-  // worktree削除
-  if (session.worktreePath && session.repoPath) {
-    try {
-      worktreeService.remove(session.repoPath, session.worktreePath)
-      console.log(`🗑️ worktree削除: ${session.worktreePath}`)
-    } catch (e) {
-      console.warn(`⚠️ worktree削除エラー (無視): ${e}`)
-    }
-  }
-
-  // DB削除
-  store.delete(sessionId)
-}
-
-/** ペインツリーから全ターミナルサーフェスのセッションIDを収集 */
-function collectSessionIds(node: PaneNode): string[] {
-  if (node.kind === 'leaf') {
-    return node.surfaces
-      .filter(s => s.type === 'terminal')
-      .map(s => s.target)
-  }
-  return [
-    ...collectSessionIds(node.children[0]),
-    ...collectSessionIds(node.children[1]),
-  ]
-}
-
-// ========== ペインツリー操作ヘルパー ==========
-
-/** 全ペインが等分になるようratioを再計算 */
-function rebalanceRatios(tree: PaneNode): PaneNode {
-  if (tree.kind === 'leaf') return tree
-  const [first, second] = tree.children
-  const firstCount = countLeaves(first)
-  const total = firstCount + countLeaves(second)
-  const firstRatio = firstCount / total
-  const newFirst = rebalanceRatios(first)
-  const newSecond = rebalanceRatios(second)
-  return {
-    ...tree,
-    children: [
-      { ...newFirst, ratio: firstRatio },
-      { ...newSecond, ratio: 1 - firstRatio },
-    ],
-  } as PaneNode
-}
-
-/** ツリー内のリーフ数をカウント */
-function countLeaves(node: PaneNode): number {
-  if (node.kind === 'leaf') return 1
-  return countLeaves(node.children[0]) + countLeaves(node.children[1])
-}
-
-/** IDでリーフを検索 */
-function findLeaf(node: PaneNode, leafId: string): PaneLeaf | null {
-  if (node.kind === 'leaf') return node.id === leafId ? node : null
-  return findLeaf(node.children[0], leafId) ?? findLeaf(node.children[1], leafId)
-}
-
-/** リーフを閉じて兄弟を昇格（closeLeafと同等のサーバー側実装） */
-function closeLeafInTree(tree: PaneNode, leafId: string): PaneNode | null {
-  if (tree.kind === 'leaf') {
-    return tree.id === leafId ? null : tree
-  }
-
-  const [first, second] = tree.children
-
-  if (first.id === leafId) return second.kind === 'leaf' ? { ...second, ratio: 0.5 } : second
-  if (second.id === leafId) return first.kind === 'leaf' ? { ...first, ratio: 0.5 } : first
-
-  const newFirst = closeLeafInTree(first, leafId)
-  if (newFirst !== first) {
-    if (newFirst === null) return second.kind === 'leaf' ? { ...second, ratio: 0.5 } : second
-    return { ...tree, children: [newFirst, second] }
-  }
-
-  const newSecond = closeLeafInTree(second, leafId)
-  if (newSecond !== second) {
-    if (newSecond === null) return first.kind === 'leaf' ? { ...first, ratio: 0.5 } : first
-    return { ...tree, children: [first, newSecond] }
-  }
-
-  return tree
-}
-
-/** ツリーの最初のリーフIDを取得 */
-function findFirstLeafId(node: PaneNode): string {
-  if (node.kind === 'leaf') return node.id
-  return findFirstLeafId(node.children[0])
-}
-
-function containsLeafId(node: PaneNode, leafId: string): boolean {
-  if (node.kind === 'leaf') return node.id === leafId
-  return containsLeafId(node.children[0], leafId) || containsLeafId(node.children[1], leafId)
-}
-
-/** ツリー内の指定リーフを分割して新しいツリーを返す */
-function splitLeafInTree(
-  tree: PaneNode,
-  leafId: string,
-  direction: SplitDirection,
-  newLeaf: PaneLeaf,
-): PaneNode | null {
-  if (tree.kind === 'leaf') {
-    if (tree.id === leafId) {
-      return {
-        kind: 'split',
-        id: genId('split'),
-        direction,
-        ratio: 0.5,
-        children: [{ ...tree, ratio: 0.5 }, newLeaf],
-      }
-    }
-    return null // 見つからない
-  }
-
-  // スプリットノードの子を再帰探索
-  const newFirst = splitLeafInTree(tree.children[0], leafId, direction, newLeaf)
-  if (newFirst) {
-    return { ...tree, children: [newFirst, tree.children[1]] }
-  }
-
-  const newSecond = splitLeafInTree(tree.children[1], leafId, direction, newLeaf)
-  if (newSecond) {
-    return { ...tree, children: [tree.children[0], newSecond] }
-  }
-
-  return null
-}
+// セッションクリーンアップ・ペインツリーヘルパーは外部モジュールから import

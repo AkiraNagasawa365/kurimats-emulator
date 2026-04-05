@@ -51,10 +51,9 @@ interface PtySession {
   finalized: boolean
 }
 
-const RING_BUFFER_SIZE = 50 * 1024 // 50KB
+import { PLAYWRIGHT_PORT_BASE, calculatePort } from '../utils/ports.js'
 
-/** Playwright MCPポートのベース値。ペイン番号 or セッション通し番号で割当 */
-const PLAYWRIGHT_PORT_BASE = 3550
+const RING_BUFFER_SIZE = 50 * 1024 // 50KB
 /** ペイン番号（環境変数から取得、0=develop, N=paneN, null=未設定） */
 const PANE_NUMBER = process.env.PANE_NUMBER != null
   ? parseInt(process.env.PANE_NUMBER, 10)
@@ -155,8 +154,8 @@ export class PtyManager extends EventEmitter {
     // PANE_NUMBER が設定されている場合はペイン番号ベース、なければ通し番号
     this._portCounter++
     const playwrightPort = PANE_NUMBER != null
-      ? PLAYWRIGHT_PORT_BASE + PANE_NUMBER
-      : PLAYWRIGHT_PORT_BASE + this._portCounter
+      ? calculatePort(PLAYWRIGHT_PORT_BASE, PANE_NUMBER)
+      : calculatePort(PLAYWRIGHT_PORT_BASE, this._portCounter)
 
     if (this._backend === 'node-pty' && nodePty) {
       try {

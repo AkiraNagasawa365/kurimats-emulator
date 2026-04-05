@@ -1,11 +1,13 @@
 import { Router } from 'express'
-import { execSync } from 'child_process'
+import { execFileSync } from 'child_process'
 import type { SessionStore } from '../services/session-store.js'
 import type { PtyManager } from '../services/pty-manager.js'
 import type { SshManager } from '../services/ssh-manager.js'
-import type { TabHost, TabProject, TabListResponse, TabSyncResponse, TabBookmark, Session } from '@kurimats/shared'
+import type { WorktreeService } from '../services/worktree-service.js'
+import type { TabHost, TabProject, TabListResponse, TabSyncResponse, Session } from '@kurimats/shared'
 import { PROJECT_COLORS } from '@kurimats/shared'
 import { parseBookmarksToml } from '../services/bookmarks-parser.js'
+import { createAndSpawnSession } from '../services/session-lifecycle.js'
 
 /**
  * `tab list` コマンドの出力をパースする
@@ -42,7 +44,7 @@ function parseTabListOutput(output: string): TabHost[] {
   return hosts
 }
 
-export function createTabRouter(store: SessionStore, ptyManager: PtyManager, sshManager: SshManager): Router {
+export function createTabRouter(store: SessionStore, ptyManager: PtyManager, sshManager: SshManager, worktreeService: WorktreeService): Router {
   const router = Router()
 
   // tab同期のmutex（同時実行防止）
@@ -51,7 +53,7 @@ export function createTabRouter(store: SessionStore, ptyManager: PtyManager, ssh
   // tab listコマンド実行・パース
   router.get('/list', (_req, res) => {
     try {
-      const output = execSync('tab list', {
+      const output = execFileSync('tab', ['list'], {
         encoding: 'utf-8',
         timeout: 5000,
       })
@@ -86,7 +88,7 @@ export function createTabRouter(store: SessionStore, ptyManager: PtyManager, ssh
       let hosts: TabHost[] = []
       if (bookmarks.length === 0) {
         try {
-          const output = execSync('tab list', {
+          const output = execFileSync('tab', ['list'], {
             encoding: 'utf-8',
             timeout: 5000,
           })
@@ -141,33 +143,24 @@ export function createTabRouter(store: SessionStore, ptyManager: PtyManager, ssh
 
           // セッション作成（同名セッションが存在しない場合のみ）
           if (!existingSessionNames.has(bm.name)) {
-            const isRemote = !!bm.host
             const project = store.getAllProjects().find(p => p.name === bm.name)
 
-            const session = store.create({
-              name: bm.name,
-              repoPath: bm.directory,
-              sshHost: bm.host || null,
-              isRemote,
-              projectId: project?.id || null,
-            })
-
-            // セッション起動: リモートはSshManager、ローカルはPtyManager
             try {
-              if (isRemote && bm.host) {
-                // リモート: SshManager経由で接続・シェル起動
-                await sshManager.connect(bm.host)
-                await sshManager.spawn(session.id, bm.host, bm.directory, 120, 30)
-              } else {
-                // ローカル: シェルを cwd 指定で起動
-                const shell = process.env.SHELL || '/bin/zsh'
-                await ptyManager.spawn(session.id, bm.directory, 120, 30, shell, [])
-              }
+              const session = await createAndSpawnSession(
+                store, ptyManager, sshManager, worktreeService,
+                {
+                  name: bm.name,
+                  repoPath: bm.directory,
+                  sshHost: bm.host || null,
+                  useWorktree: false, // tab syncではworktree不要
+                  projectId: project?.id || null,
+                  launchClaude: true,
+                },
+              )
               createdSessions.push(session)
               existingSessionNames.add(bm.name)
             } catch (e) {
               console.error(`セッション ${bm.name} の起動に失敗:`, e)
-              store.delete(session.id)
             }
           }
         }
