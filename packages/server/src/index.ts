@@ -19,7 +19,9 @@ import { createFeedbackRouter } from './routes/feedback.js'
 import { createWorkspacesRouter } from './routes/workspaces.js'
 import { CanvasStore } from './services/canvas-store.js'
 
-const PORT = parseInt(process.env.PORT || '3001', 10)
+// ペイン番号からポートを自動算出（PANE_NUMBER未設定時はデフォルト3001を維持）
+const PANE_NUMBER = parseInt(process.env.PANE_NUMBER || '0', 10)
+const PORT = parseInt(process.env.PORT || String(PANE_NUMBER > 0 ? 14000 + PANE_NUMBER : 3001), 10)
 const HOST = process.env.HOST || 'localhost'
 
 // トークン認証（リモートアクセス用、オプション）
@@ -58,6 +60,51 @@ if (orphanedSessions.length > 0) {
   console.log('✅ orphanedセッションの復元処理完了。UIから再接続可能です。')
 } else {
   console.log('✅ orphanedセッションなし')
+}
+
+// サーバー起動時: ペインツリーに含まれない孤立セッションを削除
+try {
+  // 全ワークスペースのペインツリーから参照中のセッションIDを収集
+  const collectSessionIdsFromTree = (node: import('@kurimats/shared').PaneNode): string[] => {
+    if (!node) return []
+    if (node.kind === 'leaf') {
+      return node.surfaces.filter(s => s.type === 'terminal').map(s => s.target)
+    }
+    if (!node.children || node.children.length < 2) return []
+    return [...collectSessionIdsFromTree(node.children[0]), ...collectSessionIdsFromTree(node.children[1])]
+  }
+
+  const workspaces = sessionStore.getAllCmuxWorkspaces()
+  const referencedIds = new Set<string>()
+  for (const ws of workspaces) {
+    for (const id of collectSessionIdsFromTree(ws.paneTree)) {
+      referencedIds.add(id)
+    }
+  }
+
+  // ペインツリーに含まれないセッションを削除（worktreeも含む）
+  const allSessions = sessionStore.getAll()
+  const orphanedCleanup = allSessions.filter(s => !referencedIds.has(s.id))
+  if (orphanedCleanup.length > 0) {
+    console.log(`🧹 ${orphanedCleanup.length}件の孤立セッションを削除します`)
+    for (const s of orphanedCleanup) {
+      if (s.worktreePath && s.repoPath) {
+        try {
+          worktreeService.remove(s.repoPath, s.worktreePath)
+          console.log(`   🗑️ worktree削除: ${s.worktreePath}`)
+        } catch {
+          // 既に削除済みの場合は無視
+        }
+      }
+      sessionStore.delete(s.id)
+      console.log(`   ↳ セッション "${s.name}" (${s.id.slice(0, 8)}...) を削除`)
+    }
+    console.log('✅ 孤立セッション削除完了')
+  } else {
+    console.log('✅ 孤立セッションなし')
+  }
+} catch (e) {
+  console.error('⚠️ 孤立セッション削除中にエラー（サーバー起動は続行）:', e)
 }
 
 // Express設定
