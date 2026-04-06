@@ -1,9 +1,25 @@
-import { Client, type ClientChannel } from 'ssh2'
+import { Client, type ClientChannel, type SFTPWrapper } from 'ssh2'
 import { readFileSync } from 'fs'
 import { EventEmitter } from 'events'
-import type { SshHost, SshConnectionStatus } from '@kurimats/shared'
+import path from 'path'
+import type { SshHost, SshConnectionStatus, FileNode } from '@kurimats/shared'
 import { parseSshConfig } from './ssh-config.js'
 import { RingBuffer } from './ring-buffer.js'
+
+/** リモートファイル読み込みの上限サイズ（1MB） */
+const MAX_REMOTE_FILE_SIZE = 1 * 1024 * 1024
+
+/** SFTPセッションキャッシュのTTL（30秒） */
+const SFTP_CACHE_TTL_MS = 30_000
+
+/** ファイルツリー探索の最大深度 */
+const MAX_TREE_DEPTH = 3
+
+/** ファイルツリーで無視するディレクトリ名 */
+const IGNORE_DIRS = new Set([
+  'node_modules', '.git', '.kurimats-worktrees', '.turbo',
+  'dist', '.next', '__pycache__', '.DS_Store',
+])
 const RECONNECT_DELAY_MS = 5000
 
 /**
@@ -28,6 +44,10 @@ interface SshConnection {
   status: SshConnectionStatus
   reconnectTimer: ReturnType<typeof setTimeout> | null
   connectPromise: Promise<void> | null
+  /** SFTPセッション（キャッシュ） */
+  sftp: SFTPWrapper | null
+  sftpPromise: Promise<SFTPWrapper> | null
+  sftpCreatedAt: number
 }
 
 /**
@@ -118,6 +138,9 @@ export class SshManager extends EventEmitter {
         status: 'reconnecting',
         reconnectTimer: null,
         connectPromise: null,
+        sftp: null,
+        sftpPromise: null,
+        sftpCreatedAt: 0,
       }
 
       this.connections.set(host.name, connInfo)
@@ -409,5 +432,156 @@ export class SshManager extends EventEmitter {
    */
   hasSession(sessionId: string): boolean {
     return this.sessions.has(sessionId)
+  }
+
+  // ========================================
+  // SFTP ファイル操作
+  // ========================================
+
+  /**
+   * SFTPセッションを取得（キャッシュ付き）
+   */
+  private async getSftp(hostName: string): Promise<SFTPWrapper> {
+    const conn = this.connections.get(hostName)
+    if (!conn || conn.status !== 'online') {
+      throw new Error(`SSHホスト "${hostName}" に接続されていません`)
+    }
+
+    // キャッシュが有効ならそのまま返す
+    if (conn.sftp && Date.now() - conn.sftpCreatedAt < SFTP_CACHE_TTL_MS) {
+      return conn.sftp
+    }
+
+    // 既に取得中ならそのPromiseを返す
+    if (conn.sftpPromise) {
+      return conn.sftpPromise
+    }
+
+    // 新規SFTPセッション取得
+    conn.sftpPromise = new Promise<SFTPWrapper>((resolve, reject) => {
+      conn.client.sftp((err, sftp) => {
+        conn.sftpPromise = null
+        if (err) {
+          reject(new Error(`SFTPセッション取得エラー: ${err.message}`))
+          return
+        }
+        conn.sftp = sftp
+        conn.sftpCreatedAt = Date.now()
+
+        // SFTPセッション切断時にキャッシュをクリア
+        sftp.on('close', () => {
+          if (conn.sftp === sftp) {
+            conn.sftp = null
+          }
+        })
+
+        resolve(sftp)
+      })
+    })
+
+    return conn.sftpPromise
+  }
+
+  /**
+   * リモートディレクトリのファイルツリーを取得（再帰・遅延読み込み）
+   */
+  async listDirectory(hostName: string, dirPath: string, depth = 0): Promise<FileNode[]> {
+    if (depth >= MAX_TREE_DEPTH) return []
+
+    const sftp = await this.getSftp(hostName)
+
+    return new Promise<FileNode[]>((resolve, reject) => {
+      sftp.readdir(dirPath, async (err, list) => {
+        if (err) {
+          reject(new Error(`リモートディレクトリ読み取りエラー (${dirPath}): ${err.message}`))
+          return
+        }
+
+        const nodes: FileNode[] = []
+        for (const entry of list) {
+          if (IGNORE_DIRS.has(entry.filename)) continue
+          // ドットファイルはスキップ（.gitignore等）
+          if (entry.filename.startsWith('.')) continue
+
+          const fullPath = path.posix.join(dirPath, entry.filename)
+          // attrs.mode のディレクトリビット判定
+          const isDir = !!(entry.attrs.mode & 0o40000)
+
+          const node: FileNode = {
+            name: entry.filename,
+            path: fullPath,
+            isDirectory: isDir,
+          }
+
+          if (isDir) {
+            try {
+              node.children = await this.listDirectory(hostName, fullPath, depth + 1)
+            } catch {
+              // サブディレクトリの読み取り失敗は空配列で継続
+              node.children = []
+            }
+          }
+
+          nodes.push(node)
+        }
+
+        // ディレクトリ優先、名前順でソート
+        nodes.sort((a, b) => {
+          if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
+          return a.name.localeCompare(b.name)
+        })
+
+        resolve(nodes)
+      })
+    })
+  }
+
+  /**
+   * リモートファイルの内容を読み取り
+   */
+  async readFile(hostName: string, filePath: string): Promise<string> {
+    const sftp = await this.getSftp(hostName)
+
+    // ファイルサイズチェック
+    const stats = await new Promise<{ size: number }>((resolve, reject) => {
+      sftp.stat(filePath, (err, attrs) => {
+        if (err) {
+          reject(new Error(`リモートファイルstat失敗 (${filePath}): ${err.message}`))
+          return
+        }
+        resolve({ size: attrs.size })
+      })
+    })
+
+    if (stats.size > MAX_REMOTE_FILE_SIZE) {
+      throw new Error(`ファイルサイズが上限を超えています (${stats.size} bytes > ${MAX_REMOTE_FILE_SIZE} bytes)`)
+    }
+
+    return new Promise<string>((resolve, reject) => {
+      sftp.readFile(filePath, (err, data) => {
+        if (err) {
+          reject(new Error(`リモートファイル読み取りエラー (${filePath}): ${err.message}`))
+          return
+        }
+        resolve(data.toString('utf-8'))
+      })
+    })
+  }
+
+  /**
+   * リモートファイルにデータを書き込み
+   */
+  async writeFile(hostName: string, filePath: string, content: string): Promise<void> {
+    const sftp = await this.getSftp(hostName)
+
+    return new Promise<void>((resolve, reject) => {
+      sftp.writeFile(filePath, content, 'utf-8', (err) => {
+        if (err) {
+          reject(new Error(`リモートファイル書き込みエラー (${filePath}): ${err.message}`))
+          return
+        }
+        resolve()
+      })
+    })
   }
 }

@@ -3,14 +3,15 @@ import { filesApi } from '../../lib/api'
 
 interface EditorSurfaceProps {
   filePath: string
+  sshHost?: string | null
 }
 
 /**
  * エディタサーフェス
- * ファイルの内容を表示・編集する（Phase 3 ではシンプルなテキストエリア実装）
+ * ファイルの内容を表示・編集する（ローカル/リモート対応）
  * TODO: Monaco Editorに置き換え（#60 統合時）
  */
-export function EditorSurface({ filePath }: EditorSurfaceProps) {
+export function EditorSurface({ filePath, sshHost }: EditorSurfaceProps) {
   const [content, setContent] = useState('')
   const [modified, setModified] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -21,7 +22,7 @@ export function EditorSurface({ filePath }: EditorSurfaceProps) {
   useEffect(() => {
     setLoading(true)
     setError(null)
-    filesApi.content(filePath)
+    filesApi.content(filePath, sshHost)
       .then(({ content }) => {
         setContent(content)
         originalContentRef.current = content
@@ -29,7 +30,7 @@ export function EditorSurface({ filePath }: EditorSurfaceProps) {
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [filePath])
+  }, [filePath, sshHost])
 
   // ファイル名を取得
   const fileName = filePath.split('/').pop() ?? filePath
@@ -37,13 +38,13 @@ export function EditorSurface({ filePath }: EditorSurfaceProps) {
   // 保存処理
   const handleSave = useCallback(async () => {
     try {
-      await filesApi.save(filePath, content)
+      await filesApi.save(filePath, content, sshHost)
       originalContentRef.current = content
       setModified(false)
     } catch (e) {
       setError(`保存エラー: ${e}`)
     }
-  }, [filePath, content])
+  }, [filePath, content, sshHost])
 
   // Cmd+S でファイル保存
   useEffect(() => {

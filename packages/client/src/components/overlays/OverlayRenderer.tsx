@@ -25,6 +25,7 @@ export function OverlayRenderer() {
           onClose={closeOverlay}
           filePath={overlayProps.filePath as string | undefined}
           fullScreen={overlayProps.fullScreen as boolean | undefined}
+          sshHost={overlayProps.sshHost as string | null | undefined}
         />
       )
     case 'code-viewer':
@@ -32,6 +33,7 @@ export function OverlayRenderer() {
         <CodeViewerOverlay
           filePath={overlayProps.filePath as string}
           onClose={closeOverlay}
+          sshHost={overlayProps.sshHost as string | null | undefined}
         />
       )
     default:
