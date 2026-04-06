@@ -94,8 +94,8 @@ def main():
                             set_pty_size(master_fd, int(c), int(r))
                             # SIGWINCHを子プロセスに送信
                             os.kill(pid, signal.SIGWINCH)
-                        except (ValueError, OSError):
-                            pass
+                        except (ValueError, OSError) as e:
+                            print(f"リサイズ処理エラー: {e}", file=sys.stderr)
                     # 残りのデータをptyに送信
                     if buf and RESIZE_PREFIX not in buf:
                         os.write(master_fd, buf)
