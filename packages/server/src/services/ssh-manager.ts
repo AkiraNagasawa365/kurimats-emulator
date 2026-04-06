@@ -3,8 +3,7 @@ import { readFileSync } from 'fs'
 import { EventEmitter } from 'events'
 import type { SshHost, SshConnectionStatus } from '@kurimats/shared'
 import { parseSshConfig } from './ssh-config.js'
-
-const RING_BUFFER_SIZE = 50 * 1024 // 50KB
+import { RingBuffer } from './ring-buffer.js'
 const RECONNECT_DELAY_MS = 5000
 
 /**
@@ -14,7 +13,7 @@ interface SshSession {
   sessionId: string
   hostName: string
   channel: ClientChannel | null
-  ringBuffer: string
+  ringBuffer: RingBuffer
   alive: boolean
   cleanup: () => void
   finalized: boolean
@@ -287,7 +286,7 @@ export class SshManager extends EventEmitter {
             sessionId,
             hostName,
             channel,
-            ringBuffer: '',
+            ringBuffer: new RingBuffer(),
             alive: true,
             cleanup: () => {},
             finalized: false,
@@ -298,20 +297,13 @@ export class SshManager extends EventEmitter {
 
           const onData = (data: Buffer) => {
             const str = data.toString()
-            // リングバッファに蓄積
-            session.ringBuffer += str
-            if (session.ringBuffer.length > RING_BUFFER_SIZE) {
-              session.ringBuffer = session.ringBuffer.slice(-RING_BUFFER_SIZE)
-            }
+            session.ringBuffer.append(str)
             this.emit('data', sessionId, str)
           }
 
           const onStderr = (data: Buffer) => {
             const str = data.toString()
-            session.ringBuffer += str
-            if (session.ringBuffer.length > RING_BUFFER_SIZE) {
-              session.ringBuffer = session.ringBuffer.slice(-RING_BUFFER_SIZE)
-            }
+            session.ringBuffer.append(str)
             this.emit('data', sessionId, str)
           }
 
@@ -362,7 +354,7 @@ export class SshManager extends EventEmitter {
    * リングバッファの内容を取得
    */
   getBuffer(sessionId: string): string {
-    return this.sessions.get(sessionId)?.ringBuffer ?? ''
+    return this.sessions.get(sessionId)?.ringBuffer.getSafeContent() ?? ''
   }
 
   /**
