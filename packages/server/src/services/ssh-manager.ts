@@ -7,6 +7,27 @@ import { RingBuffer } from './ring-buffer.js'
 const RECONNECT_DELAY_MS = 5000
 
 /**
+ * リモートシェルに注入するOSC 133シェル統合スクリプト（インライン版）
+ * リモートにファイルが存在しないため、コマンドとして直接書き込む
+ */
+const SHELL_INTEGRATION_INLINE = `
+if [ -n "$ZSH_VERSION" ]; then
+  __kurimats_precmd() { local e=$?; [ -n "$__kurimats_cs" ] && printf '\\e]133;D;%s\\a' "$e" && unset __kurimats_cs; printf '\\e]133;A\\a'; }
+  __kurimats_preexec() { __kurimats_cs=1; printf '\\e]133;C\\a'; }
+  PROMPT="\${PROMPT}%{\\e]133;B\\a%}"
+  precmd_functions+=(__kurimats_precmd)
+  preexec_functions+=(__kurimats_preexec)
+elif [ -n "$BASH_VERSION" ]; then
+  __kurimats_pc() { local e=$?; [ -n "$__kurimats_cs" ] && printf '\\e]133;D;%s\\a' "$e" && __kurimats_cs=""; printf '\\e]133;A\\a'; }
+  __kurimats_pe() { [[ "$BASH_COMMAND" == "\$PROMPT_COMMAND" || "$BASH_COMMAND" == __kurimats_* ]] && return; [ -z "$__kurimats_cs" ] && __kurimats_cs=1 && printf '\\e]133;C\\a'; }
+  PROMPT_COMMAND="__kurimats_pc\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+  PS1="\${PS1}\\[\\e]133;B\\a\\]"
+  trap '__kurimats_pe' DEBUG
+fi
+export KURIMATS_SHELL_INTEGRATION_LOADED=1
+`.trim()
+
+/**
  * リモートSSHセッション情報
  */
 interface SshSession {
@@ -292,8 +313,8 @@ export class SshManager extends EventEmitter {
             finalized: false,
           }
 
-          // 作業ディレクトリの変更
-          channel.write(`cd ${cwd} && clear\n`)
+          // シェル統合スクリプトを注入 + 作業ディレクトリの変更
+          channel.write(`${SHELL_INTEGRATION_INLINE}\ncd ${cwd} && clear\n`)
 
           const onData = (data: Buffer) => {
             const str = data.toString()

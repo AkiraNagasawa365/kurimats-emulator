@@ -7,6 +7,10 @@ import { RingBuffer } from './ring-buffer.js'
 const __ptyDir = path.dirname(fileURLToPath(import.meta.url))
 const PTY_HELPER_PATH = path.join(__ptyDir, 'pty-helper.py')
 
+/** シェル統合スクリプトのパス */
+const SHELL_INTEGRATION_ZSH = path.join(__ptyDir, 'shell-integration-zsh.sh')
+const SHELL_INTEGRATION_BASH = path.join(__ptyDir, 'shell-integration-bash.sh')
+
 /** リサイズ用の特殊エスケープシーケンス（pty-helper.pyと同期） */
 const RESIZE_ESC = (cols: number, rows: number) => `\x1b[R;${cols};${rows}\x07`
 
@@ -184,6 +188,7 @@ export class PtyManager extends EventEmitter {
   ): void {
     const cmd = command || process.env.SHELL || '/bin/zsh'
     const cmdArgs = args || []
+    const shellIntegrationScript = this._getShellIntegrationPath(cmd)
     const ptyProcess = nodePty!.spawn(cmd, cmdArgs, {
       name: 'xterm-256color',
       cols,
@@ -195,8 +200,14 @@ export class PtyManager extends EventEmitter {
         COLORTERM: 'truecolor',
         ...(playwrightPort ? { PLAYWRIGHT_MCP_PORT: String(playwrightPort) } : {}),
         ...(PANE_NUMBER != null ? { PANE_NUMBER: String(PANE_NUMBER) } : {}),
+        KURIMATS_SHELL_INTEGRATION: '1',
       } as Record<string, string>,
     })
+
+    // シェル統合スクリプトをPTY起動直後にsource
+    if (shellIntegrationScript) {
+      ptyProcess.write(`source "${shellIntegrationScript}"\n`)
+    }
 
     const session: PtySession = {
       backend: 'node-pty',
@@ -246,6 +257,7 @@ export class PtyManager extends EventEmitter {
   ): void {
     const cmd = command || process.env.SHELL || '/bin/zsh'
     const cmdArgs = args || []
+    const shellIntegrationScript = this._getShellIntegrationPath(cmd)
 
     // python3のpty-helper.pyで擬似tty割り当て（node-pty利用不可時の代替）
     // pty-helper.pyはリサイズ用の特殊エスケープシーケンスも処理する
@@ -263,8 +275,18 @@ export class PtyManager extends EventEmitter {
         PTY_CWD: cwd,
         PTY_COLS: String(cols),
         PTY_ROWS: String(rows),
+        KURIMATS_SHELL_INTEGRATION: '1',
       },
     })
+
+    // シェル統合スクリプトをPTY起動直後にsource
+    if (shellIntegrationScript) {
+      try {
+        child.stdin?.write(`source "${shellIntegrationScript}"\n`)
+      } catch {
+        // プロセス起動直後のwrite失敗は無視
+      }
+    }
 
     const session: PtySession = {
       backend: 'child_process',
@@ -436,5 +458,20 @@ export class PtyManager extends EventEmitter {
     return Array.from(this.sessions.entries())
       .filter(([, s]) => s.alive)
       .map(([id]) => id)
+  }
+
+  /**
+   * コマンド名からシェル統合スクリプトのパスを返す
+   * 対応シェル以外はnullを返す
+   */
+  private _getShellIntegrationPath(command: string): string | null {
+    const basename = path.basename(command)
+    if (basename === 'zsh' || basename === 'zsh-5.9') {
+      return SHELL_INTEGRATION_ZSH
+    }
+    if (basename === 'bash' || basename.startsWith('bash-')) {
+      return SHELL_INTEGRATION_BASH
+    }
+    return null
   }
 }
