@@ -43,14 +43,22 @@ export const sessionsApi = {
     }),
 }
 
-// ファイルAPI
+// ファイルAPI（sshHostがある場合はリモートSFTP経由）
 export const filesApi = {
-  tree: (root: string) => request<FileNode[]>(`/files/tree?root=${encodeURIComponent(root)}`),
-  content: (path: string) => request<{ content: string; path: string }>(`/files/content?path=${encodeURIComponent(path)}`),
-  save: (path: string, content: string) =>
+  tree: (root: string, sshHost?: string | null) => {
+    const params = new URLSearchParams({ root })
+    if (sshHost) params.set('sshHost', sshHost)
+    return request<FileNode[]>(`/files/tree?${params}`)
+  },
+  content: (path: string, sshHost?: string | null) => {
+    const params = new URLSearchParams({ path })
+    if (sshHost) params.set('sshHost', sshHost)
+    return request<{ content: string; path: string }>(`/files/content?${params}`)
+  },
+  save: (path: string, content: string, sshHost?: string | null) =>
     request<{ ok: boolean }>('/files/content', {
       method: 'PUT',
-      body: JSON.stringify({ path, content }),
+      body: JSON.stringify({ path, content, ...(sshHost ? { sshHost } : {}) }),
     }),
 }
 

@@ -87,23 +87,23 @@ export function PaneLeafView({ leaf }: PaneLeafViewProps) {
 
       {/* サーフェスコンテンツ */}
       <div className="flex-1 overflow-hidden">
-        <SurfaceContent surface={activeSurface} paneId={leaf.id} />
+        <SurfaceContent surface={activeSurface} paneId={leaf.id} sshHost={activeWorkspace?.sshHost ?? null} />
       </div>
     </div>
   )
 }
 
 /** サーフェスタイプに応じたコンテンツレンダリング */
-function SurfaceContent({ surface, paneId }: { surface: PaneLeaf['surfaces'][0]; paneId: string }) {
+function SurfaceContent({ surface, paneId, sshHost }: { surface: PaneLeaf['surfaces'][0]; paneId: string; sshHost: string | null }) {
   switch (surface.type) {
     case 'terminal':
       return <TerminalSurface sessionId={surface.target} paneId={paneId} />
     case 'browser':
       return <BrowserSurface url={surface.target} />
     case 'editor':
-      return <EditorSurface filePath={surface.target} />
+      return <EditorSurface filePath={surface.target} sshHost={sshHost} />
     case 'markdown':
-      return <MarkdownSurface filePath={surface.target} />
+      return <MarkdownSurface filePath={surface.target} sshHost={sshHost} />
     default:
       return <div className="p-4 text-text-muted">不明なサーフェスタイプ</div>
   }

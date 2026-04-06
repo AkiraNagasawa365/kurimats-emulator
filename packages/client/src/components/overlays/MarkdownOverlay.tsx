@@ -9,13 +9,14 @@ interface Props {
   onClose: () => void
   filePath?: string
   fullScreen?: boolean
+  sshHost?: string | null
 }
 
 /**
  * Markdownオーバーレイ
- * マークダウンファイルの編集・プレビュー
+ * マークダウンファイルの編集・プレビュー（ローカル/リモート対応）
  */
-export function MarkdownOverlay({ onClose, filePath: initialPath, fullScreen }: Props) {
+export function MarkdownOverlay({ onClose, filePath: initialPath, fullScreen, sshHost }: Props) {
   const { workspaces, activeWorkspaceId } = useWorkspaceStore()
   const [filePath, setFilePath] = useState(initialPath || '')
   const [content, setContent] = useState('')
@@ -45,7 +46,7 @@ export function MarkdownOverlay({ onClose, filePath: initialPath, fullScreen }: 
     for (const path of candidates) {
       try {
         setLoading(true)
-        const data = await filesApi.content(path)
+        const data = await filesApi.content(path, sshHost)
         setFilePath(path)
         setContent(data.content)
         setLoading(false)
@@ -60,13 +61,13 @@ export function MarkdownOverlay({ onClose, filePath: initialPath, fullScreen }: 
     setContent('')
     setLoading(false)
     setError(null)
-  }, [])
+  }, [sshHost])
 
   const loadFile = useCallback((path: string) => {
     if (!path) return
     setLoading(true)
     setError(null)
-    filesApi.content(path)
+    filesApi.content(path, sshHost)
       .then(data => {
         setContent(data.content)
         setLoading(false)
@@ -75,7 +76,7 @@ export function MarkdownOverlay({ onClose, filePath: initialPath, fullScreen }: 
         setError(String(e))
         setLoading(false)
       })
-  }, [])
+  }, [sshHost])
 
   // デバウンス付き自動保存
   const handleContentChange = useCallback((newContent: string) => {
@@ -84,11 +85,11 @@ export function MarkdownOverlay({ onClose, filePath: initialPath, fullScreen }: 
 
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
     saveTimeoutRef.current = setTimeout(() => {
-      filesApi.save(filePath, newContent).catch(e => {
+      filesApi.save(filePath, newContent, sshHost).catch(e => {
         console.error('保存エラー:', e)
       })
     }, 1000)
-  }, [filePath])
+  }, [filePath, sshHost])
 
   // クリーンアップ
   useEffect(() => {
