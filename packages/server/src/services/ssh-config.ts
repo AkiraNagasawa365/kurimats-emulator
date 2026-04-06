@@ -64,14 +64,14 @@ function parseConfigContent(content: string): ParsedHost[] {
     const keyLower = key.toLowerCase()
 
     if (keyLower === 'host') {
+      // 前のホストを保存（ワイルドカード判定の前に行う）
+      if (current?.name) {
+        hosts.push(finalizeHost(current))
+      }
       // ワイルドカードホスト（* を含む）はスキップ
       if (value.includes('*')) {
         current = null
         continue
-      }
-      // 前のホストを保存
-      if (current?.name) {
-        hosts.push(finalizeHost(current))
       }
       current = { name: value.trim() }
     } else if (current) {
