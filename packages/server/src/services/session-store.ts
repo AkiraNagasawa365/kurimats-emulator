@@ -128,6 +128,14 @@ export class SessionStore {
   }
 
   /**
+   * セッションのworktreeパス更新
+   */
+  updateWorktreePath(id: string, worktreePath: string | null): void {
+    this.db.prepare('UPDATE sessions SET worktree_path = ?, last_active_at = ? WHERE id = ?')
+      .run(worktreePath, Date.now(), id)
+  }
+
+  /**
    * セッション名変更
    */
   rename(id: string, name: string): void {
