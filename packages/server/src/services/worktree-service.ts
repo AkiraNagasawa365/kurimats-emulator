@@ -105,14 +105,31 @@ export class WorktreeService {
   }
 
   /**
-   * worktreeを削除
+   * worktreeを削除し、対応するkurimats/ブランチも削除する
    */
   remove(repoPath: string, worktreePath: string): void {
+    // worktree削除前にブランチ名を取得
+    const branchName = this.getBranch(worktreePath)
+
     execFileSync('git', ['worktree', 'remove', worktreePath, '--force'], {
       cwd: repoPath,
       encoding: 'utf-8',
       stdio: 'pipe',
     })
+
+    // kurimats/プレフィックスのブランチのみ自動削除（安全策）
+    if (branchName?.startsWith('kurimats/')) {
+      try {
+        execFileSync('git', ['branch', '-D', branchName], {
+          cwd: repoPath,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        })
+        console.log(`🌿 ブランチ削除: ${branchName}`)
+      } catch {
+        // ブランチが既に存在しない場合は無視
+      }
+    }
   }
 
   /**
@@ -124,6 +141,47 @@ export class WorktreeService {
       encoding: 'utf-8',
       stdio: 'pipe',
     })
+  }
+
+  /**
+   * リポジトリ内の孤立したkurimats/ブランチを削除
+   * 現在のworktreeに紐づかないkurimats/*ブランチを一括削除する
+   */
+  cleanupOrphanedBranches(repoPath: string): string[] {
+    // 現在のworktreeが使用中のブランチを取得
+    const activeWorktrees = this.list(repoPath)
+    const activeBranches = new Set(activeWorktrees.map(w => w.branch).filter(Boolean))
+
+    // kurimats/プレフィックスの全ブランチを取得
+    let allBranches: string[]
+    try {
+      const output = execFileSync('git', ['branch', '--list', 'kurimats/*'], {
+        cwd: repoPath,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      })
+      allBranches = output.split('\n').map(b => b.trim().replace(/^\* /, '')).filter(Boolean)
+    } catch {
+      return []
+    }
+
+    // 使用中でないブランチを削除
+    const deleted: string[] = []
+    for (const branch of allBranches) {
+      if (!activeBranches.has(branch)) {
+        try {
+          execFileSync('git', ['branch', '-D', branch], {
+            cwd: repoPath,
+            encoding: 'utf-8',
+            stdio: 'pipe',
+          })
+          deleted.push(branch)
+        } catch {
+          // 削除失敗は無視
+        }
+      }
+    }
+    return deleted
   }
 
   /**

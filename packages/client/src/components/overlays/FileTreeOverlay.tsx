@@ -22,9 +22,11 @@ export function FileTreeOverlay({ onClose }: Props) {
   const [filter, setFilter] = useState('')
   const [workingDir, setWorkingDir] = useState('')
 
-  // アクティブワークスペースのrepoPathを使用
+  // アクティブワークスペースのrepoPath + sshHostを使用
+  const activeWs = workspaces.find(w => w.id === activeWorkspaceId)
+  const sshHost = activeWs?.sshHost ?? null
+
   useEffect(() => {
-    const activeWs = workspaces.find(w => w.id === activeWorkspaceId)
     const root = activeWs?.repoPath || ''
     setWorkingDir(root)
 
@@ -36,7 +38,7 @@ export function FileTreeOverlay({ onClose }: Props) {
 
     setLoading(true)
     setError(null)
-    filesApi.tree(root)
+    filesApi.tree(root, sshHost)
       .then(nodes => {
         setTree(nodes)
         setLoading(false)
@@ -45,17 +47,17 @@ export function FileTreeOverlay({ onClose }: Props) {
         setError(String(e))
         setLoading(false)
       })
-  }, [workspaces, activeWorkspaceId])
+  }, [workspaces, activeWorkspaceId, sshHost])
 
   const handleFileClick = useCallback((path: string) => {
     if (path.endsWith('.md')) {
       // Markdownファイルなら全画面markdownオーバーレイ
-      openOverlay('markdown', { filePath: path, fullScreen: true })
+      openOverlay('markdown', { filePath: path, fullScreen: true, sshHost })
     } else {
       // コードビューアオーバーレイで開く
-      openOverlay('code-viewer', { filePath: path })
+      openOverlay('code-viewer', { filePath: path, sshHost })
     }
-  }, [openOverlay])
+  }, [openOverlay, sshHost])
 
   return (
     <OverlayContainer isOpen={true} onClose={onClose} title="ファイルツリー">

@@ -1,9 +1,13 @@
 /**
  * サーバー起動時の初期化タスク
- * - orphanedセッションをdisconnectedに変更
+ * - orphanedセッション(active)をdisconnectedに変更
+ * - disconnectedセッションのworktree+ブランチを削除してDB更新
  * - ペインツリーに含まれない孤立セッションを削除
+ * - git worktree pruneで物理的な孤立worktreeを除去
+ * - 孤立したkurimats/ブランチを一括削除
  * - worktreeセッションのブランチ名を最新化
  */
+import { existsSync } from 'fs'
 import type { SessionStore } from './services/session-store.js'
 import type { WorktreeService } from './services/worktree-service.js'
 import { collectSessionIds } from './utils/pane-tree.js'
@@ -22,7 +26,31 @@ export function runStartupTasks(sessionStore: SessionStore, worktreeService: Wor
     console.log('✅ orphanedセッションなし')
   }
 
-  // 2. ペインツリーに含まれない孤立セッションを削除
+  // 2. disconnectedセッションのworktreeをクリーンアップ
+  //    アプリ再起動後のdisconnectedは実質再接続不可能なのでworktreeを解放する
+  try {
+    const disconnectedSessions = sessionStore.getAll().filter(s => s.status === 'disconnected' && s.worktreePath)
+    if (disconnectedSessions.length > 0) {
+      console.log(`🧹 ${disconnectedSessions.length}件のdisconnectedセッションのworktreeを解放`)
+      for (const s of disconnectedSessions) {
+        if (s.worktreePath && s.repoPath) {
+          try {
+            worktreeService.remove(s.repoPath, s.worktreePath)
+            console.log(`   🗑️ worktree+ブランチ削除: ${s.worktreePath}`)
+          } catch {
+            // 既に削除済みの場合は無視
+          }
+          // worktreePathをnullに更新（セッション自体は再接続可能なまま保持）
+          sessionStore.updateWorktreePath(s.id, null)
+        }
+      }
+      console.log('✅ disconnectedセッションのworktree解放完了')
+    }
+  } catch (e) {
+    console.error('⚠️ disconnectedセッションworktree解放中にエラー（サーバー起動は続行）:', e)
+  }
+
+  // 3. ペインツリーに含まれない孤立セッションを削除
   try {
     const workspaces = sessionStore.getAllCmuxWorkspaces()
     const referencedIds = new Set<string>()
@@ -41,7 +69,7 @@ export function runStartupTasks(sessionStore: SessionStore, worktreeService: Wor
         if (s.worktreePath && s.repoPath) {
           try {
             worktreeService.remove(s.repoPath, s.worktreePath)
-            console.log(`   🗑️ worktree削除: ${s.worktreePath}`)
+            console.log(`   🗑️ worktree+ブランチ削除: ${s.worktreePath}`)
           } catch {
             // 既に削除済みの場合は無視
           }
@@ -57,7 +85,41 @@ export function runStartupTasks(sessionStore: SessionStore, worktreeService: Wor
     console.error('⚠️ 孤立セッション削除中にエラー（サーバー起動は続行）:', e)
   }
 
-  // 3. worktreeセッションのブランチ名を最新化
+  // 4. git worktree prune + 孤立kurimats/ブランチの一括削除
+  try {
+    const allSessions = sessionStore.getAll()
+    const repoPathsWithWorktrees = new Set(
+      allSessions
+        .filter(s => s.repoPath && s.worktreePath)
+        .map(s => s.repoPath),
+    )
+    // 過去にworktreeが存在した可能性があるリポジトリも対象に含める
+    // （全セッションのrepoPathのうち .kurimats-worktrees ディレクトリが存在するもの）
+    for (const s of allSessions) {
+      if (s.repoPath && existsSync(`${s.repoPath}/.kurimats-worktrees`)) {
+        repoPathsWithWorktrees.add(s.repoPath)
+      }
+    }
+
+    for (const repoPath of repoPathsWithWorktrees) {
+      try {
+        worktreeService.prune(repoPath)
+        const deleted = worktreeService.cleanupOrphanedBranches(repoPath)
+        if (deleted.length > 0) {
+          console.log(`🌿 ${repoPath}: ${deleted.length}件の孤立ブランチを削除`)
+          for (const branch of deleted) {
+            console.log(`   ↳ ${branch}`)
+          }
+        }
+      } catch {
+        // リポジトリアクセスエラーは無視（リモートリポジトリ等）
+      }
+    }
+  } catch (e) {
+    console.error('⚠️ orphanedブランチ削除中にエラー（サーバー起動は続行）:', e)
+  }
+
+  // 5. worktreeセッションのブランチ名を最新化
   try {
     const allSessionsForBranch = sessionStore.getAll()
     let branchFixCount = 0

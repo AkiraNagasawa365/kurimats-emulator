@@ -5,13 +5,14 @@ import { filesApi } from '../../lib/api'
 
 interface MarkdownSurfaceProps {
   filePath: string
+  sshHost?: string | null
 }
 
 /**
  * Markdownサーフェス
- * ファイルのMarkdownをプレビュー表示する
+ * ファイルのMarkdownをプレビュー表示する（ローカル/リモート対応）
  */
-export function MarkdownSurface({ filePath }: MarkdownSurfaceProps) {
+export function MarkdownSurface({ filePath, sshHost }: MarkdownSurfaceProps) {
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -21,21 +22,21 @@ export function MarkdownSurface({ filePath }: MarkdownSurfaceProps) {
   useEffect(() => {
     setLoading(true)
     setError(null)
-    filesApi.content(filePath)
+    filesApi.content(filePath, sshHost)
       .then(({ content }) => setContent(content))
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [filePath])
+  }, [filePath, sshHost])
 
   const fileName = filePath.split('/').pop() ?? filePath
 
   const handleSave = useCallback(async () => {
     try {
-      await filesApi.save(filePath, content)
+      await filesApi.save(filePath, content, sshHost)
     } catch (e) {
       setError(`保存エラー: ${e}`)
     }
-  }, [filePath, content])
+  }, [filePath, content, sshHost])
 
   if (loading) {
     return (

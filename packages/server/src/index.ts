@@ -78,7 +78,7 @@ if (AUTH_TOKEN) {
 
 // REST APIルーティング
 app.use('/api/sessions', createSessionsRouter(sessionStore, ptyManager, sshManager, worktreeService))
-app.use('/api/files', createFilesRouter())
+app.use('/api/files', createFilesRouter(sshManager))
 app.use('/api/worktrees', createWorktreesRouter(worktreeService))
 app.use('/api/projects', createProjectsRouter(sessionStore))
 app.use('/api/layout', createLayoutRouter(sessionStore, canvasStore))

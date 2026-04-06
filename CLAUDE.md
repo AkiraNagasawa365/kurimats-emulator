@@ -75,3 +75,61 @@ npm run build:electron   # Electron配布ビルド
 - develop起動例: `PANE_NUMBER=0 npm run dev` → Server:14000, Client:5180
 - pane起動例: `PANE_NUMBER=3 npm run dev` → Server:14003, Client:5183, Playwright:3553
 - kurimats-emulator経由の場合: PTY起動時に `PANE_NUMBER` が自動設定される
+
+### デプロイ手順（Electronデスクトップアプリ）
+
+**デプロイ時は必ずこの手順を上から順に実行すること。省略・順序変更禁止。**
+
+1. **develop → main のPRを作成・マージ**
+   ```bash
+   gh pr create --base main --head develop --title "release: ..." --body "..."
+   gh pr merge <PR番号> --merge
+   ```
+
+2. **CIビルド完了を待つ**（`.github/workflows/build-electron.yml` が自動実行）
+   ```bash
+   gh run list --branch main --limit 1        # run ID確認
+   gh run watch <run_id>                       # 完了まで待機（約3分）
+   ```
+
+3. **DMGダウンロード**
+   ```bash
+   gh release list --limit 1                   # タグ確認
+   gh release download <tag> --pattern "*.dmg" --dir /private/tmp
+   ```
+
+4. **稼働中アプリを終了**
+   ```bash
+   osascript -e 'quit app "kurimats"'
+   sleep 3
+   pgrep -f kurimats || echo "終了OK"
+   ```
+
+5. **新バージョンをインストール**
+   ```bash
+   hdiutil attach /private/tmp/kurimats-*.dmg -nobrowse
+   rm -rf /Applications/kurimats.app
+   cp -R "/Volumes/kurimats */kurimats.app" /Applications/
+   xattr -cr /Applications/kurimats.app
+   hdiutil detach "/Volumes/kurimats *"
+   rm /private/tmp/kurimats-*.dmg
+   ```
+
+6. **ローカルビルドを削除**（重要: macOSが古いローカルビルドを優先起動するため）
+   ```bash
+   rm -rf packages/electron/dist/mac-arm64/kurimats.app
+   ```
+
+7. **`/Applications` から起動・パス確認**
+   ```bash
+   open /Applications/kurimats.app
+   sleep 5
+   # 必ず /Applications/ から起動されていることを確認
+   ps aux | grep "[k]urimats" | grep "node index"
+   ```
+
+8. **動作確認**
+   ```bash
+   curl -s http://localhost:13001/api/ssh/hosts | python3 -m json.tool
+   ```
+   Playwrightでワークスペース作成等の基本操作を検証する

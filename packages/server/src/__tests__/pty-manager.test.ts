@@ -124,6 +124,18 @@ describe('PtyManager', () => {
       manager.resize('resize-multi', 160, 48)
       expect(manager.getSessionSize('resize-multi')).toEqual({ cols: 160, rows: 48 })
     })
+
+    it('child_processモードの連続リサイズがデバウンスされる', async () => {
+      await manager.spawn('resize-debounce', '/tmp')
+      // 短時間に3回連続リサイズ → cols/rowsは即時更新される
+      manager.resize('resize-debounce', 80, 24)
+      manager.resize('resize-debounce', 100, 30)
+      manager.resize('resize-debounce', 120, 40)
+      // 内部状態は最後のサイズが反映される
+      expect(manager.getSessionSize('resize-debounce')).toEqual({ cols: 120, rows: 40 })
+      // デバウンスの100ms待機後、実際のリサイズ送信が行われる
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    })
   })
 
   // ========================================

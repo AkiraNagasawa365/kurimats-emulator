@@ -2,9 +2,14 @@ import { spawn as cpSpawn, type ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { RingBuffer } from './ring-buffer.js'
 
 const __ptyDir = path.dirname(fileURLToPath(import.meta.url))
 const PTY_HELPER_PATH = path.join(__ptyDir, 'pty-helper.py')
+
+/** シェル統合スクリプトのパス */
+const SHELL_INTEGRATION_ZSH = path.join(__ptyDir, 'shell-integration-zsh.sh')
+const SHELL_INTEGRATION_BASH = path.join(__ptyDir, 'shell-integration-bash.sh')
 
 /** リサイズ用の特殊エスケープシーケンス（pty-helper.pyと同期） */
 const RESIZE_ESC = (cols: number, rows: number) => `\x1b[R;${cols};${rows}\x07`
@@ -43,17 +48,16 @@ interface PtySession {
   ptyProcess?: IPtyProcess
   childProcess?: ChildProcess
   sessionId: string
-  ringBuffer: string
+  ringBuffer: RingBuffer
   alive: boolean
   cols: number
   rows: number
   cleanup: () => void
   finalized: boolean
+  resizeTimer: ReturnType<typeof setTimeout> | null
 }
 
 import { PLAYWRIGHT_PORT_BASE, calculatePort } from '../utils/ports.js'
-
-const RING_BUFFER_SIZE = 50 * 1024 // 50KB
 /** ペイン番号（環境変数から取得、0=develop, N=paneN, null=未設定） */
 const PANE_NUMBER = process.env.PANE_NUMBER != null
   ? parseInt(process.env.PANE_NUMBER, 10)
@@ -184,6 +188,7 @@ export class PtyManager extends EventEmitter {
   ): void {
     const cmd = command || process.env.SHELL || '/bin/zsh'
     const cmdArgs = args || []
+    const shellIntegrationScript = this._getShellIntegrationPath(cmd)
     const ptyProcess = nodePty!.spawn(cmd, cmdArgs, {
       name: 'xterm-256color',
       cols,
@@ -195,26 +200,30 @@ export class PtyManager extends EventEmitter {
         COLORTERM: 'truecolor',
         ...(playwrightPort ? { PLAYWRIGHT_MCP_PORT: String(playwrightPort) } : {}),
         ...(PANE_NUMBER != null ? { PANE_NUMBER: String(PANE_NUMBER) } : {}),
+        KURIMATS_SHELL_INTEGRATION: '1',
       } as Record<string, string>,
     })
+
+    // シェル統合スクリプトをPTY起動直後にsource
+    if (shellIntegrationScript) {
+      ptyProcess.write(`source "${shellIntegrationScript}"\n`)
+    }
 
     const session: PtySession = {
       backend: 'node-pty',
       ptyProcess,
       sessionId,
-      ringBuffer: '',
+      ringBuffer: new RingBuffer(),
       alive: true,
       cols,
       rows,
       cleanup: () => {},
       finalized: false,
+      resizeTimer: null,
     }
 
     const dataDisposable = ptyProcess.onData((data: string) => {
-      session.ringBuffer += data
-      if (session.ringBuffer.length > RING_BUFFER_SIZE) {
-        session.ringBuffer = session.ringBuffer.slice(-RING_BUFFER_SIZE)
-      }
+      session.ringBuffer.append(data)
       this.emit('data', sessionId, data)
     })
 
@@ -248,6 +257,7 @@ export class PtyManager extends EventEmitter {
   ): void {
     const cmd = command || process.env.SHELL || '/bin/zsh'
     const cmdArgs = args || []
+    const shellIntegrationScript = this._getShellIntegrationPath(cmd)
 
     // python3のpty-helper.pyで擬似tty割り当て（node-pty利用不可時の代替）
     // pty-helper.pyはリサイズ用の特殊エスケープシーケンスも処理する
@@ -265,27 +275,35 @@ export class PtyManager extends EventEmitter {
         PTY_CWD: cwd,
         PTY_COLS: String(cols),
         PTY_ROWS: String(rows),
+        KURIMATS_SHELL_INTEGRATION: '1',
       },
     })
+
+    // シェル統合スクリプトをPTY起動直後にsource
+    if (shellIntegrationScript) {
+      try {
+        child.stdin?.write(`source "${shellIntegrationScript}"\n`)
+      } catch {
+        // プロセス起動直後のwrite失敗は無視
+      }
+    }
 
     const session: PtySession = {
       backend: 'child_process',
       childProcess: child,
       sessionId,
-      ringBuffer: '',
+      ringBuffer: new RingBuffer(),
       alive: true,
       cols,
       rows,
       cleanup: () => {},
       finalized: false,
+      resizeTimer: null,
     }
 
     const handleData = (data: Buffer) => {
       const str = data.toString()
-      session.ringBuffer += str
-      if (session.ringBuffer.length > RING_BUFFER_SIZE) {
-        session.ringBuffer = session.ringBuffer.slice(-RING_BUFFER_SIZE)
-      }
+      session.ringBuffer.append(str)
       this.emit('data', sessionId, str)
     }
 
@@ -350,12 +368,17 @@ export class PtyManager extends EventEmitter {
     if (session.backend === 'node-pty' && session.ptyProcess) {
       session.ptyProcess.resize(cols, rows)
     } else if (session.childProcess) {
-      // child_processモード: pty-helper.pyに特殊エスケープシーケンスでリサイズ通知
-      try {
-        session.childProcess.stdin?.write(RESIZE_ESC(cols, rows))
-      } catch {
-        // プロセス終了済みの場合は無視
-      }
+      // child_processモード: デバウンス付きでpty-helper.pyにリサイズ通知
+      // 連続リサイズ（ウィンドウドラッグ等）時は最後の1回だけ送信
+      if (session.resizeTimer) clearTimeout(session.resizeTimer)
+      session.resizeTimer = setTimeout(() => {
+        session.resizeTimer = null
+        try {
+          session.childProcess?.stdin?.write(RESIZE_ESC(cols, rows))
+        } catch (e) {
+          console.warn(`セッション ${sessionId} のリサイズ送信に失敗:`, e)
+        }
+      }, 100)
     }
   }
 
@@ -363,7 +386,7 @@ export class PtyManager extends EventEmitter {
    * リングバッファの内容を取得（再接続時に使用）
    */
   getBuffer(sessionId: string): string {
-    return this.sessions.get(sessionId)?.ringBuffer ?? ''
+    return this.sessions.get(sessionId)?.ringBuffer.getSafeContent() ?? ''
   }
 
   /**
@@ -395,6 +418,11 @@ export class PtyManager extends EventEmitter {
   kill(sessionId: string): void {
     const session = this.sessions.get(sessionId)
     if (!session) return
+
+    if (session.resizeTimer) {
+      clearTimeout(session.resizeTimer)
+      session.resizeTimer = null
+    }
 
     if (session.alive) {
       session.alive = false
@@ -430,5 +458,20 @@ export class PtyManager extends EventEmitter {
     return Array.from(this.sessions.entries())
       .filter(([, s]) => s.alive)
       .map(([id]) => id)
+  }
+
+  /**
+   * コマンド名からシェル統合スクリプトのパスを返す
+   * 対応シェル以外はnullを返す
+   */
+  private _getShellIntegrationPath(command: string): string | null {
+    const basename = path.basename(command)
+    if (basename === 'zsh' || basename === 'zsh-5.9') {
+      return SHELL_INTEGRATION_ZSH
+    }
+    if (basename === 'bash' || basename.startsWith('bash-')) {
+      return SHELL_INTEGRATION_BASH
+    }
+    return null
   }
 }

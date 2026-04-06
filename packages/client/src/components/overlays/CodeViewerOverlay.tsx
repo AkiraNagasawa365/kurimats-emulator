@@ -7,6 +7,7 @@ import { OverlayContainer } from './OverlayContainer'
 interface Props {
   filePath: string
   onClose: () => void
+  sshHost?: string | null
 }
 
 // 拡張子から言語を推定
@@ -26,7 +27,7 @@ function getLanguage(path: string): string {
  * コードビューアオーバーレイ
  * ファイル内容をシンタックスハイライト付きで表示
  */
-export function CodeViewerOverlay({ filePath, onClose }: Props) {
+export function CodeViewerOverlay({ filePath, onClose, sshHost }: Props) {
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -37,7 +38,7 @@ export function CodeViewerOverlay({ filePath, onClose }: Props) {
     if (!filePath) return
     setLoading(true)
     setError(null)
-    filesApi.content(filePath)
+    filesApi.content(filePath, sshHost)
       .then(data => {
         setContent(data.content)
         setLoading(false)
@@ -46,7 +47,7 @@ export function CodeViewerOverlay({ filePath, onClose }: Props) {
         setError(String(e))
         setLoading(false)
       })
-  }, [filePath])
+  }, [filePath, sshHost])
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(content).then(() => {
