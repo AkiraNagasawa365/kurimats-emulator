@@ -1,4 +1,5 @@
 import type { Session } from '@kurimats/shared'
+import { useShellStateStore } from '../../stores/shell-state-store'
 
 interface Props {
   session: Session
@@ -8,9 +9,11 @@ interface Props {
 
 /**
  * ターミナルパネルのヘッダー
- * セッション名、ブランチ名、操作ボタンを表示
+ * セッション名、ブランチ名、シェル状態、操作ボタンを表示
  */
 export function TerminalHeader({ session, isActive, onClose }: Props) {
+  const shellState = useShellStateStore((s) => s.getState(session.id))
+
   return (
     <div
       className={`flex items-center justify-between px-3 py-1.5 text-xs border-b transition-colors ${
@@ -32,6 +35,26 @@ export function TerminalHeader({ session, isActive, onClose }: Props) {
         {session.branch && (
           <span className="text-text-muted truncate">
             [{session.branch}]
+          </span>
+        )}
+        {/* シェル実行状態インジケーター */}
+        {shellState.executionState === 'executing' && (
+          <span className="flex items-center gap-1 text-yellow-400 flex-shrink-0" title="コマンド実行中">
+            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+            <span className="text-[10px]">実行中</span>
+          </span>
+        )}
+        {/* 直前コマンドの終了コード */}
+        {shellState.lastExitCode !== null && shellState.executionState === 'idle' && (
+          <span
+            className={`text-[10px] px-1 py-0.5 rounded flex-shrink-0 ${
+              shellState.lastExitCode === 0
+                ? 'bg-green-900/30 text-green-400'
+                : 'bg-red-900/30 text-red-400'
+            }`}
+            title={`終了コード: ${shellState.lastExitCode}`}
+          >
+            {shellState.lastExitCode === 0 ? '✓' : `✗ ${shellState.lastExitCode}`}
           </span>
         )}
       </div>

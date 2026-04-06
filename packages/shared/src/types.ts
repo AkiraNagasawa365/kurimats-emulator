@@ -335,6 +335,24 @@ export interface CreateStartupTemplateParams {
   envVars?: Record<string, string>
 }
 
+// ========== シェル統合 (OSC 133) ==========
+
+/** シェルの実行状態 */
+export type ShellExecutionState = 'idle' | 'executing'
+
+/**
+ * OSC 133マーカーから得られるシェル状態
+ * ターミナルセッションごとに1つ
+ */
+export interface ShellState {
+  /** シェルの実行状態 */
+  executionState: ShellExecutionState
+  /** 直前コマンドの終了コード（未実行時はnull） */
+  lastExitCode: number | null
+  /** 直前コマンドの終了時刻（通知判定用） */
+  lastCommandFinishedAt: number | null
+}
+
 // ========== 通知 ==========
 
 // Claude通知

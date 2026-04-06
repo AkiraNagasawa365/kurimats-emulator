@@ -6,6 +6,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { useTerminalWs } from '../../hooks/useTerminalWs'
 import { hasValidSize, safeFit, getCellDimensions } from '../../utils/terminal-utils'
+import { useShellStateStore } from '../../stores/shell-state-store'
+import { useSshStore } from '../../stores/ssh-store'
 
 interface Props {
   sessionId: string
@@ -138,6 +140,57 @@ export function TerminalComponent({ sessionId, isActive, onFocus }: Props) {
 
     return () => disposable.dispose()
   }, [terminal])
+
+  // OSC 133 シェル統合ハンドラー
+  const commandStartTimeRef = useRef<number | null>(null)
+  /** コマンド完了通知の閾値（この秒数以上実行していたコマンドの完了を通知） */
+  const NOTIFY_THRESHOLD_MS = 5000
+
+  useEffect(() => {
+    if (!terminal) return
+
+    const { markCommandStart, markCommandFinish } = useShellStateStore.getState()
+    const { addNotification } = useSshStore.getState()
+
+    // OSC 133 ハンドラー登録
+    // データ形式: "A", "B", "C", "D;exitCode"
+    const disposable = terminal.parser.registerOscHandler(133, (data) => {
+      const marker = data.charAt(0)
+      switch (marker) {
+        case 'C': // コマンド実行開始
+          commandStartTimeRef.current = Date.now()
+          markCommandStart(sessionId)
+          break
+        case 'D': { // コマンド完了
+          const exitCodeStr = data.substring(2) // "D;0" → "0"
+          const exitCode = parseInt(exitCodeStr, 10)
+          const finalExitCode = isNaN(exitCode) ? 0 : exitCode
+          markCommandFinish(sessionId, finalExitCode)
+
+          // 長時間実行コマンドの完了を通知
+          const startTime = commandStartTimeRef.current
+          if (startTime && Date.now() - startTime >= NOTIFY_THRESHOLD_MS) {
+            const status = finalExitCode === 0 ? '成功' : `失敗 (code: ${finalExitCode})`
+            addNotification({
+              id: `cmd-${sessionId}-${Date.now()}`,
+              sessionId,
+              message: `コマンド完了: ${status}`,
+              timestamp: Date.now(),
+              read: false,
+            })
+          }
+          commandStartTimeRef.current = null
+          break
+        }
+        // A（プロンプト開始）, B（入力開始）は将来のPhase 3/4で使用
+      }
+      return false // XTerm.jsのデフォルト処理も継続
+    })
+
+    return () => {
+      disposable.dispose()
+    }
+  }, [terminal, sessionId])
 
   // WebSocket接続
   useTerminalWs(sessionId, terminal)
