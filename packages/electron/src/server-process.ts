@@ -4,6 +4,7 @@
  */
 
 import { ChildProcess, execSync } from 'child_process'
+import { existsSync } from 'fs'
 import * as path from 'path'
 
 /** サーバープロセスの状態 */
@@ -43,6 +44,20 @@ export class ServerProcessManager {
   }
 
   /**
+   * バンドル済みNode.jsバイナリのパスを解決する
+   * 本番ビルドではapp-content/node-runtime/nodeを使用し、
+   * ユーザー環境のNodeバージョンに依存しない
+   */
+  private resolveBundledNode(): string {
+    const bundledNode = path.join(path.dirname(this.serverDir), 'node-runtime', 'node')
+    if (!existsSync(bundledNode)) {
+      console.warn(`⚠️ バンドル済みNode.jsが見つかりません: ${bundledNode}（システムのnodeにフォールバック）`)
+      return 'node'
+    }
+    return bundledNode
+  }
+
+  /**
    * サーバープロセスを起動する
    * 既に起動中の場合はスキップする
    */
@@ -56,7 +71,7 @@ export class ServerProcessManager {
     console.log(`サーバーを起動中... (ポート: ${port})`)
 
     try {
-      const command = this.isDev ? 'npx' : 'node'
+      const command = this.isDev ? 'npx' : this.resolveBundledNode()
       const args = this.isDev ? ['tsx', 'watch', 'src/index.ts'] : ['index.js']
 
       // 本番時はクライアント静的ファイルのパスを渡す
