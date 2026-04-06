@@ -121,4 +121,12 @@ sharedPkg.main = './dist/index.js'
 sharedPkg.types = './dist/index.d.ts'
 writeFileSync(sharedPkgPath, JSON.stringify(sharedPkg, null, 2) + '\n')
 
+// Node.jsランタイムをバンドル（ユーザー環境のNodeバージョンに依存しないため）
+const nodeRuntimeDir = resolve(appContent, 'node-runtime')
+mkdirSync(nodeRuntimeDir, { recursive: true })
+cpSync(process.execPath, resolve(nodeRuntimeDir, 'node'))
+chmodSync(resolve(nodeRuntimeDir, 'node'), 0o755)
+writeFileSync(resolve(nodeRuntimeDir, 'NODE_VERSION'), process.version + '\n')
+console.log(`  Node.jsバンドル: ${process.version} (${process.execPath})`)
+
 console.log('バンドル完了: app-content/')
