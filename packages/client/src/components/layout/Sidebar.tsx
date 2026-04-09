@@ -5,7 +5,6 @@ import { useSessionStore } from '../../stores/session-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useSshStore } from '../../stores/ssh-store'
 import { tabApi } from '../../lib/api'
-import { useOverlayStore } from '../../stores/overlay-store'
 import { ProjectSettingsPanel } from '../project/ProjectSettingsPanel'
 import {
   SidebarCreateSessionForm,
@@ -33,7 +32,6 @@ export function Sidebar() {
   } = useSessionStore()
   const { addPanel, setActiveSession, boardNodes } = useLayoutStore()
   const { hosts, fetchHosts, connectHost, disconnectHost, fetchPresets } = useSshStore()
-  const { openOverlay } = useOverlayStore()
   const tabSyncMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [showNewForm, setShowNewForm] = useState(false)
@@ -424,17 +422,10 @@ export function Sidebar() {
         </div>
       )}
 
-      <div className="px-3 py-2.5 border-t border-border space-y-1">
+      <div className="px-3 py-2.5 border-t border-border">
         <p className="text-[10px] text-text-secondary font-medium">
           ボード: {boardNodes.length}件のセッション
         </p>
-        <button
-          onClick={() => openOverlay('feedback')}
-          className="w-full text-left text-xs text-text-secondary hover:text-text-primary hover:bg-surface-2 px-1 py-1 rounded transition-colors"
-          data-testid="feedback-open-button"
-        >
-          フィードバック
-        </button>
       </div>
 
       {settingsProject && (

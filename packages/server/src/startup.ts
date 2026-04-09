@@ -8,11 +8,63 @@
  * - worktreeセッションのブランチ名を最新化
  */
 import { existsSync } from 'fs'
+import type { PaneNode } from '@kurimats/shared'
 import type { SessionStore } from './services/session-store.js'
 import type { WorktreeService } from './services/worktree-service.js'
 import { collectSessionIds } from './utils/pane-tree.js'
 
+/**
+ * 旧surfaces形式のペインツリーをsessionId形式にマイグレーションする
+ * surfaces[].type === 'terminal' の target を sessionId に変換
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function migratePaneTree(node: any): PaneNode {
+  if (!node) return node
+  if (node.kind === 'leaf') {
+    // 旧形式: surfaces[] + activeSurfaceIndex → 新形式: sessionId
+    if ('surfaces' in node && !('sessionId' in node)) {
+      const terminalSurface = node.surfaces?.find((s: any) => s.type === 'terminal')
+      const sessionId = terminalSurface?.target ?? ''
+      return {
+        kind: 'leaf',
+        id: node.id,
+        sessionId,
+        ratio: node.ratio ?? 0.5,
+      } as PaneNode
+    }
+    return node
+  }
+  if (node.kind === 'split' && node.children) {
+    return {
+      ...node,
+      children: [migratePaneTree(node.children[0]), migratePaneTree(node.children[1])],
+    } as PaneNode
+  }
+  return node
+}
+
 export function runStartupTasks(sessionStore: SessionStore, worktreeService: WorktreeService): void {
+  // 0. ペインツリーの旧形式(surfaces[])から新形式(sessionId)へマイグレーション
+  try {
+    const workspaces = sessionStore.getAllCmuxWorkspaces()
+    let migratedCount = 0
+    for (const ws of workspaces) {
+      const tree = ws.paneTree as any
+      // 旧形式の判定: リーフノードに surfaces プロパティがある
+      const needsMigration = JSON.stringify(tree).includes('"surfaces"')
+      if (needsMigration) {
+        const migrated = migratePaneTree(tree)
+        sessionStore.updateCmuxPaneTree(ws.id, migrated, ws.activePaneId)
+        migratedCount++
+      }
+    }
+    if (migratedCount > 0) {
+      console.log(`🔄 ${migratedCount}件のワークスペースのペインツリーをマイグレーションしました`)
+    }
+  } catch (e) {
+    console.error('⚠️ ペインツリーマイグレーション中にエラー（サーバー起動は続行）:', e)
+  }
+
   // 1. PTYが消失したactiveセッションをdisconnectedに変更
   const orphanedSessions = sessionStore.getAll().filter(s => s.status === 'active')
   if (orphanedSessions.length > 0) {

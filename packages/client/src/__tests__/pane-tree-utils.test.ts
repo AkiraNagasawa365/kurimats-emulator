@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import type { PaneLeaf, PaneSplit, PaneNode, Surface } from '@kurimats/shared'
+import type { PaneLeaf, PaneSplit, PaneNode } from '@kurimats/shared'
 import {
   findNode,
   findParent,
@@ -11,24 +11,17 @@ import {
   splitLeaf,
   closeLeaf,
   resizeSplit,
-  addSurface,
-  removeSurface,
-  switchSurface,
   findAdjacentPane,
 } from '../lib/pane-tree-utils'
 
 // ========== テストヘルパー ==========
 
-function makeLeaf(id: string, ratio = 0.5, surfaces: Surface[] = []): PaneLeaf {
-  return { kind: 'leaf', id, surfaces, activeSurfaceIndex: 0, ratio }
+function makeLeaf(id: string, ratio = 0.5, sessionId = 'session-default'): PaneLeaf {
+  return { kind: 'leaf', id, sessionId, ratio }
 }
 
 function makeSplit(id: string, direction: 'horizontal' | 'vertical', children: [PaneNode, PaneNode], ratio = 0.5): PaneSplit {
   return { kind: 'split', id, direction, children, ratio }
-}
-
-function makeTerminalSurface(id: string, sessionId: string): Surface {
-  return { id, type: 'terminal', target: sessionId, label: `Terminal ${id}` }
 }
 
 // テスト用ツリー構造:
@@ -46,9 +39,9 @@ let splitInner: PaneSplit
 let splitRoot: PaneSplit
 
 beforeEach(() => {
-  leafA = makeLeaf('leaf-A', 0.4)
-  leafB = makeLeaf('leaf-B', 0.5)
-  leafC = makeLeaf('leaf-C', 0.5)
+  leafA = makeLeaf('leaf-A', 0.4, 'session-A')
+  leafB = makeLeaf('leaf-B', 0.5, 'session-B')
+  leafC = makeLeaf('leaf-C', 0.5, 'session-C')
   splitInner = makeSplit('split-inner', 'horizontal', [leafB, leafC])
   splitRoot = makeSplit('split-root', 'vertical', [leafA, splitInner])
 })
@@ -137,24 +130,23 @@ describe('flattenWithRects', () => {
 // ========== ツリー変異 ==========
 
 describe('createLeaf', () => {
-  it('空のリーフを生成', () => {
-    const leaf = createLeaf()
+  it('リーフを生成', () => {
+    const leaf = createLeaf('session-1')
     expect(leaf.kind).toBe('leaf')
-    expect(leaf.surfaces).toEqual([])
+    expect(leaf.sessionId).toBe('session-1')
     expect(leaf.ratio).toBe(0.5)
   })
 
-  it('サーフェス付きリーフを生成', () => {
-    const surface = makeTerminalSurface('s1', 'session-1')
-    const leaf = createLeaf([surface], 0.6)
-    expect(leaf.surfaces).toHaveLength(1)
+  it('ratio指定でリーフを生成', () => {
+    const leaf = createLeaf('session-1', 0.6)
+    expect(leaf.sessionId).toBe('session-1')
     expect(leaf.ratio).toBe(0.6)
   })
 })
 
 describe('splitLeaf', () => {
   it('リーフを縦分割', () => {
-    const result = splitLeaf(splitRoot, 'leaf-A', 'vertical')
+    const result = splitLeaf(splitRoot, 'leaf-A', 'vertical', 'new-session')
     // leaf-A の位置がスプリットに置換される
     expect(result.kind).toBe('split')
     if (result.kind !== 'split') return
@@ -164,15 +156,18 @@ describe('splitLeaf', () => {
     expect(newNode.direction).toBe('vertical')
     expect(newNode.children[0].id).toBe('leaf-A')
     expect(newNode.children[1].kind).toBe('leaf')
+    if (newNode.children[1].kind === 'leaf') {
+      expect(newNode.children[1].sessionId).toBe('new-session')
+    }
   })
 
   it('ツリー内のリーフ数が1増える', () => {
-    const result = splitLeaf(splitRoot, 'leaf-B', 'horizontal')
+    const result = splitLeaf(splitRoot, 'leaf-B', 'horizontal', 'new-session')
     expect(countLeaves(result)).toBe(4)
   })
 
   it('元のツリーは変更されない（イミュータブル）', () => {
-    splitLeaf(splitRoot, 'leaf-A', 'vertical')
+    splitLeaf(splitRoot, 'leaf-A', 'vertical', 'new-session')
     expect(countLeaves(splitRoot)).toBe(3)
   })
 })
@@ -234,69 +229,6 @@ describe('resizeSplit', () => {
       const first = result.children[0] as PaneLeaf
       expect(first.ratio).toBeCloseTo(0.9)
     }
-  })
-})
-
-// ========== サーフェス操作 ==========
-
-describe('addSurface', () => {
-  it('ペインにサーフェスを追加', () => {
-    const surface = makeTerminalSurface('s1', 'session-1')
-    const result = addSurface(splitRoot, 'leaf-A', surface)
-    const leaf = findNode(result, 'leaf-A') as PaneLeaf
-    expect(leaf.surfaces).toHaveLength(1)
-    expect(leaf.activeSurfaceIndex).toBe(0) // 最初のサーフェス
-  })
-
-  it('追加時にアクティブインデックスが新しいタブに移動', () => {
-    const s1 = makeTerminalSurface('s1', 'session-1')
-    const s2 = makeTerminalSurface('s2', 'session-2')
-    let tree = addSurface(splitRoot, 'leaf-A', s1)
-    tree = addSurface(tree, 'leaf-A', s2)
-    const leaf = findNode(tree, 'leaf-A') as PaneLeaf
-    expect(leaf.surfaces).toHaveLength(2)
-    expect(leaf.activeSurfaceIndex).toBe(1)
-  })
-})
-
-describe('removeSurface', () => {
-  it('サーフェスを削除', () => {
-    const s1 = makeTerminalSurface('s1', 'session-1')
-    const s2 = makeTerminalSurface('s2', 'session-2')
-    let tree = addSurface(splitRoot, 'leaf-A', s1)
-    tree = addSurface(tree, 'leaf-A', s2)
-    tree = removeSurface(tree, 'leaf-A', 's1')
-    const leaf = findNode(tree, 'leaf-A') as PaneLeaf
-    expect(leaf.surfaces).toHaveLength(1)
-    expect(leaf.surfaces[0].id).toBe('s2')
-  })
-
-  it('アクティブインデックスが範囲内に収まる', () => {
-    const s1 = makeTerminalSurface('s1', 'session-1')
-    let tree = addSurface(splitRoot, 'leaf-A', s1)
-    tree = removeSurface(tree, 'leaf-A', 's1')
-    const leaf = findNode(tree, 'leaf-A') as PaneLeaf
-    expect(leaf.activeSurfaceIndex).toBe(0)
-  })
-})
-
-describe('switchSurface', () => {
-  it('アクティブサーフェスを切替', () => {
-    const s1 = makeTerminalSurface('s1', 'session-1')
-    const s2 = makeTerminalSurface('s2', 'session-2')
-    let tree = addSurface(splitRoot, 'leaf-A', s1)
-    tree = addSurface(tree, 'leaf-A', s2)
-    tree = switchSurface(tree, 'leaf-A', 0)
-    const leaf = findNode(tree, 'leaf-A') as PaneLeaf
-    expect(leaf.activeSurfaceIndex).toBe(0)
-  })
-
-  it('範囲外のインデックスをクランプ', () => {
-    const s1 = makeTerminalSurface('s1', 'session-1')
-    let tree = addSurface(splitRoot, 'leaf-A', s1)
-    tree = switchSurface(tree, 'leaf-A', 99)
-    const leaf = findNode(tree, 'leaf-A') as PaneLeaf
-    expect(leaf.activeSurfaceIndex).toBe(0) // surfaces.length - 1 = 0
   })
 })
 

@@ -7,8 +7,7 @@ function defaultPaneTree(): PaneLeaf {
   return {
     kind: 'leaf',
     id: 'test-pane-1',
-    surfaces: [],
-    activeSurfaceIndex: 0,
+    sessionId: 'default-session',
     ratio: 0.5,
   }
 }
@@ -72,8 +71,7 @@ describe('cmuxワークスペース', () => {
     const newTree: PaneLeaf = {
       kind: 'leaf',
       id: 'new-pane',
-      surfaces: [{ id: 's1', type: 'terminal', target: 'session-1', label: 'Terminal' }],
-      activeSurfaceIndex: 0,
+      sessionId: 'session-1',
       ratio: 0.5,
     }
 
@@ -82,7 +80,7 @@ describe('cmuxワークスペース', () => {
     expect(updated!.activePaneId).toBe('new-pane')
     expect(updated!.paneTree.kind).toBe('leaf')
     if (updated!.paneTree.kind === 'leaf') {
-      expect(updated!.paneTree.surfaces).toHaveLength(1)
+      expect(updated!.paneTree.sessionId).toBe('session-1')
     }
   })
 
@@ -147,7 +145,7 @@ describe('cmuxワークスペース', () => {
   })
 })
 
-describe('ペイン閉じ時のセッション1:1整合��', () => {
+describe('ペイン閉じ時のセッション1:1整合性', () => {
   let store: SessionStore
 
   beforeEach(() => {
@@ -166,15 +164,13 @@ describe('ペイン閉じ時のセッション1:1整合��', () => {
     const leaf1: PaneLeaf = {
       kind: 'leaf',
       id: 'pane-1',
-      surfaces: [{ id: 's1', type: 'terminal', target: session.id, label: 'Term 1' }],
-      activeSurfaceIndex: 0,
+      sessionId: session.id,
       ratio: 0.5,
     }
     const leaf2: PaneLeaf = {
       kind: 'leaf',
       id: 'pane-2',
-      surfaces: [],
-      activeSurfaceIndex: 0,
+      sessionId: 'other-session',
       ratio: 0.5,
     }
     const splitTree: PaneSplit = {
@@ -206,24 +202,22 @@ describe('ペイン閉じ時のセッション1:1整合��', () => {
     expect(remaining!.workspaceId).toBeNull()
   })
 
-  it('セッションがターミナルサーフェスのtargetとして正しく紐づく', () => {
+  it('セッションがペインのsessionIdとして正しく紐づく', () => {
     const ws = store.createCmuxWorkspace({ name: 'WS', repoPath: '/tmp/test' }, defaultPaneTree())
     const session = store.create({ name: 'sess', repoPath: '/tmp/test', workspaceId: ws.id })
 
-    const leafWithTerminal: PaneLeaf = {
+    const leafWithSession: PaneLeaf = {
       kind: 'leaf',
       id: 'pane-1',
-      surfaces: [{ id: 's1', type: 'terminal', target: session.id, label: session.name }],
-      activeSurfaceIndex: 0,
+      sessionId: session.id,
       ratio: 0.5,
     }
 
-    store.updateCmuxPaneTree(ws.id, leafWithTerminal, 'pane-1')
+    store.updateCmuxPaneTree(ws.id, leafWithSession, 'pane-1')
 
     const updated = store.getCmuxWorkspace(ws.id)!
     const tree = updated.paneTree as PaneLeaf
-    expect(tree.surfaces[0].target).toBe(session.id)
-    expect(tree.surfaces[0].type).toBe('terminal')
+    expect(tree.sessionId).toBe(session.id)
   })
 })
 
@@ -238,11 +232,11 @@ describe('孤立セッションクリーンアップ', () => {
     store.close()
   })
 
-  /** ペインツリーからセッションIDを収集（index.tsの起動時ロジックと同じ） */
+  /** ペインツリーからセッションIDを収集 */
   function collectSessionIdsFromTree(node: PaneNode): string[] {
     if (!node) return []
     if (node.kind === 'leaf') {
-      return node.surfaces.filter(s => s.type === 'terminal').map(s => s.target)
+      return [node.sessionId]
     }
     if (!node.children || node.children.length < 2) return []
     return [...collectSessionIdsFromTree(node.children[0]), ...collectSessionIdsFromTree(node.children[1])]
@@ -257,8 +251,7 @@ describe('孤立セッションクリーンアップ', () => {
     const tree: PaneLeaf = {
       kind: 'leaf',
       id: 'pane-1',
-      surfaces: [{ id: 's1', type: 'terminal', target: referenced.id, label: 'Term' }],
-      activeSurfaceIndex: 0,
+      sessionId: referenced.id,
       ratio: 0.5,
     }
     store.createCmuxWorkspace({ name: 'WS', repoPath: '/tmp' }, tree)
@@ -301,8 +294,7 @@ describe('孤立セッションクリーンアップ', () => {
         {
           kind: 'leaf',
           id: 'pane-1',
-          surfaces: [{ id: 's1', type: 'terminal', target: s1.id, label: 'T1' }],
-          activeSurfaceIndex: 0,
+          sessionId: s1.id,
           ratio: 0.5,
         },
         {
@@ -314,15 +306,13 @@ describe('孤立セッションクリーンアップ', () => {
             {
               kind: 'leaf',
               id: 'pane-2',
-              surfaces: [{ id: 's2', type: 'terminal', target: s2.id, label: 'T2' }],
-              activeSurfaceIndex: 0,
+              sessionId: s2.id,
               ratio: 0.5,
             },
             {
               kind: 'leaf',
               id: 'pane-3',
-              surfaces: [{ id: 's3', type: 'terminal', target: s3.id, label: 'T3' }],
-              activeSurfaceIndex: 0,
+              sessionId: s3.id,
               ratio: 0.5,
             },
           ],
@@ -374,12 +364,10 @@ describe('セッションブランチ更新', () => {
   })
 
   it('baseBranchではなく実ブランチが保存されるべき（セッション作成の意図確認）', () => {
-    // baseBranch='main'で作成した場合、store.create()はそのまま保存する
-    // 呼び出し側がactualBranchを渡す責務を持つ
     const session = store.create({
       name: 'actual-branch',
       repoPath: '/tmp',
-      baseBranch: 'kurimats/actual-branch', // 呼び出し側がactualBranchを渡した場合
+      baseBranch: 'kurimats/actual-branch',
       worktreePath: '/tmp/worktrees/actual-branch',
     })
     expect(session.branch).toBe('kurimats/actual-branch')

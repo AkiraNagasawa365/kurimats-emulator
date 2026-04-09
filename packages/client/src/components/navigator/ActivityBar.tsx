@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useOverlayStore } from '../../stores/overlay-store'
 
 type ActivityBarSection = 'workspaces' | 'favorites' | 'ssh' | 'settings'
 
@@ -49,6 +50,7 @@ export function ActivityBar({ activeSection, onSectionToggle, totalNotifications
 
       {/* 下部アイコン */}
       <div className="flex flex-col items-center gap-1">
+        <FeedbackButton />
         {bottomItems.map(item => (
           <ActivityBarButton
             key={item.id}
@@ -110,6 +112,34 @@ function ActivityBarButton({
                         px-2 py-1 bg-surface-2 text-text-primary text-xs
                         rounded shadow-lg whitespace-nowrap border border-border">
           {item.label}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FeedbackButton() {
+  const [hover, setHover] = useState(false)
+  const openOverlay = useOverlayStore(s => s.openOverlay)
+
+  return (
+    <div className="relative">
+      <button
+        className="w-10 h-10 flex items-center justify-center rounded-lg text-lg
+                   text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
+        onClick={() => openOverlay('feedback')}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        title="フィードバック"
+        data-testid="feedback-open-button"
+      >
+        💬
+      </button>
+      {hover && (
+        <div className="absolute left-12 top-1/2 -translate-y-1/2 z-50
+                        px-2 py-1 bg-surface-2 text-text-primary text-xs
+                        rounded shadow-lg whitespace-nowrap border border-border">
+          フィードバック
         </div>
       )}
     </div>

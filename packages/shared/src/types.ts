@@ -42,24 +42,12 @@ export interface WorktreeInfo {
 /** スプリット方向 */
 export type SplitDirection = 'horizontal' | 'vertical'
 
-/** サーフェス種別（ペイン内タブの中身） */
-export type SurfaceType = 'terminal' | 'browser' | 'editor' | 'markdown'
-
-/** サーフェス（ペイン内の1タブ） */
-export interface Surface {
-  id: string
-  type: SurfaceType
-  /** terminal: sessionId, browser: url, editor: filePath, markdown: filePath */
-  target: string
-  label: string
-}
-
-/** ペインツリーのリーフ（実際のコンテンツを持つ） */
+/** ペインツリーのリーフ（1ペイン = 1セッション） */
 export interface PaneLeaf {
   kind: 'leaf'
   id: string
-  surfaces: Surface[]
-  activeSurfaceIndex: number
+  /** このペインに紐づくセッションID */
+  sessionId: string
   /** 親スプリット内での割合（0-1） */
   ratio: number
 }

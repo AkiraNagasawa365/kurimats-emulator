@@ -1,10 +1,7 @@
 import { create } from 'zustand'
-import type { SplitDirection, Surface } from '@kurimats/shared'
+import type { SplitDirection } from '@kurimats/shared'
 import {
   resizeSplit,
-  addSurface as addSurfaceToTree,
-  removeSurface as removeSurfaceFromTree,
-  switchSurface as switchSurfaceInTree,
   findAdjacentPane,
 } from '../lib/pane-tree-utils'
 import { useWorkspaceStore } from './workspace-store'
@@ -27,11 +24,6 @@ interface PaneState {
   resizeSplit: (splitId: string, ratio: number) => void
   focusPane: (paneId: string) => void
   focusDirection: (direction: Direction) => void
-
-  // サーフェス操作
-  addSurface: (paneId: string, surface: Surface) => void
-  removeSurface: (paneId: string, surfaceId: string) => void
-  switchSurface: (paneId: string, index: number) => void
 
   // 通知リング
   setAttentionRing: (paneId: string, active: boolean) => void
@@ -140,27 +132,6 @@ export const usePaneStore = create<PaneState>((set, get) => ({
     if (target) {
       get().focusPane(target.id)
     }
-  },
-
-  addSurface: (paneId, surface) => {
-    withActiveWorkspace((ws) => ({
-      tree: addSurfaceToTree(ws.paneTree, paneId, surface),
-      activePaneId: ws.activePaneId,
-    }))
-  },
-
-  removeSurface: (paneId, surfaceId) => {
-    withActiveWorkspace((ws) => ({
-      tree: removeSurfaceFromTree(ws.paneTree, paneId, surfaceId),
-      activePaneId: ws.activePaneId,
-    }))
-  },
-
-  switchSurface: (paneId, index) => {
-    withActiveWorkspace((ws) => ({
-      tree: switchSurfaceInTree(ws.paneTree, paneId, index),
-      activePaneId: ws.activePaneId,
-    }))
   },
 
   setAttentionRing: (paneId, active) => {
