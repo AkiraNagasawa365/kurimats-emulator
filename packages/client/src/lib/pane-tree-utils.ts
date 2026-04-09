@@ -4,7 +4,7 @@
  * バイナリツリーベースのペイン分割を管理する。
  * 全関数はイミュータブル — 新しいツリーを返す。
  */
-import type { PaneNode, PaneLeaf, PaneSplit, SplitDirection, Surface } from '@kurimats/shared'
+import type { PaneNode, PaneLeaf, PaneSplit, SplitDirection } from '@kurimats/shared'
 
 // ========== ID生成 ==========
 
@@ -18,11 +18,6 @@ export function generatePaneId(): string {
 /** 一意なスプリットIDを生成 */
 export function generateSplitId(): string {
   return `split-${Date.now()}-${++counter}`
-}
-
-/** 一意なサーフェスIDを生成 */
-export function generateSurfaceId(): string {
-  return `surface-${Date.now()}-${++counter}`
 }
 
 // ========== ツリー走査 ==========
@@ -131,13 +126,12 @@ export function flattenWithRects(
 
 // ========== ツリー変異（イミュータブル） ==========
 
-/** 空のリーフを作成 */
-export function createLeaf(surfaces: Surface[] = [], ratio = 0.5): PaneLeaf {
+/** リーフを作成 */
+export function createLeaf(sessionId: string, ratio = 0.5): PaneLeaf {
   return {
     kind: 'leaf',
     id: generatePaneId(),
-    surfaces,
-    activeSurfaceIndex: 0,
+    sessionId,
     ratio,
   }
 }
@@ -147,11 +141,11 @@ export function splitLeaf(
   tree: PaneNode,
   leafId: string,
   direction: SplitDirection,
-  newLeafSurfaces: Surface[] = [],
+  newSessionId: string,
 ): PaneNode {
   return mapNode(tree, leafId, (node) => {
     if (node.kind !== 'leaf') return node
-    const newLeaf = createLeaf(newLeafSurfaces, 0.5)
+    const newLeaf = createLeaf(newSessionId, 0.5)
     const originalLeaf: PaneLeaf = { ...node, ratio: 0.5 }
     const split: PaneSplit = {
       kind: 'split',
@@ -211,37 +205,6 @@ export function resizeSplit(tree: PaneNode, splitId: string, ratio: number): Pan
       ? { ...second, ratio: 1 - clamped }
       : second
     return { ...node, children: [newFirst, newSecond] as [PaneNode, PaneNode] }
-  })
-}
-
-/** ペインにサーフェスを追加 */
-export function addSurface(tree: PaneNode, paneId: string, surface: Surface): PaneNode {
-  return mapNode(tree, paneId, (node) => {
-    if (node.kind !== 'leaf') return node
-    return {
-      ...node,
-      surfaces: [...node.surfaces, surface],
-      activeSurfaceIndex: node.surfaces.length, // 新しいタブをアクティブに
-    }
-  })
-}
-
-/** ペインからサーフェスを削除 */
-export function removeSurface(tree: PaneNode, paneId: string, surfaceId: string): PaneNode {
-  return mapNode(tree, paneId, (node) => {
-    if (node.kind !== 'leaf') return node
-    const newSurfaces = node.surfaces.filter(s => s.id !== surfaceId)
-    const newIndex = Math.min(node.activeSurfaceIndex, Math.max(0, newSurfaces.length - 1))
-    return { ...node, surfaces: newSurfaces, activeSurfaceIndex: newIndex }
-  })
-}
-
-/** ペインのアクティブサーフェスを切替 */
-export function switchSurface(tree: PaneNode, paneId: string, index: number): PaneNode {
-  return mapNode(tree, paneId, (node) => {
-    if (node.kind !== 'leaf') return node
-    const clamped = Math.max(0, Math.min(index, node.surfaces.length - 1))
-    return { ...node, activeSurfaceIndex: clamped }
   })
 }
 

@@ -9,13 +9,11 @@ export function genId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 }
 
-/** ペインツリーから全ターミナルサーフェスのセッションIDを収集 */
+/** ペインツリーから全セッションIDを収集 */
 export function collectSessionIds(node: PaneNode): string[] {
   if (!node) return []
   if (node.kind === 'leaf') {
-    return node.surfaces
-      .filter(s => s.type === 'terminal')
-      .map(s => s.target)
+    return [node.sessionId]
   }
   if (!node.children || node.children.length < 2) return []
   return [

@@ -73,7 +73,7 @@ describe('runStartupTasks', () => {
     // ワークスペースに紐付いているがペインツリーに含まれないセッション
     const ws = store.createCmuxWorkspace(
       { name: 'test-ws', repoPath: '/tmp/repo' },
-      { kind: 'leaf', id: 'pane-a', surfaces: [], activeSurfaceIndex: 0, ratio: 1 },
+      { kind: 'leaf', id: 'pane-a', sessionId: 'test-session', ratio: 1 },
     )
     const orphan = store.create({
       name: 'orphan-session',
@@ -138,7 +138,7 @@ describe('runStartupTasks', () => {
     it('ペインツリーに含まれない孤立SSHセッションを削除する', () => {
       const ws = store.createCmuxWorkspace(
         { name: 'ssh-ws', repoPath: '/data1/remote-repo', sshHost: 'elith-remote' },
-        { kind: 'leaf', id: 'pane-a', surfaces: [], activeSurfaceIndex: 0, ratio: 1 },
+        { kind: 'leaf', id: 'pane-a', sessionId: 'test-session', ratio: 1 },
       )
       const orphan = store.create({
         name: 'orphan-ssh',
@@ -161,7 +161,7 @@ describe('runStartupTasks', () => {
     it('ローカルとSSHが混在するワークスペースで正しくcleanupされる', () => {
       const ws = store.createCmuxWorkspace(
         { name: 'mixed-ws', repoPath: '/tmp/repo' },
-        { kind: 'leaf', id: 'pane-a', surfaces: [], activeSurfaceIndex: 0, ratio: 1 },
+        { kind: 'leaf', id: 'pane-a', sessionId: 'test-session', ratio: 1 },
       )
 
       // ローカルセッション（worktreeあり）— 孤立
@@ -245,7 +245,7 @@ describe('runStartupTasks', () => {
   it('worktreeService.remove失敗時もセッション削除は続行する', () => {
     const ws = store.createCmuxWorkspace(
       { name: 'test-ws', repoPath: '/tmp/repo' },
-      { kind: 'leaf', id: 'pane-a', surfaces: [], activeSurfaceIndex: 0, ratio: 1 },
+      { kind: 'leaf', id: 'pane-a', sessionId: 'test-session', ratio: 1 },
     )
     const orphan = store.create({
       name: 'orphan-session',

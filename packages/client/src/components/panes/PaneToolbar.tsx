@@ -1,7 +1,6 @@
 import { useCallback } from 'react'
 import type { Session } from '@kurimats/shared'
 import { useSessionStore } from '../../stores/session-store'
-import { usePaneStore } from '../../stores/pane-store'
 import { AnimatedFavoriteButton } from '../animations/FavoriteAnimations'
 
 interface PaneToolbarProps {
@@ -11,26 +10,14 @@ interface PaneToolbarProps {
 
 /**
  * ペイン上部のツールバー
- * セッション名・ブランチ表示 + お気に入り★ + コード表示ボタン
+ * セッション名・ブランチ表示 + お気に入り★
  */
-export function PaneToolbar({ session, paneId }: PaneToolbarProps) {
+export function PaneToolbar({ session }: PaneToolbarProps) {
   const toggleFavorite = useSessionStore(s => s.toggleFavorite)
-  const addSurface = usePaneStore(s => s.addSurface)
 
   const handleToggleFavorite = useCallback(() => {
     toggleFavorite(session.id)
   }, [toggleFavorite, session.id])
-
-  const handleOpenCode = useCallback(() => {
-    // セッションのrepoPathをエディタサーフェスとして開く
-    const target = session.worktreePath || session.repoPath
-    addSurface(paneId, {
-      id: `editor-${session.id}-${Date.now()}`,
-      type: 'editor',
-      target,
-      label: session.branch ? `📂 ${session.branch}` : '📂 コード',
-    })
-  }, [addSurface, paneId, session])
 
   return (
     <div className="group flex items-center gap-1 bg-surface-1 border-b border-border px-2 h-6 flex-shrink-0">
@@ -58,15 +45,6 @@ export function PaneToolbar({ session, paneId }: PaneToolbarProps) {
           isFavorite={session.isFavorite}
           onToggle={handleToggleFavorite}
         />
-
-        {/* コード表示ボタン */}
-        <button
-          onClick={(e) => { e.stopPropagation(); handleOpenCode() }}
-          className="text-xs text-transparent group-hover:text-text-muted hover:!text-accent transition-colors"
-          title="コードを表示"
-        >
-          📂
-        </button>
       </div>
     </div>
   )
