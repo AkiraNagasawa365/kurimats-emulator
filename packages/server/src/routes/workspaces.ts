@@ -3,7 +3,7 @@ import type { SessionStore } from '../services/session-store.js'
 import type { PtyManager } from '../services/pty-manager.js'
 import type { SshManager } from '../services/ssh-manager.js'
 import type { WorktreeService } from '../services/worktree-service.js'
-import type { PaneNode, PaneLeaf, Surface, SplitDirection, Session } from '@kurimats/shared'
+import type { PaneNode, PaneLeaf, SplitDirection, Session } from '@kurimats/shared'
 import { createAndSpawnSession, cleanupSession } from '../services/session-lifecycle.js'
 import {
   genId,
@@ -17,7 +17,7 @@ import {
   closeLeafInTree,
 } from '../utils/pane-tree.js'
 
-/** セッションを作成し、PTY/SSHを起動してClaude Codeを自動実行し、サーフェス情報を返す */
+/** セッションを作成し、PTY/SSHを起動してClaude Codeを自動実行する */
 async function createWorkspaceSession(
   store: SessionStore,
   ptyManager: PtyManager,
@@ -31,7 +31,7 @@ async function createWorkspaceSession(
     baseBranch?: string
     workspaceId: string
   },
-): Promise<{ session: Session; surface: Surface; paneId: string }> {
+): Promise<{ session: Session; paneId: string }> {
   const session = await createAndSpawnSession(
     store, ptyManager, sshManager, worktreeService,
     {
@@ -44,16 +44,8 @@ async function createWorkspaceSession(
     },
   )
 
-  // サーフェス・ペイン情報を返す
   const paneId = genId('pane')
-  const surface: Surface = {
-    id: genId('surface'),
-    type: 'terminal',
-    target: session.id,
-    label: session.name,
-  }
-
-  return { session, surface, paneId }
+  return { session, paneId }
 }
 
 export function createWorkspacesRouter(
@@ -103,7 +95,7 @@ export function createWorkspacesRouter(
       const workspaceId = genId('ws')
 
       // セッション+PTY/SSH+Claude Code起動
-      const { session, surface, paneId } = await createWorkspaceSession(
+      const { session, paneId } = await createWorkspaceSession(
         store, ptyManager, sshManager, worktreeService,
         {
           name: `${name}-pane1`,
@@ -115,12 +107,11 @@ export function createWorkspacesRouter(
         },
       )
 
-      // ペインツリー（初期状態: 1リーフ + ターミナルサーフェス）
+      // ペインツリー（初期状態: 1リーフ）
       const paneTree: PaneLeaf = {
         kind: 'leaf',
         id: paneId,
-        surfaces: [surface],
-        activeSurfaceIndex: 0,
+        sessionId: session.id,
         ratio: 0.5,
       }
 
@@ -185,14 +176,13 @@ export function createWorkspacesRouter(
         },
       )
       session = created.session
-      const { surface, paneId: newPaneId } = created
+      const { paneId: newPaneId } = created
 
       // ペインツリーを分割
       const newLeaf: PaneLeaf = {
         kind: 'leaf',
         id: newPaneId,
-        surfaces: [surface],
-        activeSurfaceIndex: 0,
+        sessionId: session.id,
         ratio: 0.5,
       }
 
@@ -250,9 +240,7 @@ export function createWorkspacesRouter(
       return
     }
 
-    // ターミナルサーフェスに紐づくセッションIDを取得
-    const terminalSurface = targetLeaf.surfaces.find(s => s.type === 'terminal')
-    const sessionId = terminalSurface?.target ?? null
+    const sessionId = targetLeaf.sessionId
 
     // ペインツリーからリーフを削除
     const newTree = closeLeafInTree(workspace.paneTree, paneId)
