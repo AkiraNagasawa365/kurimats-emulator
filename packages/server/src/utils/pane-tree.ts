@@ -28,6 +28,49 @@ export function countLeaves(node: PaneNode): number {
   return countLeaves(node.children[0]) + countLeaves(node.children[1])
 }
 
+/** 正規表現メタ文字をエスケープ */
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * `${workspaceName}-paneN` 形式で既に使われている番号を避け、
+ * 空いている最小の正整数（1以上）を返す。
+ *
+ * 既存のペイン数 + 1 ではなく「空き番号」を返すことで、
+ * pane1 を削除した後に分割した際の名前衝突を防ぐ。
+ *
+ * @param tree 対象ワークスペースのペインツリー
+ * @param workspaceName ワークスペース名（現在の名前）
+ * @param getSessionName sessionId からセッション名を解決する関数
+ */
+export function nextFreePaneNumber(
+  tree: PaneNode,
+  workspaceName: string,
+  getSessionName: (sessionId: string) => string | null | undefined,
+): number {
+  const pattern = new RegExp(`^${escapeRegExp(workspaceName)}-pane(\\d+)$`)
+  const used = new Set<number>()
+
+  const walk = (node: PaneNode): void => {
+    if (node.kind === 'leaf') {
+      const name = getSessionName(node.sessionId)
+      if (name) {
+        const match = name.match(pattern)
+        if (match) used.add(parseInt(match[1], 10))
+      }
+      return
+    }
+    walk(node.children[0])
+    walk(node.children[1])
+  }
+  walk(tree)
+
+  let n = 1
+  while (used.has(n)) n++
+  return n
+}
+
 /** IDでリーフを検索 */
 export function findLeaf(node: PaneNode, leafId: string): PaneLeaf | null {
   if (node.kind === 'leaf') return node.id === leafId ? node : null
