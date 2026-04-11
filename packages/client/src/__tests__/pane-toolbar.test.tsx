@@ -22,6 +22,7 @@ vi.mock('../components/animations/FavoriteAnimations', () => ({
 }))
 
 const mockToggleFavorite = vi.fn()
+const mockOpenOverlay = vi.fn()
 
 vi.mock('../stores/session-store', () => ({
   useSessionStore: (selector: any) => selector({
@@ -32,6 +33,12 @@ vi.mock('../stores/session-store', () => ({
 vi.mock('../stores/pane-store', () => ({
   usePaneStore: (selector: any) => selector({
     addSurface: vi.fn(),
+  }),
+}))
+
+vi.mock('../stores/overlay-store', () => ({
+  useOverlayStore: (selector: any) => selector({
+    openOverlay: mockOpenOverlay,
   }),
 }))
 
@@ -111,5 +118,35 @@ describe('PaneToolbar', () => {
   it('data-testid="pane-toolbar" を公開してテストから参照可能にする', () => {
     const html = renderHtml({ session: baseSession })
     expect(html).toContain('data-testid="pane-toolbar"')
+  })
+
+  describe('ファイルツリー起動ボタン（📁）', () => {
+    it('📁ボタンが描画され data-testid と title を公開する', () => {
+      const html = renderHtml({ session: baseSession })
+      expect(html).toContain('data-testid="file-tree-button"')
+      expect(html).toContain('title="ファイルツリーを開く"')
+      expect(html).toContain('aria-label="ファイルツリーを開く"')
+      expect(html).toContain('📁')
+    })
+
+    it('📁ボタンは常時視認できる色（text-transparent を使わない）', () => {
+      const html = renderHtml({ session: baseSession })
+      // file-tree-button を含む <button ...> タグ全体を抽出する
+      const tagMatch = html.match(/<button[^>]*data-testid="file-tree-button"[^>]*>/)
+      expect(tagMatch).toBeTruthy()
+      const buttonTag = tagMatch?.[0] ?? ''
+      // ★と違い、最初から薄く見える text-text-muted を使う
+      expect(buttonTag).toContain('text-text-muted')
+      expect(buttonTag).not.toContain('text-transparent')
+    })
+
+    it('📁ボタンは右寄せボタン群の中で★より左に配置される', () => {
+      const html = renderHtml({ session: baseSession })
+      const fileTreePos = html.indexOf('data-testid="file-tree-button"')
+      const favoritePos = html.indexOf('data-testid="favorite-button"')
+      expect(fileTreePos).toBeGreaterThan(0)
+      expect(favoritePos).toBeGreaterThan(0)
+      expect(fileTreePos).toBeLessThan(favoritePos)
+    })
   })
 })
