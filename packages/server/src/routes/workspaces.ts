@@ -12,6 +12,7 @@ import {
   findLeaf,
   findFirstLeafId,
   containsLeafId,
+  nextFreePaneNumber,
   rebalanceRatios,
   splitLeafInTree,
   closeLeafInTree,
@@ -160,9 +161,14 @@ export function createWorkspacesRouter(
 
     let session: Session | null = null
     try {
-      // ペイン数をカウントしてユニーク名を作成
-      const paneCount = countLeaves(workspace.paneTree)
-      const sessionName = `${workspace.name}-pane${paneCount + 1}`
+      // 既存セッション名から空いている最小のペイン番号を算出してユニーク名を作成
+      // （`countLeaves + 1` 方式だと pane1 削除→分割で番号が重複するため）
+      const paneNumber = nextFreePaneNumber(
+        workspace.paneTree,
+        workspace.name,
+        (id) => store.getById(id)?.name,
+      )
+      const sessionName = `${workspace.name}-pane${paneNumber}`
 
       // 新セッション+PTY/SSH+Claude Code起動（独自worktree付き）
       const created = await createWorkspaceSession(
