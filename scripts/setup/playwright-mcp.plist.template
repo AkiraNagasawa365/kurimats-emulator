@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Playwright MCP を launchd で常駐起動する plist テンプレート
+
+  プレースホルダ (install-playwright-mcp.sh で置換):
+    @@HOMEBREW_PREFIX@@ - Homebrew の prefix (/opt/homebrew or /usr/local)
+    @@NPX_PATH@@        - npx の絶対パス
+    @@LOG_DIR@@         - ログ出力先ディレクトリ
+    @@PORT@@            - HTTP ポート (default: 14550)
+
+  設定のポイント:
+    - RunAtLoad=true  + KeepAlive=true で起動時/クラッシュ時に自動起動
+    - EnvironmentVariables.PATH は Homebrew を含める必要あり (launchd は最小 PATH のため)
+    - 127.0.0.1 バインドで外部から接続不能に
+    - ThrottleInterval=30 で暴走再起動を抑制
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.anthropic.playwright-mcp</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>@@NPX_PATH@@</string>
+        <string>-y</string>
+        <string>@playwright/mcp@latest</string>
+        <string>--port</string>
+        <string>@@PORT@@</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--headless</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>@@HOMEBREW_PREFIX@@/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>@@LOG_DIR@@/playwright-mcp.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>@@LOG_DIR@@/playwright-mcp.err.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
