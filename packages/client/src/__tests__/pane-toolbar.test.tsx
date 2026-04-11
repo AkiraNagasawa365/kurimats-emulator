@@ -95,17 +95,34 @@ describe('PaneToolbar', () => {
     expect(html).toContain('bg-gray-400')
   })
 
-  it('isActive=true の場合はツールバー背景を bg-surface-2 に切り替える', () => {
+  it('isActive=true の場合はツールバー背景を bg-surface-2 + border-b-accent に切り替える', () => {
     const html = renderHtml({ session: baseSession, isActive: true })
     expect(html).toContain('bg-surface-2')
     expect(html).toContain('border-b-accent')
     expect(html).not.toContain('bg-surface-1')
   })
 
-  it('isActive=false（デフォルト）の場合は bg-surface-1 を使う', () => {
+  it('isActive=false（デフォルト）の場合は bg-surface-1 + border-b-border-light を使う', () => {
     const html = renderHtml({ session: baseSession })
     expect(html).toContain('bg-surface-1')
+    expect(html).toContain('border-b-border-light')
     expect(html).not.toContain('bg-surface-2')
+  })
+
+  it('ツールバー背景はペイン content bg (bg-surface-0) と同じトークンを使わない', () => {
+    // 非アクティブでも surface-0 と同じ色だと視認不能になる（#165 の症状）
+    const htmlInactive = renderHtml({ session: baseSession })
+    const htmlActive = renderHtml({ session: baseSession, isActive: true })
+    expect(htmlInactive).not.toMatch(/\bbg-surface-0\b/)
+    expect(htmlActive).not.toMatch(/\bbg-surface-0\b/)
+  })
+
+  it('下辺は 2px の border-b-2 で分離線を確保する', () => {
+    // 1px では xterm 背景との同化で見えないケースが発生したため border-b-2 に格上げ
+    const htmlInactive = renderHtml({ session: baseSession })
+    const htmlActive = renderHtml({ session: baseSession, isActive: true })
+    expect(htmlInactive).toContain('border-b-2')
+    expect(htmlActive).toContain('border-b-2')
   })
 
   it('ペイン境界強調のため border-x を常時付与する', () => {

@@ -125,7 +125,7 @@ export function WorkspaceNavigator({ activeSection }: WorkspaceNavigatorProps) {
     : 'ワークスペース'
 
   return (
-    <div className="w-60 h-full bg-surface-1 border-r border-border flex flex-col flex-shrink-0">
+    <div className="w-60 h-full bg-chrome border-r border-border flex flex-col flex-shrink-0">
       {/* ヘッダー */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
         <span className="text-xs font-medium text-text-primary uppercase tracking-wider">

@@ -252,7 +252,7 @@ export function Sidebar() {
   )
 
   return (
-    <div className="w-60 bg-surface-1 border-r border-border flex flex-col h-full">
+    <div className="w-60 bg-chrome border-r border-border flex flex-col h-full">
       <div className="px-3 py-2.5 border-b border-border flex items-center justify-between">
         <h1 className="text-sm font-bold text-text-primary">Kurimats</h1>
         <button

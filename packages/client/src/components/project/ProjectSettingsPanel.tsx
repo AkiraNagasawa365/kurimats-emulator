@@ -45,7 +45,7 @@ export function ProjectSettingsPanel({ project, onClose, onUpdated }: Props) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-surface-1 rounded-lg shadow-xl w-[480px] max-h-[70vh] flex flex-col"
+        className="bg-chrome rounded-lg shadow-xl w-[480px] max-h-[70vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* ヘッダー */}

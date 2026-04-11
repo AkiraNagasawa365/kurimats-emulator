@@ -67,7 +67,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-surface-1 rounded-lg shadow-xl w-[640px] max-h-[80vh] flex flex-col"
+        className="bg-chrome rounded-lg shadow-xl w-[640px] max-h-[80vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* ヘッダー */}
@@ -154,7 +154,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
           ) : (
             <div className="divide-y divide-border">
               {feedbackList.map(fb => (
-                <div key={fb.id} className="px-5 py-3 hover:bg-surface-1 transition-colors group" data-testid="feedback-item">
+                <div key={fb.id} className="px-5 py-3 hover:bg-chrome transition-colors group" data-testid="feedback-item">
                   <div className="flex items-start gap-2">
                     <span className="text-sm flex-shrink-0">{categoryIcon(fb.category)}</span>
                     <div className="flex-1 min-w-0">

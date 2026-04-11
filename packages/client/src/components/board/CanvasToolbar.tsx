@@ -39,7 +39,7 @@ export function CanvasToolbar({
   const isFiltered = filter.favoritesOnly || filter.status !== 'all' || filter.projectId !== null
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 bg-surface-1/90 backdrop-blur-sm border border-border rounded-lg px-2 py-1.5 shadow-lg">
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 bg-chrome/90 backdrop-blur-sm border border-border rounded-lg px-2 py-1.5 shadow-lg">
       {/* フィルタボタン */}
       <div className="relative">
         <button
@@ -56,7 +56,7 @@ export function CanvasToolbar({
 
         {/* フィルタドロップダウン */}
         {showFilters && (
-          <div className="absolute top-full left-0 mt-1 bg-surface-1 border border-border rounded-lg shadow-xl p-3 min-w-[200px] space-y-3">
+          <div className="absolute top-full left-0 mt-1 bg-chrome border border-border rounded-lg shadow-xl p-3 min-w-[200px] space-y-3">
             {/* お気に入りフィルタ */}
             <label className="flex items-center gap-2 text-xs text-text-primary cursor-pointer">
               <input

@@ -18,7 +18,7 @@ export function NotificationToast() {
       {unread.length > 1 && (
         <button
           onClick={clearNotifications}
-          className="self-end text-[10px] text-text-muted hover:text-text-secondary px-2 py-0.5 bg-surface-1 rounded border border-border transition-colors"
+          className="self-end text-[10px] text-text-muted hover:text-text-secondary px-2 py-0.5 bg-chrome rounded border border-border transition-colors"
         >
           全て閉じる
         </button>
@@ -27,7 +27,7 @@ export function NotificationToast() {
       {unread.slice(0, 5).map(notification => (
         <div
           key={notification.id}
-          className="bg-surface-1 border border-accent/30 rounded-lg shadow-lg p-3 flex items-start gap-2 animate-slide-in"
+          className="bg-chrome border border-accent/30 rounded-lg shadow-lg p-3 flex items-start gap-2 animate-slide-in"
         >
           <span className="text-accent text-sm flex-shrink-0 mt-0.5">●</span>
           <div className="flex-1 min-w-0">

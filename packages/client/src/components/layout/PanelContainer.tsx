@@ -61,7 +61,7 @@ export function PanelContainer() {
   return (
     <div className="flex flex-col h-full">
       {/* 自動整列ボタン */}
-      <div className="flex items-center gap-1 px-2 py-1 bg-surface-1 border-b border-border">
+      <div className="flex items-center gap-1 px-2 py-1 bg-chrome border-b border-border">
         <span className="text-xs text-text-muted mr-1">配置:</span>
         {AUTO_LAYOUT_OPTIONS.map(({ mode: layoutMode, label }) => (
           <button
