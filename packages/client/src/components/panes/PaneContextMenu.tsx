@@ -91,7 +91,7 @@ export function PaneContextMenu({ paneId, x, y, onClose }: PaneContextMenuProps)
   return (
     <div
       ref={menuRef}
-      className="fixed z-[100] bg-surface-1 border border-border rounded-lg shadow-lg py-1 min-w-48"
+      className="fixed z-[100] bg-chrome border border-border rounded-lg shadow-lg py-1 min-w-48"
       style={{ left: adjustedPos.x, top: adjustedPos.y }}
     >
       {items.map((item, i) =>

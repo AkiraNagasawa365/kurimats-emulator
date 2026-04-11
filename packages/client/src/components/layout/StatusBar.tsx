@@ -10,7 +10,7 @@ export function StatusBar() {
   const paneCount = activeWs ? countLeaves(activeWs.paneTree) : 0
 
   return (
-    <div className="h-7 bg-surface-1 border-t border-border flex items-center px-3 text-[11px] text-text-secondary gap-4">
+    <div className="h-7 bg-chrome border-t border-border flex items-center px-3 text-[11px] text-text-secondary gap-4">
       {/* アクティブワークスペース名 */}
       {activeWs ? (
         <>

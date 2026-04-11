@@ -64,7 +64,7 @@ export function FileTreeOverlay({ onClose }: Props) {
       <div className="flex flex-col h-full">
         {/* 作業ディレクトリ表示 */}
         {workingDir && (
-          <div className="px-4 py-2 text-xs text-text-muted bg-surface-1 border-b border-border truncate">
+          <div className="px-4 py-2 text-xs text-text-muted bg-chrome border-b border-border truncate">
             {workingDir}
           </div>
         )}
@@ -76,7 +76,7 @@ export function FileTreeOverlay({ onClose }: Props) {
             value={filter}
             onChange={e => setFilter(e.target.value)}
             placeholder="ファイルを検索..."
-            className="w-full px-3 py-1.5 text-sm bg-surface-1 border border-border rounded text-text-primary placeholder-text-muted outline-none focus:border-accent"
+            className="w-full px-3 py-1.5 text-sm bg-chrome border border-border rounded text-text-primary placeholder-text-muted outline-none focus:border-accent"
             autoFocus
           />
         </div>

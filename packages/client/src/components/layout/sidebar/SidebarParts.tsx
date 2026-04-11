@@ -131,7 +131,7 @@ export function SidebarCreateSessionForm({
   }
 
   return (
-    <div className="p-3 border-b border-border space-y-2 bg-surface-1">
+    <div className="p-3 border-b border-border space-y-2 bg-chrome">
       <input
         type="text"
         placeholder="セッション名"

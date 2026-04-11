@@ -155,7 +155,7 @@ function WorkspaceContextMenu({
       {/* 背景クリックで閉じる */}
       <div className="fixed inset-0 z-40" onClick={onClose} />
 
-      <div className="absolute right-0 top-full z-50 bg-surface-1 border border-border
+      <div className="absolute right-0 top-full z-50 bg-chrome border border-border
                       rounded shadow-lg py-1 min-w-36">
         <button
           className="w-full px-3 py-1 text-xs text-text-primary hover:bg-surface-2 text-left"

@@ -29,15 +29,17 @@ export function PaneToolbar({ session, isActive = false }: PaneToolbarProps) {
     openOverlay('file-tree', { sessionId: session.id })
   }, [openOverlay, session.id])
 
-  // アクティブ/非アクティブで背景色と下線を切替。
-  // ペイン境界の視認性向上のため border-x を常時付与する。
+  // アクティブ/非アクティブで背景色と下線色を切替。
+  // - 背景は surface-0 (content) より一段明るい surface-1/2 を使い、バー本体を視認可能にする
+  // - 下辺は border-b-2 に格上げし、accent / border-light の 2px ラインで分離線として機能させる
+  // - ペイン境界の視認性向上のため border-x も常時付与する
   const activeClasses = isActive
     ? 'bg-surface-2 border-b-accent'
-    : 'bg-surface-1 border-b-border'
+    : 'bg-surface-1 border-b-border-light'
 
   return (
     <div
-      className={`group flex items-center gap-1 border-x border-b border-x-border px-2 h-6 flex-shrink-0 transition-colors ${activeClasses}`}
+      className={`group flex items-center gap-1 border-x border-b-2 border-x-border px-2 h-6 flex-shrink-0 transition-colors ${activeClasses}`}
       data-testid="pane-toolbar"
     >
       {/* ステータスインジケータ */}

@@ -407,7 +407,7 @@ function BoardCanvasInner() {
       )}
 
       {zoomIndicator !== null && (
-        <div className="absolute bottom-4 right-4 px-3 py-1.5 bg-surface-1/90 border border-border rounded-lg text-xs text-text-secondary font-mono animate-fade-in pointer-events-none z-10">
+        <div className="absolute bottom-4 right-4 px-3 py-1.5 bg-chrome/90 border border-border rounded-lg text-xs text-text-secondary font-mono animate-fade-in pointer-events-none z-10">
           {zoomIndicator}%
         </div>
       )}

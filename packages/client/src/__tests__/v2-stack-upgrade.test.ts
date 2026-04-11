@@ -109,6 +109,55 @@ describe('v2 ダークテーマ CSS設定', () => {
     expect(indexCss).toContain('--color-tile-header')
     expect(indexCss).toContain('--color-tile-border')
   })
+
+  // #175 の再発防止:
+  // surface-N は純粋な elevation ラダーでなければならない（N が大きいほど明るい）。
+  // 過去に surface-1 (#0b0f13) が surface-0 (#0f1419) より暗く設定されており、
+  // ペインツールバーが視覚的に消えるバグ (#165 -> #175) が発生した。
+  describe('surface カラースケールが luminance 昇順のラダーになっている', () => {
+    /** #rrggbb を相対輝度 (WCAG 相当の簡易版) に変換する */
+    function parseLuminance(hex: string): number {
+      const m = hex.match(/^#([0-9a-f]{6})$/i)
+      if (!m) throw new Error(`invalid hex: ${hex}`)
+      const n = parseInt(m[1], 16)
+      const r = ((n >> 16) & 0xff) / 255
+      const g = ((n >> 8) & 0xff) / 255
+      const b = (n & 0xff) / 255
+      // sRGB → 線形化してから Rec.709 重み付けで輝度を求める
+      const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+      return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    }
+
+    /** index.css から --color-<name> の #rrggbb 値を抽出 */
+    function extractColor(css: string, name: string): string {
+      const re = new RegExp(`--color-${name}:\\s*(#[0-9a-f]{6})`, 'i')
+      const m = css.match(re)
+      if (!m) throw new Error(`token not found: ${name}`)
+      return m[1]
+    }
+
+    it('surface-0 < surface-1 < surface-2 < surface-3 の luminance 順である', () => {
+      const s0 = parseLuminance(extractColor(indexCss, 'surface-0'))
+      const s1 = parseLuminance(extractColor(indexCss, 'surface-1'))
+      const s2 = parseLuminance(extractColor(indexCss, 'surface-2'))
+      const s3 = parseLuminance(extractColor(indexCss, 'surface-3'))
+      expect(s1).toBeGreaterThan(s0)
+      expect(s2).toBeGreaterThan(s1)
+      expect(s3).toBeGreaterThan(s2)
+    })
+
+    it('dark chrome 用途のトークン --color-chrome が定義されている', () => {
+      // Sidebar/ActivityBar/StatusBar/Overlay 等の content より暗い shell 色は
+      // surface ラダーから独立した chrome トークンで扱う
+      expect(indexCss).toMatch(/--color-chrome:\s*#[0-9a-f]{6}/i)
+    })
+
+    it('--color-chrome は surface-0 (content bg) より暗い', () => {
+      const content = parseLuminance(extractColor(indexCss, 'surface-0'))
+      const chrome = parseLuminance(extractColor(indexCss, 'chrome'))
+      expect(chrome).toBeLessThan(content)
+    })
+  })
 })
 
 describe('v2 アニメーション設定のframer-motion v12互換性', () => {
