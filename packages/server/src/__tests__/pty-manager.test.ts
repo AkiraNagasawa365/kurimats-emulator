@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { PtyManager, type PtyBackend } from '../services/pty-manager.js'
+import { PtyManager, buildPtyEnv, type PtyBackend } from '../services/pty-manager.js'
 
 describe('PtyManager', () => {
   let manager: PtyManager
@@ -273,6 +273,47 @@ describe('PtyManager', () => {
   })
 
   // ========================================
+  // CMUX_*環境変数リーク防止テスト
+  // ========================================
+  describe('CMUX_*環境変数リーク防止', () => {
+    it('子shellにCMUX_WORKSPACE_IDが伝わらない（実spawn）', async () => {
+      // 親プロセスに cmux 由来の env を仕込む
+      const originalCmuxWs = process.env.CMUX_WORKSPACE_ID
+      const originalCmuxSock = process.env.CMUX_SOCKET_PATH
+      process.env.CMUX_WORKSPACE_ID = 'test-ws-id-leak-check'
+      process.env.CMUX_SOCKET_PATH = '/tmp/fake-cmux.sock'
+
+      try {
+        const output: string[] = []
+        const collect = (sessionId: string, data: string) => {
+          if (sessionId === 'cmux-leak') output.push(data)
+        }
+        manager.on('data', collect)
+
+        await manager.spawn('cmux-leak', '/tmp', 120, 30, '/bin/sh', [
+          '-c',
+          'echo CWS=[${CMUX_WORKSPACE_ID:-empty}] CSOCK=[${CMUX_SOCKET_PATH:-empty}] KS=[${KURIMATS_SHELL_INTEGRATION:-empty}]',
+        ])
+
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        manager.removeListener('data', collect)
+
+        const joined = output.join('')
+        // CMUX_* は剥がされているので empty になる
+        expect(joined).toContain('CWS=[empty]')
+        expect(joined).toContain('CSOCK=[empty]')
+        // kurimats 側で付与する env は届く
+        expect(joined).toContain('KS=[1]')
+      } finally {
+        if (originalCmuxWs === undefined) delete process.env.CMUX_WORKSPACE_ID
+        else process.env.CMUX_WORKSPACE_ID = originalCmuxWs
+        if (originalCmuxSock === undefined) delete process.env.CMUX_SOCKET_PATH
+        else process.env.CMUX_SOCKET_PATH = originalCmuxSock
+      }
+    }, 10000)
+  })
+
+  // ========================================
   // Playwrightポート割当テスト
   // ========================================
   describe('Playwrightポート割当', () => {
@@ -304,6 +345,69 @@ describe('PtyManager', () => {
       expect(uniquePorts).toContain('3552')
       expect(uniquePorts).toContain('3553')
     }, 10000)
+  })
+})
+
+// ========================================
+// buildPtyEnv 単体テスト
+// ========================================
+describe('buildPtyEnv', () => {
+  it('CMUX_で始まるキーを全て除外する', () => {
+    const env = buildPtyEnv({
+      HOME: '/home/user',
+      CMUX_WORKSPACE_ID: 'ws-1',
+      CMUX_SOCKET_PATH: '/tmp/cmux.sock',
+      CMUX_TAB_ID: 'tab-1',
+      PATH: '/usr/bin',
+    })
+    expect(env.HOME).toBe('/home/user')
+    expect(env.PATH).toBe('/usr/bin')
+    expect(env.CMUX_WORKSPACE_ID).toBeUndefined()
+    expect(env.CMUX_SOCKET_PATH).toBeUndefined()
+    expect(env.CMUX_TAB_ID).toBeUndefined()
+  })
+
+  it('CMUX_以外のキーは維持する（GHOSTTY_ 等を含む）', () => {
+    const env = buildPtyEnv({
+      GHOSTTY_BIN_DIR: '/Applications/cmux.app/Contents/MacOS',
+      CMUX_BUNDLE_ID: 'com.cmuxterm.app',
+      USER: 'alice',
+    })
+    expect(env.GHOSTTY_BIN_DIR).toBe('/Applications/cmux.app/Contents/MacOS')
+    expect(env.USER).toBe('alice')
+    expect(env.CMUX_BUNDLE_ID).toBeUndefined()
+  })
+
+  it('overridesが後勝ちで反映される', () => {
+    const env = buildPtyEnv(
+      { HOME: '/old', TERM: 'dumb' },
+      { TERM: 'xterm-256color', KURIMATS_SHELL_INTEGRATION: '1' },
+    )
+    expect(env.HOME).toBe('/old')
+    expect(env.TERM).toBe('xterm-256color')
+    expect(env.KURIMATS_SHELL_INTEGRATION).toBe('1')
+  })
+
+  it('overridesでundefinedの値はスキップされる', () => {
+    const env = buildPtyEnv(
+      { HOME: '/home/user' },
+      { EXTRA: undefined, KURIMATS_SHELL_INTEGRATION: '1' },
+    )
+    expect(env.EXTRA).toBeUndefined()
+    expect(env.HOME).toBe('/home/user')
+    expect(env.KURIMATS_SHELL_INTEGRATION).toBe('1')
+  })
+
+  it('親envでundefinedの値はスキップされる', () => {
+    const env = buildPtyEnv({ HOME: '/home/user', OPTIONAL: undefined })
+    expect(env.HOME).toBe('/home/user')
+    expect(env.OPTIONAL).toBeUndefined()
+  })
+
+  it('overridesを省略しても動作する', () => {
+    const env = buildPtyEnv({ HOME: '/home/user', CMUX_X: 'y' })
+    expect(env.HOME).toBe('/home/user')
+    expect(env.CMUX_X).toBeUndefined()
   })
 })
 
