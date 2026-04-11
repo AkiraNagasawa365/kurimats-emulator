@@ -11,6 +11,7 @@ import {
   isSessionVisible,
   shouldBadgeBounce,
   shouldStarburst,
+  FAVORITE_BUTTON_CLASSES,
 } from '../components/animations/favorite-animation-config'
 
 // ===================================================================
@@ -297,5 +298,50 @@ describe('スターバースト発火条件', () => {
 
   it('お気に入り解除時（true→false）にはバーストしない', () => {
     expect(shouldStarburst(true)).toBe(false)
+  })
+})
+
+// ===================================================================
+// お気に入りボタン視認性 className テスト（#143 再発防止）
+// ===================================================================
+describe('FAVORITE_BUTTON_CLASSES（#143 再発防止）', () => {
+  describe('非お気に入り時の className', () => {
+    const inactive = FAVORITE_BUTTON_CLASSES.inactive
+
+    it('text-transparent を使わない（完全不可視の禁止）', () => {
+      expect(inactive).not.toContain('text-transparent')
+    })
+
+    it('極薄 opacity（/10 〜 /50）を使わない（bg-surface-1 で 3:1 未満となるため）', () => {
+      // 旧実装 text-text-muted/30 は実効コントラスト 1.44:1 で WCAG 3:1 未達だった
+      expect(inactive).not.toMatch(/text-text-muted\/(10|20|30|40|50)\b/)
+    })
+
+    it('text-text-muted を 100% alpha で使う（📁 ボタンと同等の視認性）', () => {
+      // Tailwind の class 名として opacity 指定なしの text-text-muted が含まれていること
+      expect(inactive).toMatch(/(^|\s)text-text-muted(\s|$)/)
+    })
+
+    it('group-hover でのみ表示される挙動（発見困難）を使わない', () => {
+      // 旧実装は group-hover:text-text-muted で toolbar 全体ホバー時のみ表示していた
+      expect(inactive).not.toContain('group-hover:')
+    })
+
+    it('hover 時に yellow プレビュー色へ遷移する（お気に入り色の予告）', () => {
+      expect(inactive).toMatch(/hover:text-yellow-\d{3}/)
+    })
+  })
+
+  describe('お気に入り時の className', () => {
+    const active = FAVORITE_BUTTON_CLASSES.active
+
+    it('text-yellow-500 を使う（明確なアクティブ色）', () => {
+      expect(active).toContain('text-yellow-500')
+    })
+
+    it('text-transparent / 極薄 opacity を使わない', () => {
+      expect(active).not.toContain('text-transparent')
+      expect(active).not.toMatch(/text-yellow-500\/(10|20|30|40|50)\b/)
+    })
   })
 })

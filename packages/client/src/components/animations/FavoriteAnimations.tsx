@@ -11,6 +11,7 @@ import {
   badgeBounceVariants,
   shouldStarburst,
   shouldBadgeBounce,
+  FAVORITE_BUTTON_CLASSES,
 } from './favorite-animation-config'
 
 // 設定・ロジックを再エクスポート（Sidebar等から参照）
@@ -23,6 +24,7 @@ export {
   gatherVariants,
   disperseVariants,
   badgeBounceVariants,
+  FAVORITE_BUTTON_CLASSES,
 } from './favorite-animation-config'
 
 // --- コンポーネント ---
@@ -85,13 +87,13 @@ export function AnimatedFavoriteButton({
     }
   }, [showBurst])
 
+  // #143: 非お気に入り時の className は定数化し、3:1 未満の極薄色を再び入れないよう
+  // 回帰テストで固定する (favorite-animations.test.ts)
   return (
     <span
       onClick={handleClick}
       className={`relative flex-shrink-0 transition-colors cursor-pointer ${
-        isFavorite
-          ? 'text-yellow-500'
-          : 'text-text-muted/30 group-hover:text-text-muted'
+        isFavorite ? FAVORITE_BUTTON_CLASSES.active : FAVORITE_BUTTON_CLASSES.inactive
       }`}
       title={isFavorite ? 'お気に入り解除' : 'お気に入りに追加'}
       data-testid="favorite-button"
