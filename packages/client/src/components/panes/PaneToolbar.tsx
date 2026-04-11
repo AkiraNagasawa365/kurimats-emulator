@@ -6,21 +6,33 @@ import { AnimatedFavoriteButton } from '../animations/FavoriteAnimations'
 interface PaneToolbarProps {
   session: Session
   paneId: string
+  isActive?: boolean
 }
 
 /**
  * ペイン上部のツールバー
  * セッション名・ブランチ表示 + お気に入り★
+ * - isActive=true のとき背景色を強調して現在フォーカスペインを視覚化
+ * - ペイン境界を明示するため左右に border を付与
  */
-export function PaneToolbar({ session }: PaneToolbarProps) {
+export function PaneToolbar({ session, isActive = false }: PaneToolbarProps) {
   const toggleFavorite = useSessionStore(s => s.toggleFavorite)
 
   const handleToggleFavorite = useCallback(() => {
     toggleFavorite(session.id)
   }, [toggleFavorite, session.id])
 
+  // アクティブ/非アクティブで背景色と下線を切替。
+  // ペイン境界の視認性向上のため border-x を常時付与する。
+  const activeClasses = isActive
+    ? 'bg-surface-2 border-b-accent'
+    : 'bg-surface-1 border-b-border'
+
   return (
-    <div className="group flex items-center gap-1 bg-surface-1 border-b border-border px-2 h-6 flex-shrink-0">
+    <div
+      className={`group flex items-center gap-1 border-x border-b border-x-border px-2 h-6 flex-shrink-0 transition-colors ${activeClasses}`}
+      data-testid="pane-toolbar"
+    >
       {/* ステータスインジケータ */}
       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
         session.status === 'active' ? 'bg-green-500' : 'bg-gray-400'
