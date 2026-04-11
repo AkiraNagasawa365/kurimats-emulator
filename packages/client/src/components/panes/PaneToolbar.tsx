@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import type { Session } from '@kurimats/shared'
 import { useSessionStore } from '../../stores/session-store'
+import { useOverlayStore } from '../../stores/overlay-store'
 import { AnimatedFavoriteButton } from '../animations/FavoriteAnimations'
 
 interface PaneToolbarProps {
@@ -11,16 +12,22 @@ interface PaneToolbarProps {
 
 /**
  * ペイン上部のツールバー
- * セッション名・ブランチ表示 + お気に入り★
+ * セッション名・ブランチ表示 + 📁ファイルツリー起動 + お気に入り★
  * - isActive=true のとき背景色を強調して現在フォーカスペインを視覚化
  * - ペイン境界を明示するため左右に border を付与
+ * - 📁クリックでFileTreeOverlayを開き、MD/コードの全画面ビューアへの導線を提供
  */
 export function PaneToolbar({ session, isActive = false }: PaneToolbarProps) {
   const toggleFavorite = useSessionStore(s => s.toggleFavorite)
+  const openOverlay = useOverlayStore(s => s.openOverlay)
 
   const handleToggleFavorite = useCallback(() => {
     toggleFavorite(session.id)
   }, [toggleFavorite, session.id])
+
+  const handleOpenFileTree = useCallback(() => {
+    openOverlay('file-tree', { sessionId: session.id })
+  }, [openOverlay, session.id])
 
   // アクティブ/非アクティブで背景色と下線を切替。
   // ペイン境界の視認性向上のため border-x を常時付与する。
@@ -52,6 +59,18 @@ export function PaneToolbar({ session, isActive = false }: PaneToolbarProps) {
 
       {/* 右寄せボタン群 */}
       <div className="ml-auto flex items-center gap-1 flex-shrink-0">
+        {/* ファイルツリー起動 → FileTreeOverlay経由で全画面MD/コードビューアを開く */}
+        <button
+          type="button"
+          onClick={handleOpenFileTree}
+          className="flex-shrink-0 leading-none text-xs text-text-muted hover:text-accent transition-colors cursor-pointer"
+          title="ファイルツリーを開く"
+          aria-label="ファイルツリーを開く"
+          data-testid="file-tree-button"
+        >
+          📁
+        </button>
+
         {/* お気に入りトグル */}
         <AnimatedFavoriteButton
           isFavorite={session.isFavorite}
