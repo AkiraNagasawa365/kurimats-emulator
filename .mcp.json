@@ -1,6 +1,7 @@
 {
   "mcpServers": {
     "playwright": {
+      "type": "http",
       "url": "http://localhost:14550/mcp"
     }
   }
