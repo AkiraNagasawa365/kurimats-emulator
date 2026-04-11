@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import type { Terminal } from '@xterm/xterm'
 import type { ClientTerminalMessage, ServerTerminalMessage } from '@kurimats/shared'
+import { isMacPlatform, macKeyEventToSequence } from '../utils/terminal-keybindings'
 
 /**
  * ターミナルWebSocket接続フック
@@ -72,20 +73,44 @@ export function useTerminalWs(sessionId: string | null, terminal: Terminal | nul
     }
   }, [sessionId, terminal])
 
+  // 入力送信ヘルパー（onDataとキーバインドハンドラの両方から使う）
+  const sendInput = useCallback((data: string) => {
+    const ws = wsRef.current
+    if (ws?.readyState === WebSocket.OPEN) {
+      const msg: ClientTerminalMessage = { type: 'input', data }
+      ws.send(JSON.stringify(msg))
+    }
+  }, [])
+
   // 入力送信
   useEffect(() => {
     if (!terminal || !sessionId) return
 
-    const disposable = terminal.onData((data) => {
-      const ws = wsRef.current
-      if (ws?.readyState === WebSocket.OPEN) {
-        const msg: ClientTerminalMessage = { type: 'input', data }
-        ws.send(JSON.stringify(msg))
-      }
-    })
+    const disposable = terminal.onData(sendInput)
 
     return () => disposable.dispose()
-  }, [terminal, sessionId])
+  }, [terminal, sessionId, sendInput])
+
+  // mac風キーバインド（Cmd/Opt + Backspace/矢印）をPTY制御シーケンスに変換
+  // xterm.jsはmetaKey付きキーをブラウザに委ねるためデフォルトではPTYに届かない。
+  // attachCustomKeyEventHandlerで該当キーを拾い、sendInput経由で直接送信する。
+  useEffect(() => {
+    if (!terminal) return
+    const isMac = isMacPlatform()
+
+    terminal.attachCustomKeyEventHandler((event) => {
+      const seq = macKeyEventToSequence(event, isMac)
+      if (seq === null) return true // 対象外キーはxtermのデフォルト処理に委ねる
+      event.preventDefault()
+      sendInput(seq)
+      return false // xtermの以後の処理を抑制
+    })
+
+    return () => {
+      // クリーンアップ時はno-opハンドラに戻す（dispose前の二重処理防止）
+      terminal.attachCustomKeyEventHandler(() => true)
+    }
+  }, [terminal, sendInput])
 
   // リサイズ送信
   useEffect(() => {
