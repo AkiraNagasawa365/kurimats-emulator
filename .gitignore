@@ -15,3 +15,9 @@ test-*.png
 0*-*.png
 
 .kurimats-worktrees/
+
+# Claude Code: ローカル専用設定・ワークツリー・一時ディレクトリは追跡しない
+# .tmp/playwright/ は verify-playwright.sh フックの動作確認証跡置き場（各自ローカル専用）
+.claude/settings.local.json
+.claude/worktrees/
+.tmp/
