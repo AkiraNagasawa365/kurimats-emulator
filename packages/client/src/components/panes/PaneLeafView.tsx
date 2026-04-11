@@ -43,7 +43,7 @@ export function PaneLeafView({ leaf }: PaneLeafViewProps) {
     >
       {/* ペインツールバー */}
       {session && (
-        <PaneToolbar session={session} paneId={leaf.id} />
+        <PaneToolbar session={session} paneId={leaf.id} isActive={isActive} />
       )}
 
       {/* ターミナル */}

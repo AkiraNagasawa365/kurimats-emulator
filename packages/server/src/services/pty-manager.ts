@@ -63,6 +63,37 @@ const PANE_NUMBER = process.env.PANE_NUMBER != null
   ? parseInt(process.env.PANE_NUMBER, 10)
   : null
 
+/**
+ * PTYに渡す環境変数を組み立てる
+ *
+ * 親プロセスの env を継承しつつ、kurimats ペインに不適切な外部ターミナル
+ * （cmux 等）由来の env を除外する。kurimats.app が cmux.app のタブ内から
+ * 起動された場合、親プロセスには `CMUX_WORKSPACE_ID` 等が継承されており、
+ * そのまま子 shell に渡るとユーザーの `.zshrc` 側の cmux 向け cwd 継承
+ * ロジックが発動し、PTY の cwd（worktree パス）を主リポに上書きしてしまう。
+ * kurimats ペインは概念的に cmux ペインではないため、`CMUX_*` 系は剥がす。
+ *
+ * @param parentEnv 親プロセスの env（通常 `process.env`）
+ * @param overrides kurimats が上書き/追加したい env（後勝ち）
+ */
+export function buildPtyEnv(
+  parentEnv: NodeJS.ProcessEnv,
+  overrides: Record<string, string | undefined> = {},
+): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const [key, value] of Object.entries(parentEnv)) {
+    if (value === undefined) continue
+    // cmux など外部ターミナル由来の env は持ち込まない
+    if (key.startsWith('CMUX_')) continue
+    env[key] = value
+  }
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) continue
+    env[key] = value
+  }
+  return env
+}
+
 // node-ptyの動的読み込み結果をキャッシュ
 let nodePty: INodePty | null = null
 let nodePtyChecked = false
@@ -194,14 +225,13 @@ export class PtyManager extends EventEmitter {
       cols,
       rows,
       cwd,
-      env: {
-        ...process.env,
+      env: buildPtyEnv(process.env, {
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
         ...(playwrightPort ? { PLAYWRIGHT_MCP_PORT: String(playwrightPort) } : {}),
         ...(PANE_NUMBER != null ? { PANE_NUMBER: String(PANE_NUMBER) } : {}),
         KURIMATS_SHELL_INTEGRATION: '1',
-      } as Record<string, string>,
+      }),
     })
 
     // シェル統合スクリプトをPTY起動直後にsource
@@ -264,8 +294,7 @@ export class PtyManager extends EventEmitter {
     const child = cpSpawn('python3', [PTY_HELPER_PATH, cmd, ...cmdArgs], {
       cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
+      env: buildPtyEnv(process.env, {
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
         ...(playwrightPort ? { PLAYWRIGHT_MCP_PORT: String(playwrightPort) } : {}),
@@ -276,7 +305,7 @@ export class PtyManager extends EventEmitter {
         PTY_COLS: String(cols),
         PTY_ROWS: String(rows),
         KURIMATS_SHELL_INTEGRATION: '1',
-      },
+      }),
     })
 
     // シェル統合スクリプトをPTY起動直後にsource

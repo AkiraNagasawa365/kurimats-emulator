@@ -2,6 +2,7 @@ import { useOverlayStore } from '../../stores/overlay-store'
 import { FileTreeOverlay } from './FileTreeOverlay'
 import { MarkdownOverlay } from './MarkdownOverlay'
 import { CodeViewerOverlay } from './CodeViewerOverlay'
+import { FeedbackPanel } from '../feedback/FeedbackPanel'
 
 /**
  * オーバーレイレンダラー
@@ -36,6 +37,8 @@ export function OverlayRenderer() {
           sshHost={overlayProps.sshHost as string | null | undefined}
         />
       )
+    case 'feedback':
+      return <FeedbackPanel onClose={closeOverlay} />
     default:
       return null
   }

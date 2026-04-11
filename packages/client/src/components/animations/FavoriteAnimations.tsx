@@ -91,7 +91,7 @@ export function AnimatedFavoriteButton({
       className={`relative flex-shrink-0 transition-colors cursor-pointer ${
         isFavorite
           ? 'text-yellow-500'
-          : 'text-transparent group-hover:text-text-muted'
+          : 'text-text-muted/30 group-hover:text-text-muted'
       }`}
       title={isFavorite ? 'お気に入り解除' : 'お気に入りに追加'}
       data-testid="favorite-button"
