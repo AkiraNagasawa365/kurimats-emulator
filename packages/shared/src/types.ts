@@ -426,6 +426,39 @@ export const FEEDBACK_PRIORITY_LABELS: Record<FeedbackPriority, string> = {
   low: '低',
 } as const
 
+// ========== 開発インスタンス / スロット管理 ==========
+
+/** 開発インスタンスの状態 */
+export type DevInstanceStatus = 'idle' | 'running' | 'error'
+
+/** 開発インスタンス（pane 単位の開発環境） */
+export interface DevInstance {
+  id: string
+  /** スロット番号（PANE_NUMBER に対応） */
+  slotNumber: number
+  /** サーバーポート */
+  serverPort: number
+  /** クライアントポート */
+  clientPort: number
+  /** Playwright ポート */
+  playwrightPort: number
+  status: DevInstanceStatus
+  pid: number | null
+  /** persistent develop worktree パス */
+  worktreePath: string | null
+  /** バインドされたセッションID */
+  assignedSessionId: string | null
+  createdAt: number
+  lastActiveAt: number
+}
+
+/** スロット割り当て（UNIQUE 制約で排他制御） */
+export interface SlotAssignment {
+  slotNumber: number
+  instanceId: string
+  assignedAt: number
+}
+
 // ========== bookmarks ==========
 
 // bookmarks.toml のブックマーク情報

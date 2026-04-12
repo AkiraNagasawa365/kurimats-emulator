@@ -134,4 +134,37 @@ export function runSessionStoreMigrations(db: Database.Database): void {
   try { db.exec('ALTER TABLE cmux_workspaces ADD COLUMN repo_path TEXT NOT NULL DEFAULT \'\'') } catch { /* カラム既存 */ }
   try { db.exec('ALTER TABLE cmux_workspaces ADD COLUMN ssh_host TEXT') } catch { /* カラム既存 */ }
   try { db.exec('ALTER TABLE sessions ADD COLUMN workspace_id TEXT') } catch { /* カラム既存 */ }
+
+  // Phase B: 開発インスタンス / スロット管理テーブル
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS dev_instances (
+      id TEXT PRIMARY KEY,
+      slot_number INTEGER NOT NULL,
+      server_port INTEGER NOT NULL,
+      client_port INTEGER NOT NULL,
+      playwright_port INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'idle',
+      pid INTEGER,
+      worktree_path TEXT,
+      assigned_session_id TEXT,
+      created_at INTEGER NOT NULL,
+      last_active_at INTEGER NOT NULL
+    );
+  `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS slot_assignments (
+      slot_number INTEGER PRIMARY KEY,
+      instance_id TEXT NOT NULL,
+      assigned_at INTEGER NOT NULL,
+      FOREIGN KEY (instance_id) REFERENCES dev_instances(id)
+    );
+  `)
+
+  // slot_number の一意性を dev_instances テーブル側にも適用
+  // （slot_assignments の PRIMARY KEY で排他、dev_instances 側は重複チェック用インデックス）
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_dev_instances_slot
+    ON dev_instances(slot_number);
+  `)
 }

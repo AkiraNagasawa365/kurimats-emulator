@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { mkdirSync } from 'fs'
 import { homedir } from 'os'
-import type { BoardLayoutState, CreateFeedbackParams, CreateProjectParams, CreateSessionParams, CreateSshPresetParams, CreateStartupTemplateParams, CreateCmuxWorkspaceParams, Feedback, LayoutState, PaneNode, Project, Session, SshPreset, StartupTemplate, CmuxWorkspace } from '@kurimats/shared'
+import type { BoardLayoutState, CreateFeedbackParams, CreateProjectParams, CreateSessionParams, CreateSshPresetParams, CreateStartupTemplateParams, CreateCmuxWorkspaceParams, DevInstance, Feedback, LayoutState, PaneNode, Project, Session, SlotAssignment, SshPreset, StartupTemplate, CmuxWorkspace } from '@kurimats/shared'
 import { v4 as uuidv4 } from 'uuid'
 import { loadBoardLayoutState, loadLegacyLayout, saveBoardLayoutState, saveLegacyLayout } from './session-store-layout.js'
 import { mapCmuxWorkspaceRow, mapFeedbackRow, mapProjectRow, mapSessionRow, mapSshPresetRow, mapStartupTemplateRow } from './session-store-mappers.js'
@@ -487,7 +487,119 @@ export class SessionStore {
     return tx(id)
   }
 
+  // ========== DevInstance / SlotAssignment ==========
+
+  /** DevInstance を作成 */
+  createDevInstance(params: {
+    slotNumber: number
+    serverPort: number
+    clientPort: number
+    playwrightPort: number
+  }): DevInstance {
+    const id = uuidv4()
+    const now = Date.now()
+    this.db.prepare(`
+      INSERT INTO dev_instances (id, slot_number, server_port, client_port, playwright_port, status, created_at, last_active_at)
+      VALUES (?, ?, ?, ?, ?, 'idle', ?, ?)
+    `).run(id, params.slotNumber, params.serverPort, params.clientPort, params.playwrightPort, now, now)
+    return this.getDevInstance(params.slotNumber)!
+  }
+
+  /** スロット番号で DevInstance を取得 */
+  getDevInstance(slotNumber: number): DevInstance | null {
+    const row = this.db.prepare('SELECT * FROM dev_instances WHERE slot_number = ?').get(slotNumber) as any
+    return row ? mapDevInstanceRow(row) : null
+  }
+
+  /** ID で DevInstance を取得 */
+  getDevInstanceById(id: string): DevInstance | null {
+    const row = this.db.prepare('SELECT * FROM dev_instances WHERE id = ?').get(id) as any
+    return row ? mapDevInstanceRow(row) : null
+  }
+
+  /** 全 DevInstance を取得 */
+  getAllDevInstances(): DevInstance[] {
+    const rows = this.db.prepare('SELECT * FROM dev_instances ORDER BY slot_number').all() as any[]
+    return rows.map(mapDevInstanceRow)
+  }
+
+  /** DevInstance の状態を更新 */
+  updateDevInstanceStatus(id: string, status: string, pid?: number | null): void {
+    const now = Date.now()
+    if (pid !== undefined) {
+      this.db.prepare('UPDATE dev_instances SET status = ?, pid = ?, last_active_at = ? WHERE id = ?').run(status, pid, now, id)
+    } else {
+      this.db.prepare('UPDATE dev_instances SET status = ?, last_active_at = ? WHERE id = ?').run(status, now, id)
+    }
+  }
+
+  /** DevInstance の worktreePath を更新 */
+  updateDevInstanceWorktreePath(id: string, worktreePath: string | null): void {
+    this.db.prepare('UPDATE dev_instances SET worktree_path = ? WHERE id = ?').run(worktreePath, id)
+  }
+
+  /** DevInstance のセッションバインディングを更新 */
+  updateDevInstanceSession(id: string, sessionId: string | null): void {
+    this.db.prepare('UPDATE dev_instances SET assigned_session_id = ? WHERE id = ?').run(sessionId, id)
+  }
+
+  /** DevInstance を削除 */
+  deleteDevInstance(id: string): boolean {
+    const tx = this.db.transaction((instanceId: string) => {
+      this.db.prepare('DELETE FROM slot_assignments WHERE instance_id = ?').run(instanceId)
+      return this.db.prepare('DELETE FROM dev_instances WHERE id = ?').run(instanceId).changes > 0
+    })
+    return tx(id)
+  }
+
+  /**
+   * スロットを割り当て（UNIQUE 制約で排他制御）
+   * @throws slot_number が既に使用中の場合は UNIQUE constraint エラー
+   */
+  assignSlot(slotNumber: number, instanceId: string): SlotAssignment {
+    const now = Date.now()
+    this.db.prepare(`
+      INSERT INTO slot_assignments (slot_number, instance_id, assigned_at)
+      VALUES (?, ?, ?)
+    `).run(slotNumber, instanceId, now)
+    return { slotNumber, instanceId, assignedAt: now }
+  }
+
+  /** スロットを解放 */
+  releaseSlot(slotNumber: number): void {
+    this.db.prepare('DELETE FROM slot_assignments WHERE slot_number = ?').run(slotNumber)
+  }
+
+  /** スロット割り当てを取得 */
+  getSlotAssignment(slotNumber: number): SlotAssignment | null {
+    const row = this.db.prepare('SELECT * FROM slot_assignments WHERE slot_number = ?').get(slotNumber) as any
+    return row ? { slotNumber: row.slot_number, instanceId: row.instance_id, assignedAt: row.assigned_at } : null
+  }
+
+  /** 全スロット割り当てを取得 */
+  getAllSlotAssignments(): SlotAssignment[] {
+    const rows = this.db.prepare('SELECT * FROM slot_assignments ORDER BY slot_number').all() as any[]
+    return rows.map(row => ({ slotNumber: row.slot_number, instanceId: row.instance_id, assignedAt: row.assigned_at }))
+  }
+
   close(): void {
     this.db.close()
+  }
+}
+
+/** DB行を DevInstance にマップ */
+function mapDevInstanceRow(row: any): DevInstance {
+  return {
+    id: row.id,
+    slotNumber: row.slot_number,
+    serverPort: row.server_port,
+    clientPort: row.client_port,
+    playwrightPort: row.playwright_port,
+    status: row.status,
+    pid: row.pid ?? null,
+    worktreePath: row.worktree_path ?? null,
+    assignedSessionId: row.assigned_session_id ?? null,
+    createdAt: row.created_at,
+    lastActiveAt: row.last_active_at,
   }
 }
