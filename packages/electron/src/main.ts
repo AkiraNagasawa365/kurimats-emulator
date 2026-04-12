@@ -89,6 +89,13 @@ function waitForUrl(url: string, retries: number, intervalMs: number): Promise<v
   })
 }
 
+// Electron single-instance lock: 二重起動を防止
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  console.log('⚠️ 別の kurimats インスタンスが既に起動中です。終了します。')
+  app.quit()
+}
+
 // 設定ストア
 const store = new Store()
 
@@ -175,6 +182,14 @@ function setupMenu(): void {
   const menu = Menu.buildFromTemplate(template as any)
   Menu.setApplicationMenu(menu)
 }
+
+// 2回目の起動試行時: 既存ウィンドウにフォーカス
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  }
+})
 
 // アプリケーション起動
 app.whenReady().then(async () => {

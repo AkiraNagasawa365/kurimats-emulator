@@ -20,6 +20,7 @@ import { createWorkspacesRouter } from './routes/workspaces.js'
 import { CanvasStore } from './services/canvas-store.js'
 import { SERVER_PORT_BASE, calculatePort } from './utils/ports.js'
 import { runStartupTasks } from './startup.js'
+import { acquireLock, registerLockCleanup } from './services/leader-lock.js'
 
 // PANE_NUMBERからポートを自動算出（develop=0, paneN=N）
 // 設定時は既存PORT環境変数より優先。未設定時のみPORTにフォールバック
@@ -33,6 +34,20 @@ const HOST = process.env.HOST || 'localhost'
 
 // トークン認証（リモートアクセス用、オプション）
 const AUTH_TOKEN = process.env.AUTH_TOKEN || ''
+
+// LeaderLock: 重複サーバー起動を防止
+const lockResult = acquireLock({
+  port: PORT,
+  paneNumber: PANE_NUMBER,
+  type: PANE_NUMBER != null ? 'dev' : 'electron',
+})
+if (!lockResult.acquired) {
+  const info = lockResult.existingLock!
+  console.error(`❌ LeaderLock: サーバーは既に起動中です (PID=${info.pid}, port=${info.port}, 起動=${info.startedAt})`)
+  process.exit(1)
+}
+registerLockCleanup({ paneNumber: PANE_NUMBER })
+console.log(`🔒 LeaderLock: 取得成功 (PID=${process.pid}, port=${PORT})`)
 
 // サービス初期化
 const ptyManager = new PtyManager()
