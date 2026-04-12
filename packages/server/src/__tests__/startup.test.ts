@@ -456,7 +456,7 @@ describe('runStartupTasks', () => {
         name: 'pane1-session',
         repoPath: '/tmp/repo',
         worktreePath: '/tmp/repo/.kurimats-worktrees/pane1',
-        branch: 'old-branch',
+        baseBranch: 'old-branch',
         isRemote: false,
         workspaceId: null,
         projectId: null,
