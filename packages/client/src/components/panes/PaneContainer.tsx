@@ -39,11 +39,11 @@ export function PaneContainer() {
         <div className="flex-1 relative">
           {/* 背景（元のツリーは非表示） */}
           <div className="w-full h-full opacity-10 pointer-events-none">
-            <PaneRenderer node={paneTree} />
+            <PaneRenderer key={activeWorkspace.id} node={paneTree} />
           </div>
           {/* ズームオーバーレイ */}
           <div className="absolute inset-0 z-50 bg-surface-0">
-            <PaneLeafView leaf={zoomedNode as PaneLeaf} />
+            <PaneLeafView key={`${activeWorkspace.id}-zoom`} leaf={zoomedNode as PaneLeaf} />
           </div>
           {/* アンズームボタン */}
           <button
@@ -60,7 +60,7 @@ export function PaneContainer() {
 
   return (
     <div className="flex-1 overflow-hidden">
-      <PaneRenderer node={paneTree} />
+      <PaneRenderer key={activeWorkspace.id} node={paneTree} />
     </div>
   )
 }
