@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { SessionStore } from '../services/session-store'
-import { runStartupTasks } from '../startup'
+import { runStartupTasks, resolveSelfWorktreeVerdict } from '../startup'
 import type { WorktreeService } from '../services/worktree-service'
 
 /** WorktreeServiceのモック */
@@ -15,6 +15,9 @@ function createMockWorktreeService(): WorktreeService {
     cleanupOrphanedBranches: vi.fn().mockReturnValue([]),
   } as unknown as WorktreeService
 }
+
+/** 既存テストを verdict='outside' で実行するための cwd オプション */
+const OUTSIDE_CWD = { cwd: '/tmp/definitely-not-a-worktree' }
 
 describe('runStartupTasks', () => {
   let store: SessionStore
@@ -39,7 +42,7 @@ describe('runStartupTasks', () => {
         projectId: null,
       })
 
-      runStartupTasks(store, worktreeService as unknown as WorktreeService)
+      runStartupTasks(store, worktreeService as unknown as WorktreeService, OUTSIDE_CWD)
 
       const updated = store.getById(session.id)
       expect(updated?.status).toBe('disconnected')
@@ -59,7 +62,7 @@ describe('runStartupTasks', () => {
     // disconnectedに設定
     store.updateStatus(session.id, 'disconnected')
 
-    runStartupTasks(store, worktreeService as unknown as WorktreeService)
+    runStartupTasks(store, worktreeService as unknown as WorktreeService, OUTSIDE_CWD)
 
     const updated = store.getById(session.id)
     expect(updated?.worktreePath).toBeNull()
@@ -84,7 +87,7 @@ describe('runStartupTasks', () => {
       projectId: null,
     })
 
-    runStartupTasks(store, worktreeService as unknown as WorktreeService)
+    runStartupTasks(store, worktreeService as unknown as WorktreeService, OUTSIDE_CWD)
 
     const found = store.getById(orphan.id)
     expect(found).toBeNull()
@@ -105,7 +108,7 @@ describe('runStartupTasks', () => {
         projectId: null,
       })
 
-      runStartupTasks(store, worktreeService as unknown as WorktreeService)
+      runStartupTasks(store, worktreeService as unknown as WorktreeService, OUTSIDE_CWD)
 
       const updated = store.getById(session.id)
       expect(updated?.status).toBe('disconnected')
@@ -124,7 +127,7 @@ describe('runStartupTasks', () => {
       })
       store.updateStatus(session.id, 'disconnected')
 
-      runStartupTasks(store, worktreeService as unknown as WorktreeService)
+      runStartupTasks(store, worktreeService as unknown as WorktreeService, OUTSIDE_CWD)
 
       const updated = store.getById(session.id)
       // セッション自体は残る
@@ -149,7 +152,7 @@ describe('runStartupTasks', () => {
         projectId: null,
       })
 
-      runStartupTasks(store, worktreeService as unknown as WorktreeService)
+      runStartupTasks(store, worktreeService as unknown as WorktreeService, OUTSIDE_CWD)
 
       expect(store.getById(orphan.id)).toBeNull()
       // SSHはworktreeを持たないのでremoveは呼ばれない
@@ -184,7 +187,7 @@ describe('runStartupTasks', () => {
         projectId: null,
       })
 
-      runStartupTasks(store, worktreeService as unknown as WorktreeService)
+      runStartupTasks(store, worktreeService as unknown as WorktreeService, OUTSIDE_CWD)
 
       // 両方とも削除される
       expect(store.getById(localOrphan.id)).toBeNull()
@@ -222,7 +225,7 @@ describe('runStartupTasks', () => {
       })
       store.updateStatus(sshSession.id, 'disconnected')
 
-      runStartupTasks(store, worktreeService as unknown as WorktreeService)
+      runStartupTasks(store, worktreeService as unknown as WorktreeService, OUTSIDE_CWD)
 
       // ローカル: worktreePathがnullに更新
       const localUpdated = store.getById(localSession.id)
@@ -261,9 +264,219 @@ describe('runStartupTasks', () => {
     })
 
     // エラーが投げられないことを確認
-    expect(() => runStartupTasks(store, worktreeService as unknown as WorktreeService)).not.toThrow()
+    expect(() => runStartupTasks(store, worktreeService as unknown as WorktreeService, OUTSIDE_CWD)).not.toThrow()
 
     // セッションは削除されている
     expect(store.getById(orphan.id)).toBeNull()
+  })
+
+  // ── StartupGuard テスト ──────────────────────────────
+
+  describe('StartupGuard (resolveSelfWorktreeVerdict)', () => {
+    it("verdict='inside': cwd が worktreePath 配下 → 段階1-4 未実行", () => {
+      // worktree を持つ disconnected セッションを作成
+      const session = store.create({
+        name: 'pane1-session',
+        repoPath: '/tmp/repo',
+        worktreePath: '/tmp/repo/.kurimats-worktrees/pane1',
+        isRemote: false,
+        workspaceId: null,
+        projectId: null,
+      })
+      // active のまま → 通常なら段階1で disconnected に変更される
+
+      // cwd を worktree 内に設定
+      runStartupTasks(store, worktreeService as unknown as WorktreeService, {
+        cwd: '/tmp/repo/.kurimats-worktrees/pane1/packages/server',
+      })
+
+      // 段階1 がスキップされたので active のまま
+      const updated = store.getById(session.id)
+      expect(updated?.status).toBe('active')
+
+      // 段階2-4 もスキップ: worktree 削除は呼ばれない
+      expect(worktreeService.remove).not.toHaveBeenCalled()
+      expect(worktreeService.prune).not.toHaveBeenCalled()
+    })
+
+    it("verdict='unknown': sessionStore.getAll() 例外 → 段階1-4 未実行 (fail-safe)", () => {
+      const session = store.create({
+        name: 'test-session',
+        repoPath: '/tmp/repo',
+        isRemote: false,
+        workspaceId: null,
+        projectId: null,
+      })
+
+      // sessionStore.getAll を一時的にモックして例外を投げさせる
+      // → resolveSelfWorktreeVerdict が 'unknown' を返す
+      const originalGetAll = store.getAll.bind(store)
+      let callCount = 0
+      vi.spyOn(store, 'getAll').mockImplementation(() => {
+        callCount++
+        // 最初の呼び出し（verdict判定）で例外を投げる
+        if (callCount === 1) {
+          throw new Error('DB接続エラー')
+        }
+        return originalGetAll()
+      })
+
+      runStartupTasks(store, worktreeService as unknown as WorktreeService, OUTSIDE_CWD)
+
+      // 段階1 がスキップされたので active のまま
+      const updated = store.getById(session.id)
+      expect(updated?.status).toBe('active')
+
+      // 段階2-4 もスキップ
+      expect(worktreeService.remove).not.toHaveBeenCalled()
+      expect(worktreeService.prune).not.toHaveBeenCalled()
+    })
+
+    it("verdict='outside': 従来通り全段階実行", () => {
+      const session = store.create({
+        name: 'test-session',
+        repoPath: '/tmp/repo',
+        worktreePath: '/tmp/repo/.kurimats-worktrees/test-session',
+        baseBranch: 'kurimats/test-session',
+        isRemote: false,
+        workspaceId: null,
+        projectId: null,
+      })
+
+      // まず active → disconnected にするため runStartupTasks を実行
+      // cwd は worktree の外
+      runStartupTasks(store, worktreeService as unknown as WorktreeService, {
+        cwd: '/tmp/completely-outside',
+      })
+
+      // 段階1 が実行: active → disconnected
+      const updated = store.getById(session.id)
+      expect(updated?.status).toBe('disconnected')
+
+      // 段階2 が実行: worktree 削除
+      expect(worktreeService.remove).toHaveBeenCalledWith(
+        '/tmp/repo',
+        '/tmp/repo/.kurimats-worktrees/test-session',
+      )
+      expect(updated?.worktreePath).toBeNull()
+    })
+  })
+
+  describe('resolveSelfWorktreeVerdict 単体', () => {
+    it('cwd が worktreePath のサブディレクトリなら inside を返す', () => {
+      store.create({
+        name: 'pane1',
+        repoPath: '/tmp/repo',
+        worktreePath: '/tmp/repo/.kurimats-worktrees/pane1',
+        isRemote: false,
+        workspaceId: null,
+        projectId: null,
+      })
+
+      const verdict = resolveSelfWorktreeVerdict(store, {
+        cwd: '/tmp/repo/.kurimats-worktrees/pane1/packages/server',
+      })
+      expect(verdict).toBe('inside')
+    })
+
+    it('cwd が worktreePath と一致する場合も inside を返す', () => {
+      store.create({
+        name: 'pane1',
+        repoPath: '/tmp/repo',
+        worktreePath: '/tmp/repo/.kurimats-worktrees/pane1',
+        isRemote: false,
+        workspaceId: null,
+        projectId: null,
+      })
+
+      const verdict = resolveSelfWorktreeVerdict(store, {
+        cwd: '/tmp/repo/.kurimats-worktrees/pane1',
+      })
+      expect(verdict).toBe('inside')
+    })
+
+    it('cwd が worktree 外なら outside を返す', () => {
+      store.create({
+        name: 'pane1',
+        repoPath: '/tmp/repo',
+        worktreePath: '/tmp/repo/.kurimats-worktrees/pane1',
+        isRemote: false,
+        workspaceId: null,
+        projectId: null,
+      })
+
+      const verdict = resolveSelfWorktreeVerdict(store, {
+        cwd: '/tmp/completely-outside',
+      })
+      expect(verdict).toBe('outside')
+    })
+
+    it('フォールバック: .kurimats-worktrees セグメントを含む cwd は inside', () => {
+      // DB にセッションがない状態でもパスベースのフォールバックが効く
+      const verdict = resolveSelfWorktreeVerdict(store, {
+        cwd: '/tmp/repo/.kurimats-worktrees/kurimats-emulator-pane1/packages/server',
+      })
+      expect(verdict).toBe('inside')
+    })
+
+    it('prefix隣接: pane1 と pane10 を誤判定しない', () => {
+      store.create({
+        name: 'pane1',
+        repoPath: '/tmp/repo',
+        worktreePath: '/tmp/repo/.kurimats-worktrees/pane1',
+        isRemote: false,
+        workspaceId: null,
+        projectId: null,
+      })
+
+      // pane10 は pane1 の prefix を含むが別ディレクトリ → outside
+      const verdict = resolveSelfWorktreeVerdict(store, {
+        cwd: '/tmp/repo/.kurimats-worktrees/pane10/packages/server',
+      })
+      // pane10 は pane1 配下ではないが、.kurimats-worktrees セグメントのフォールバックで inside
+      expect(verdict).toBe('inside')
+    })
+
+    it('sessionStore.getAll() 例外時は unknown を返す', () => {
+      vi.spyOn(store, 'getAll').mockImplementation(() => {
+        throw new Error('DB接続エラー')
+      })
+
+      const verdict = resolveSelfWorktreeVerdict(store, {
+        cwd: '/tmp/completely-outside',
+      })
+      expect(verdict).toBe('unknown')
+    })
+  })
+
+  describe('StartupGuard: inside/unknown 時も段階0・5は実行される', () => {
+    it("verdict='inside' でも段階5（ブランチ名修正）が実行される", () => {
+      // worktree を持つセッションを作成（ブランチ名が古い状態）
+      const session = store.create({
+        name: 'pane1-session',
+        repoPath: '/tmp/repo',
+        worktreePath: '/tmp/repo/.kurimats-worktrees/pane1',
+        branch: 'old-branch',
+        isRemote: false,
+        workspaceId: null,
+        projectId: null,
+      })
+
+      // getBranch が新しいブランチ名を返す
+      vi.mocked(worktreeService.getBranch).mockReturnValue('new-branch')
+
+      // cwd を worktree 内に設定 → verdict='inside'
+      runStartupTasks(store, worktreeService as unknown as WorktreeService, {
+        cwd: '/tmp/repo/.kurimats-worktrees/pane1/packages/server',
+      })
+
+      // 段階1 がスキップされたので active のまま
+      const updated = store.getById(session.id)
+      expect(updated?.status).toBe('active')
+
+      // 段階5 は実行: ブランチ名が修正される
+      expect(updated?.branch).toBe('new-branch')
+      expect(worktreeService.getBranch).toHaveBeenCalledWith('/tmp/repo/.kurimats-worktrees/pane1')
+    })
   })
 })
