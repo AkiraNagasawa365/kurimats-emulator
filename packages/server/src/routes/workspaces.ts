@@ -2,7 +2,9 @@ import { Router } from 'express'
 import type { SessionStore } from '../services/session-store.js'
 import type { PtyManager } from '../services/pty-manager.js'
 import type { SshManager } from '../services/ssh-manager.js'
-import type { WorktreeService } from '../services/worktree-service.js'
+import { WorktreeService } from '../services/worktree-service.js'
+import type { DevInstanceManager } from '../services/dev-instance-manager.js'
+import type { SessionDevBindingService } from '../services/session-dev-binding-service.js'
 import type { PaneNode, PaneLeaf, SplitDirection, Session } from '@kurimats/shared'
 import { createAndSpawnSession, cleanupSession } from '../services/session-lifecycle.js'
 import {
@@ -49,11 +51,39 @@ async function createWorkspaceSession(
   return { session, paneId }
 }
 
+/**
+ * ローカルリポジトリの場合、pane のスロット番号に対応する
+ * persistent develop worktree を確保して DevInstance に記録する
+ */
+function ensurePersistentDevelop(
+  worktreeService: WorktreeService,
+  devInstanceManager: DevInstanceManager | undefined,
+  repoPath: string,
+  sshHost: string | null | undefined,
+  slotNumber: number,
+): void {
+  if (!devInstanceManager) return
+  if (sshHost) return // リモートの場合はスキップ
+  if (!worktreeService.isGitRepo(repoPath)) return
+
+  try {
+    const worktreePath = worktreeService.ensurePersistentDevelopWorktree(repoPath, slotNumber)
+    const instance = devInstanceManager.getInstance(slotNumber)
+    if (instance) {
+      devInstanceManager.updateWorktreePath(instance.id, worktreePath)
+    }
+  } catch (e) {
+    console.warn(`⚠️ persistent develop worktree 確保失敗 (スロット${slotNumber}): ${e}`)
+  }
+}
+
 export function createWorkspacesRouter(
   store: SessionStore,
   ptyManager: PtyManager,
   sshManager: SshManager,
   worktreeService: WorktreeService,
+  devInstanceManager?: DevInstanceManager,
+  bindingService?: SessionDevBindingService,
 ): Router {
   const router = Router()
 
@@ -122,6 +152,22 @@ export function createWorkspacesRouter(
         paneTree,
         workspaceId,
       )
+
+      // persistent develop worktree を確保（ローカルリポジトリのみ）
+      const paneNumber = process.env.PANE_NUMBER != null
+        ? parseInt(process.env.PANE_NUMBER, 10)
+        : null
+      if (paneNumber != null) {
+        ensurePersistentDevelop(worktreeService, devInstanceManager, repoPath, sshHost, paneNumber)
+
+        // セッションと DevInstance をバインド
+        if (bindingService && devInstanceManager) {
+          const instance = devInstanceManager.getInstance(paneNumber)
+          if (instance) {
+            try { bindingService.bind(session.id, instance.id) } catch { /* バインド失敗は非致命的 */ }
+          }
+        }
+      }
 
       res.status(201).json(workspace)
     } catch (e) {
@@ -194,7 +240,7 @@ export function createWorkspacesRouter(
 
       const splitTree = splitLeafInTree(workspace.paneTree, paneId, direction, newLeaf)
       if (!splitTree) {
-        cleanupSession(store, ptyManager, sshManager, worktreeService, session.id)
+        await cleanupSession(store, ptyManager, sshManager, worktreeService, session.id)
         res.status(400).json({ error: '指定されたペインが見つかりません' })
         return
       }
@@ -212,7 +258,7 @@ export function createWorkspacesRouter(
       })
     } catch (e) {
       if (session) {
-        cleanupSession(store, ptyManager, sshManager, worktreeService, session.id)
+        await cleanupSession(store, ptyManager, sshManager, worktreeService, session.id)
       }
       console.error('ペイン分割エラー:', e)
       res.status(500).json({ error: `ペイン分割に失敗: ${e}` })
@@ -220,7 +266,7 @@ export function createWorkspacesRouter(
   })
 
   // ペイン閉じ（セッション/PTY/worktreeも連動削除）
-  router.post('/:id/close-pane', (req, res) => {
+  router.post('/:id/close-pane', async (req, res) => {
     const { paneId } = req.body as { paneId: string }
     if (!paneId) {
       res.status(400).json({ error: 'paneId は必須です' })
@@ -263,9 +309,14 @@ export function createWorkspacesRouter(
     // DB更新
     store.updateCmuxPaneTree(workspace.id, rebalanced, newActivePaneId)
 
-    // セッション/PTY/worktreeをクリーンアップ
+    // セッション/PTY/worktreeをクリーンアップ（失敗してもペインツリーは更新済み）
     if (sessionId) {
-      cleanupSession(store, ptyManager, sshManager, worktreeService, sessionId)
+      if (bindingService) bindingService.unbind(sessionId)
+      try {
+        await cleanupSession(store, ptyManager, sshManager, worktreeService, sessionId)
+      } catch (e) {
+        console.error(`ペイン閉じ時のセッション cleanup エラー (${sessionId}):`, e)
+      }
     }
 
     res.json({
@@ -312,17 +363,22 @@ export function createWorkspacesRouter(
   })
 
   // ワークスペース削除（全セッション/PTY/worktreeも連動クリーンアップ）
-  router.delete('/:id', (req, res) => {
+  router.delete('/:id', async (req, res) => {
     const workspace = store.getCmuxWorkspace(req.params.id)
     if (!workspace) {
       res.status(404).json({ error: 'ワークスペースが見つかりません' })
       return
     }
 
-    // ペインツリー内の全セッションをクリーンアップ
+    // ペインツリー内の全セッションをクリーンアップ（個別失敗は続行）
     const sessionIds = collectSessionIds(workspace.paneTree)
     for (const sessionId of sessionIds) {
-      cleanupSession(store, ptyManager, sshManager, worktreeService, sessionId)
+      if (bindingService) bindingService.unbind(sessionId)
+      try {
+        await cleanupSession(store, ptyManager, sshManager, worktreeService, sessionId)
+      } catch (e) {
+        console.error(`ワークスペース削除時のセッション cleanup エラー (${sessionId}):`, e)
+      }
     }
 
     const deleted = store.deleteCmuxWorkspace(req.params.id)

@@ -1,5 +1,5 @@
 // セッション状態
-export type SessionStatus = 'active' | 'paused' | 'terminated' | 'disconnected'
+export type SessionStatus = 'active' | 'paused' | 'terminated' | 'disconnected' | 'cleaning' | 'tombstone'
 
 // セッション
 export interface Session {

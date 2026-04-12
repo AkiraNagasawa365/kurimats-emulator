@@ -15,6 +15,7 @@ import path from 'path'
 import type { PaneNode } from '@kurimats/shared'
 import type { SessionStore } from './services/session-store.js'
 import { WorktreeService } from './services/worktree-service.js'
+import { retryTombstoneCleanup } from './services/session-lifecycle.js'
 import { collectSessionIds } from './utils/pane-tree.js'
 
 /** StartupGuard の判定結果 */
@@ -134,9 +135,9 @@ function phase0_migratePaneTrees(sessionStore: SessionStore): void {
   }
 }
 
-/** 段階1: PTYが消失したactiveセッションをdisconnectedに変更 */
+/** 段階1: PTYが消失したactive/cleaningセッションをdisconnectedに変更 */
 function phase1_markOrphanedDisconnected(sessionStore: SessionStore): void {
-  const orphanedSessions = sessionStore.getAll().filter(s => s.status === 'active')
+  const orphanedSessions = sessionStore.getAll().filter(s => s.status === 'active' || s.status === 'cleaning')
   if (orphanedSessions.length > 0) {
     console.log(`⚠️  ${orphanedSessions.length}件のorphanedセッションを検出 → disconnectedに変更`)
     for (const s of orphanedSessions) {
@@ -309,6 +310,9 @@ export function runStartupTasks(
 
     // 段階4: git worktree prune + orphaned branch 削除
     phase4_pruneWorktreesAndBranches(sessionStore, worktreeService)
+
+    // 段階4.5: tombstone セッションの cleanup 再試行
+    retryTombstoneCleanup(sessionStore, worktreeService)
   }
 
   // 段階5: ブランチ名修正（非破壊、常時実行）
