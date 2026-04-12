@@ -14,7 +14,7 @@ import { existsSync } from 'fs'
 import path from 'path'
 import type { PaneNode } from '@kurimats/shared'
 import type { SessionStore } from './services/session-store.js'
-import type { WorktreeService } from './services/worktree-service.js'
+import { WorktreeService } from './services/worktree-service.js'
 import { collectSessionIds } from './utils/pane-tree.js'
 
 /** StartupGuard の判定結果 */
@@ -157,6 +157,11 @@ function phase2_cleanupDisconnectedWorktrees(sessionStore: SessionStore, worktre
       console.log(`🧹 ${disconnectedSessions.length}件のdisconnectedセッションのworktreeを解放`)
       for (const s of disconnectedSessions) {
         if (s.worktreePath && s.repoPath) {
+          // persistent develop worktree は削除しない
+          if (WorktreeService.isPersistentDevelop(s.worktreePath)) {
+            console.log(`   🛡️ persistent develop worktree をスキップ: ${s.worktreePath}`)
+            continue
+          }
           try {
             worktreeService.remove(s.repoPath, s.worktreePath)
             console.log(`   🗑️ worktree+ブランチ削除: ${s.worktreePath}`)
@@ -190,6 +195,12 @@ function phase3_deleteOrphanedSessions(sessionStore: SessionStore, worktreeServi
       console.log(`🧹 ${orphanedCleanup.length}件の孤立セッションを削除します`)
       for (const s of orphanedCleanup) {
         if (s.worktreePath && s.repoPath) {
+          // persistent develop worktree は worktree もセッションも削除しない
+          // （DevInstanceManager が管理するため、孤立判定の対象外）
+          if (WorktreeService.isPersistentDevelop(s.worktreePath)) {
+            console.log(`   🛡️ persistent develop worktree をスキップ: ${s.worktreePath}`)
+            continue
+          }
           try {
             worktreeService.remove(s.repoPath, s.worktreePath)
             console.log(`   🗑️ worktree+ブランチ削除: ${s.worktreePath}`)
