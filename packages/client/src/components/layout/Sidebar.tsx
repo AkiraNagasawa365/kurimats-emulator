@@ -30,7 +30,7 @@ export function Sidebar() {
     fetchSessions,
     reconnectSession,
   } = useSessionStore()
-  const { addPanel, setActiveSession, boardNodes } = useLayoutStore()
+  const { addPanel, setActiveSession, boardNodes, showFavoritesOnly, restoreFromFavorites } = useLayoutStore()
   const { hosts, fetchHosts, connectHost, disconnectHost, fetchPresets } = useSshStore()
   const tabSyncMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -295,7 +295,16 @@ export function Sidebar() {
           collapsed={favoritesCollapsed}
           favoritesOnly={favoritesOnly}
           onToggleCollapsed={() => setFavoritesCollapsed((collapsed) => !collapsed)}
-          onToggleFavoritesOnly={() => setFavoritesOnly((enabled) => !enabled)}
+          onToggleFavoritesOnly={() => {
+            const next = !favoritesOnly
+            setFavoritesOnly(next)
+            if (next) {
+              const ids = favoriteSessions.map(s => s.id)
+              showFavoritesOnly(ids)
+            } else {
+              restoreFromFavorites()
+            }
+          }}
           renderSession={renderSessionItem}
         />
 
