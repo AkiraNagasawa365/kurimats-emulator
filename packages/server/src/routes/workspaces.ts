@@ -221,7 +221,7 @@ export function createWorkspacesRouter(
           name: sessionName,
           repoPath: effectiveRepoPath,
           sshHost: effectiveSshHost,
-          useWorktree: !isRemotePane, // リモートの場合はworktree不要
+          useWorktree: false, // ペイン分割時はworktreeを作成しない
           workspaceId: workspace.id,
         },
       )
