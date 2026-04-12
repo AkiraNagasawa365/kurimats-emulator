@@ -8,6 +8,8 @@ import { WorktreeService } from './services/worktree-service.js'
 import { SessionStore } from './services/session-store.js'
 import { DevInstanceManager } from './services/dev-instance-manager.js'
 import { SessionDevBindingService } from './services/session-dev-binding-service.js'
+import { PlaywrightRunner } from './services/playwright-runner.js'
+import { createPlaywrightRouter } from './routes/playwright.js'
 import { setupTerminalWs } from './ws/terminal-handler.js'
 import { setupNotificationWs } from './ws/notification-handler.js'
 import { createSessionsRouter } from './routes/sessions.js'
@@ -62,6 +64,10 @@ devInstanceManager.on('error', (instanceId: string, err: unknown) => {
   console.error(`❌ DevInstance ${instanceId} エラー:`, err)
 })
 const bindingService = new SessionDevBindingService(sessionStore, devInstanceManager)
+const playwrightRunner = new PlaywrightRunner()
+playwrightRunner.on('runner_error', (instanceId: string, err: unknown) => {
+  console.error(`❌ Playwright Runner ${instanceId} エラー:`, err)
+})
 
 const markDisconnected = (sessionId: string) => {
   const session = sessionStore.getById(sessionId)
@@ -108,6 +114,7 @@ app.use('/api/tab', createTabRouter(sessionStore, ptyManager, sshManager, worktr
 app.use('/api/ssh', createSshRouter(sshManager, sessionStore))
 app.use('/api/feedback', createFeedbackRouter(sessionStore))
 app.use('/api/workspaces', createWorkspacesRouter(sessionStore, ptyManager, sshManager, worktreeService, devInstanceManager, bindingService))
+app.use('/api/playwright', createPlaywrightRouter(playwrightRunner, devInstanceManager))
 
 // 本番時: 静的ファイル配信（Electronビルド or スタンドアロン）
 const STATIC_DIR = process.env.STATIC_DIR
@@ -143,7 +150,7 @@ setupTerminalWs(terminalWss, ptyManager, sshManager)
 
 // WebSocketサーバー（通知用）
 const notificationWss = new WebSocketServer({ noServer: true })
-setupNotificationWs(notificationWss, sshManager)
+setupNotificationWs(notificationWss, sshManager, playwrightRunner)
 
 // WebSocketアップグレード処理
 server.on('upgrade', (request, socket, head) => {
@@ -180,8 +187,9 @@ server.listen(PORT, HOST, () => {
 })
 
 // グレースフルシャットダウン
-function shutdown() {
+async function shutdown() {
   console.log('\nシャットダウン中...')
+  await playwrightRunner.stopAllAndWait()
   devInstanceManager.shutdown()
   ptyManager.killAll()
   sshManager.disconnectAll()

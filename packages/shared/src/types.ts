@@ -459,6 +459,32 @@ export interface SlotAssignment {
   assignedAt: number
 }
 
+// ========== Playwright Runner ==========
+
+/** Playwright テスト実行の状態 */
+export type PlaywrightRunStatus = 'idle' | 'running' | 'passed' | 'failed' | 'cancelled' | 'error'
+
+/** Playwright テスト実行結果 */
+export interface PlaywrightRunResult {
+  /** 実行 ID（instanceId と同一） */
+  instanceId: string
+  status: PlaywrightRunStatus
+  /** 実行対象のテストパス */
+  testPath: string | null
+  /** プロセス PID */
+  pid: number | null
+  /** 開始時刻 */
+  startedAt: number | null
+  /** 終了時刻 */
+  finishedAt: number | null
+  /** exit code（完了時のみ） */
+  exitCode: number | null
+  /** テスト出力（stdout + stderr） */
+  output: string
+  /** Playwright ポート */
+  port: number
+}
+
 // ========== bookmarks ==========
 
 // bookmarks.toml のブックマーク情報
