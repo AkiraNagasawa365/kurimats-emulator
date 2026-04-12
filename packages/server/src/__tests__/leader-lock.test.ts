@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync, rmSync } from 'fs'
 import path from 'path'
 import { tmpdir } from 'os'
-import { acquireLock, releaseLock, isLocked, readLock, getLockfilePath } from '../services/leader-lock'
+import { acquireLock, releaseLock, isLocked, readLock, getLockfilePath, registerLockCleanup } from '../services/leader-lock'
 import type { LockInfo } from '../services/leader-lock'
 
 /** テスト用の一時ディレクトリを作成 */
@@ -168,11 +168,57 @@ describe('LeaderLock', () => {
   })
 
   describe('破損した lockfile の処理', () => {
-    it('不正な JSON の lockfile は新規取得として扱われる', () => {
+    it('不正な JSON の lockfile は stale 扱いで新規取得される', () => {
       writeFileSync(lockfilePath, 'not valid json', 'utf-8')
 
       const result = acquireLock({ port: 14000, paneNumber: 0, type: 'dev', lockfilePath })
       expect(result.acquired).toBe(true)
+    })
+  })
+
+  describe('原子的取得（排他的作成）', () => {
+    it('lockfile が存在しない場合は排他的作成で一発取得', () => {
+      const result = acquireLock({ port: 14000, paneNumber: 0, type: 'dev', lockfilePath })
+      expect(result.acquired).toBe(true)
+
+      // lockfile が正しく書かれている
+      const info = readLock(lockfilePath)
+      expect(info!.pid).toBe(process.pid)
+    })
+
+    it('stale lock を unlink → 再度排他的作成で取得', () => {
+      // stale lock を作成（存在しない PID）
+      const staleLock: LockInfo = {
+        pid: 2147483647,
+        port: 14000,
+        paneNumber: 0,
+        startedAt: '2026-01-01T00:00:00.000Z',
+        type: 'dev',
+      }
+      writeFileSync(lockfilePath, JSON.stringify(staleLock), 'utf-8')
+
+      // 排他的取得 → stale 検出 → unlink → 再取得
+      const result = acquireLock({ port: 14000, paneNumber: 0, type: 'dev', lockfilePath })
+      expect(result.acquired).toBe(true)
+      expect(readLock(lockfilePath)!.pid).toBe(process.pid)
+    })
+  })
+
+  describe('registerLockCleanup', () => {
+    it('exit イベントのみ登録し SIGINT/SIGTERM ハンドラは登録しない', () => {
+      // registerLockCleanup が SIGINT/SIGTERM を登録しないことを確認
+      // (index.ts の shutdown() が graceful shutdown を担当するため)
+      const exitListenersBefore = process.listenerCount('exit')
+      const sigintListenersBefore = process.listenerCount('SIGINT')
+      const sigtermListenersBefore = process.listenerCount('SIGTERM')
+
+      // 一時的な lockfile で cleanup を登録
+      const tempLockPath = path.join(tempDir, 'cleanup-test.lock')
+      registerLockCleanup({ paneNumber: 99, lockfilePath: tempLockPath })
+
+      expect(process.listenerCount('exit')).toBe(exitListenersBefore + 1)
+      expect(process.listenerCount('SIGINT')).toBe(sigintListenersBefore) // 増えない
+      expect(process.listenerCount('SIGTERM')).toBe(sigtermListenersBefore) // 増えない
     })
   })
 })

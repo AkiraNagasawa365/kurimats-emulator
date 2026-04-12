@@ -3,8 +3,11 @@
  *
  * lockfile にはPID・ポート・pane番号・起動時刻を記録し、
  * stale lock の自動回収もサポートする。
+ *
+ * 原子性: openSync('wx') で排他的作成を行い、2プロセス同時起動時の race を防止。
+ * シグナル: 'exit' イベントのみで cleanup。SIGINT/SIGTERM は index.ts の shutdown() に委譲。
  */
-import { readFileSync, writeFileSync, unlinkSync, mkdirSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, unlinkSync, mkdirSync, existsSync, openSync, closeSync, constants } from 'fs'
 import path from 'path'
 import { homedir } from 'os'
 
@@ -35,7 +38,7 @@ export interface LockResult {
 
 /**
  * PANE_NUMBER に応じた lockfile パスを算出
- * DB ファイルと同じディレクトリ（~/.kurimats/）に配���
+ * DB ファイルと同じディレクトリ（~/.kurimats/）に配置
  */
 export function getLockfilePath(paneNumber: number | null): string {
   const baseDir = path.join(homedir(), '.kurimats')
@@ -45,7 +48,7 @@ export function getLockfilePath(paneNumber: number | null): string {
 }
 
 /**
- * PID が生存し��いるかを確認する
+ * PID が生存しているかを確認する
  */
 function isPidAlive(pid: number): boolean {
   try {
@@ -70,11 +73,30 @@ export function readLock(lockfilePath: string): LockInfo | null {
 }
 
 /**
+ * lockfile を排他的に書き込む（openSync 'wx' で原子的作成）
+ * @returns true: 書き込み成功、false: ファイルが既に存在（EEXIST）
+ */
+function writeExclusive(lockfilePath: string, lockInfo: LockInfo): boolean {
+  try {
+    const fd = openSync(lockfilePath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL)
+    const content = JSON.stringify(lockInfo, null, 2)
+    writeFileSync(fd, content, 'utf-8')
+    closeSync(fd)
+    return true
+  } catch (e: any) {
+    if (e.code === 'EEXIST') return false
+    throw e
+  }
+}
+
+/**
  * lock を取得する
  *
- * 1. lockfile が存在しない → 新規作成して取得成功
- * 2. lockfile が存在 + PID が生存 → 取得失敗（既に別インスタンスが稼働中）
- * 3. lockfile が存在 + PID が死亡 → stale lock として上書き取得
+ * 原子性を確保するフロー:
+ * 1. openSync('wx') で排他的作成を試みる → 成功なら取得完了
+ * 2. EEXIST → 既存 lock を読み取り PID 生存チェック
+ * 3. PID 生存 → 取得失敗
+ * 4. PID 死亡（stale） → unlink して再度 openSync('wx') を試みる
  */
 export function acquireLock(options: LockOptions): LockResult {
   const lockfilePath = options.lockfilePath ?? getLockfilePath(options.paneNumber)
@@ -85,18 +107,6 @@ export function acquireLock(options: LockOptions): LockResult {
     mkdirSync(dir, { recursive: true })
   }
 
-  // 既存 lock を確認
-  const existing = readLock(lockfilePath)
-  if (existing) {
-    if (isPidAlive(existing.pid)) {
-      // 有効な lock が存在 → 取得失敗
-      return { acquired: false, existingLock: existing }
-    }
-    // stale lock → 上書き
-    console.warn(`⚠️ LeaderLock: stale lock を検出 (PID=${existing.pid})。上書きします。`)
-  }
-
-  // lockfile を書き込み
   const lockInfo: LockInfo = {
     pid: process.pid,
     port: options.port,
@@ -105,8 +115,34 @@ export function acquireLock(options: LockOptions): LockResult {
     type: options.type,
   }
 
-  writeFileSync(lockfilePath, JSON.stringify(lockInfo, null, 2), 'utf-8')
-  return { acquired: true }
+  // 1回目: 排他的作成を試みる
+  if (writeExclusive(lockfilePath, lockInfo)) {
+    return { acquired: true }
+  }
+
+  // lockfile が既に存在 → 読み取り
+  const existing = readLock(lockfilePath)
+  if (existing && isPidAlive(existing.pid)) {
+    // 有効な lock が存在 → 取得失敗
+    return { acquired: false, existingLock: existing }
+  }
+
+  // stale lock または破損ファイル → 削除して再試行
+  console.warn(`⚠️ LeaderLock: stale lock を検出 (PID=${existing?.pid ?? '不明'})。上書きします。`)
+  try {
+    unlinkSync(lockfilePath)
+  } catch {
+    // 別プロセスが先に消した場合は無視
+  }
+
+  // 2回目: 排他的作成を再試行
+  if (writeExclusive(lockfilePath, lockInfo)) {
+    return { acquired: true }
+  }
+
+  // 2回目も失敗 → 別プロセスが先に取得した
+  const winner = readLock(lockfilePath)
+  return { acquired: false, existingLock: winner ?? undefined }
 }
 
 /**
@@ -139,10 +175,11 @@ export function isLocked(paneNumber: number | null, lockfilePath?: string): Lock
 
 /**
  * process exit 時に lockfile を自動解放するハンドラを登録する
+ *
+ * 注意: SIGINT/SIGTERM ハンドラは登録しない。
+ * index.ts の shutdown() が ptyManager.killAll() 等のグレースフル処理を行った後に
+ * process.exit(0) を呼び、それが 'exit' イベントをトリガーして lock を解放する。
  */
 export function registerLockCleanup(options: { paneNumber: number | null; lockfilePath?: string }): void {
-  const cleanup = () => releaseLock(options)
-  process.on('exit', cleanup)
-  process.on('SIGINT', () => { cleanup(); process.exit(0) })
-  process.on('SIGTERM', () => { cleanup(); process.exit(0) })
+  process.on('exit', () => releaseLock(options))
 }
