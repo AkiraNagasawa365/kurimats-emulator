@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import type { Session } from '@kurimats/shared'
-import { useSessionStore } from '../../stores/session-store'
+import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useOverlayStore } from '../../stores/overlay-store'
 import { AnimatedFavoriteButton } from '../animations/FavoriteAnimations'
 
@@ -16,14 +16,22 @@ interface PaneToolbarProps {
  * - isActive=true のとき背景色を強調して現在フォーカスペインを視覚化
  * - ペイン境界を明示するため左右に border を付与
  * - 📁クリックでFileTreeOverlayを開き、MD/コードの全画面ビューアへの導線を提供
+ * - ★クリックでワークスペースのピン留め（お気に入り）をトグル
  */
 export function PaneToolbar({ session, isActive = false }: PaneToolbarProps) {
-  const toggleFavorite = useSessionStore(s => s.toggleFavorite)
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId)
+  const workspaces = useWorkspaceStore(s => s.workspaces)
+  const togglePin = useWorkspaceStore(s => s.togglePin)
   const openOverlay = useOverlayStore(s => s.openOverlay)
 
-  const handleToggleFavorite = useCallback(() => {
-    toggleFavorite(session.id)
-  }, [toggleFavorite, session.id])
+  const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
+  const isPinned = activeWorkspace?.isPinned ?? false
+
+  const handleTogglePin = useCallback(() => {
+    if (activeWorkspaceId) {
+      void togglePin(activeWorkspaceId)
+    }
+  }, [togglePin, activeWorkspaceId])
 
   const handleOpenFileTree = useCallback(() => {
     openOverlay('file-tree', { sessionId: session.id })
@@ -73,10 +81,10 @@ export function PaneToolbar({ session, isActive = false }: PaneToolbarProps) {
           📁
         </button>
 
-        {/* お気に入りトグル */}
+        {/* お気に入り（ワークスペースピン留め）トグル */}
         <AnimatedFavoriteButton
-          isFavorite={session.isFavorite}
-          onToggle={handleToggleFavorite}
+          isFavorite={isPinned}
+          onToggle={handleTogglePin}
         />
       </div>
     </div>

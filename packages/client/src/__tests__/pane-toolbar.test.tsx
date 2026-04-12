@@ -21,12 +21,14 @@ vi.mock('../components/animations/FavoriteAnimations', () => ({
   ),
 }))
 
-const mockToggleFavorite = vi.fn()
+const mockTogglePin = vi.fn()
 const mockOpenOverlay = vi.fn()
 
-vi.mock('../stores/session-store', () => ({
-  useSessionStore: (selector: any) => selector({
-    toggleFavorite: mockToggleFavorite,
+vi.mock('../stores/workspace-store', () => ({
+  useWorkspaceStore: (selector: any) => selector({
+    activeWorkspaceId: 'ws-1',
+    workspaces: [{ id: 'ws-1', isPinned: false }],
+    togglePin: mockTogglePin,
   }),
 }))
 
@@ -110,7 +112,6 @@ describe('PaneToolbar', () => {
   })
 
   it('ツールバー背景はペイン content bg (bg-surface-0) と同じトークンを使わない', () => {
-    // 非アクティブでも surface-0 と同じ色だと視認不能になる（#165 の症状）
     const htmlInactive = renderHtml({ session: baseSession })
     const htmlActive = renderHtml({ session: baseSession, isActive: true })
     expect(htmlInactive).not.toMatch(/\bbg-surface-0\b/)
@@ -118,7 +119,6 @@ describe('PaneToolbar', () => {
   })
 
   it('下辺は 2px の border-b-2 で分離線を確保する', () => {
-    // 1px では xterm 背景との同化で見えないケースが発生したため border-b-2 に格上げ
     const htmlInactive = renderHtml({ session: baseSession })
     const htmlActive = renderHtml({ session: baseSession, isActive: true })
     expect(htmlInactive).toContain('border-b-2')
@@ -137,6 +137,11 @@ describe('PaneToolbar', () => {
     expect(html).toContain('data-testid="pane-toolbar"')
   })
 
+  it('★はワークスペースのピン状態を反映する（未ピン → ☆）', () => {
+    const html = renderHtml({ session: baseSession })
+    expect(html).toContain('☆')
+  })
+
   describe('ファイルツリー起動ボタン（📁）', () => {
     it('📁ボタンが描画され data-testid と title を公開する', () => {
       const html = renderHtml({ session: baseSession })
@@ -148,11 +153,9 @@ describe('PaneToolbar', () => {
 
     it('📁ボタンは常時視認できる色（text-transparent を使わない）', () => {
       const html = renderHtml({ session: baseSession })
-      // file-tree-button を含む <button ...> タグ全体を抽出する
       const tagMatch = html.match(/<button[^>]*data-testid="file-tree-button"[^>]*>/)
       expect(tagMatch).toBeTruthy()
       const buttonTag = tagMatch?.[0] ?? ''
-      // ★と違い、最初から薄く見える text-text-muted を使う
       expect(buttonTag).toContain('text-text-muted')
       expect(buttonTag).not.toContain('text-transparent')
     })
