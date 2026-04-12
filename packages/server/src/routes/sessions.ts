@@ -100,7 +100,7 @@ export function createSessionsRouter(
           await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
           waitForShellReady(session.id, ptyManager, sshManager, false, true)
         } else {
-          await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--continue'])
+          await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--dangerously-skip-permissions', '--continue'])
         }
       }
 
