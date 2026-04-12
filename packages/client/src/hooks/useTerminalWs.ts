@@ -62,6 +62,8 @@ export function useTerminalWs(sessionId: string | null, terminal: Terminal | nul
 
     ws.onclose = () => {
       if (disposedRef.current) return
+      // 別の接続が既に確立されている場合は再接続しない（stale closure防止）
+      if (ws !== wsRef.current) return
       // 自動再接続（指数バックオフ）
       reconnectTimerRef.current = setTimeout(() => {
         if (!disposedRef.current && sessionId && terminal) connect()
