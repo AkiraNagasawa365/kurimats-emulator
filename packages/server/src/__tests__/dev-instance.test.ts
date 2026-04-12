@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SessionStore } from '../services/session-store'
+import { calculatePortsForSlot } from '../utils/ports'
 
 describe('DevInstance / SlotAssignment', () => {
   let store: SessionStore
@@ -163,6 +164,41 @@ describe('DevInstance / SlotAssignment', () => {
       expect(all).toHaveLength(2)
       expect(all[0].slotNumber).toBe(0)
       expect(all[1].slotNumber).toBe(1)
+    })
+
+    it('同一 instanceId を複数スロットに割り当てられない（UNIQUE instance_id）', () => {
+      const instance = store.createDevInstance({ slotNumber: 0, serverPort: 14000, clientPort: 5180, playwrightPort: 3550 })
+      store.assignSlot(0, instance.id)
+
+      // 同じ instance を別スロットに割り当て → UNIQUE 制約違反
+      expect(() => store.assignSlot(1, instance.id)).toThrow()
+    })
+
+    it('存在しない instanceId での assignSlot は FK 制約で拒否される', () => {
+      expect(() => store.assignSlot(0, 'non-existent-id')).toThrow()
+    })
+  })
+
+  describe('異常系', () => {
+    it('存在しない ID の deleteDevInstance は false を返す', () => {
+      const result = store.deleteDevInstance('non-existent-id')
+      expect(result).toBe(false)
+    })
+  })
+
+  describe('calculatePortsForSlot', () => {
+    it('スロット0のポートを正しく算出する', () => {
+      const ports = calculatePortsForSlot(0)
+      expect(ports.serverPort).toBe(14000)
+      expect(ports.clientPort).toBe(5180)
+      expect(ports.playwrightPort).toBe(3550)
+    })
+
+    it('スロット3のポートを正しく算出する', () => {
+      const ports = calculatePortsForSlot(3)
+      expect(ports.serverPort).toBe(14003)
+      expect(ports.clientPort).toBe(5183)
+      expect(ports.playwrightPort).toBe(3553)
     })
   })
 })

@@ -155,9 +155,9 @@ export function runSessionStoreMigrations(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS slot_assignments (
       slot_number INTEGER PRIMARY KEY,
-      instance_id TEXT NOT NULL,
+      instance_id TEXT NOT NULL UNIQUE,
       assigned_at INTEGER NOT NULL,
-      FOREIGN KEY (instance_id) REFERENCES dev_instances(id)
+      FOREIGN KEY (instance_id) REFERENCES dev_instances(id) ON DELETE CASCADE
     );
   `)
 

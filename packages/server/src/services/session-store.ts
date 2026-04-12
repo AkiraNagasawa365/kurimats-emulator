@@ -44,6 +44,7 @@ export class SessionStore {
 
     this.db = new Database(resolvedPath)
     this.db.pragma('journal_mode = WAL')
+    this.db.pragma('foreign_keys = ON')
     this.migrate()
   }
 
