@@ -58,10 +58,9 @@ interface PtySession {
 }
 
 import { PLAYWRIGHT_PORT_BASE, calculatePort } from '../utils/ports.js'
-/** ペイン番号（環境変数から取得、0=develop, N=paneN, null=未設定） */
-const PANE_NUMBER = process.env.PANE_NUMBER != null
-  ? parseInt(process.env.PANE_NUMBER, 10)
-  : null
+import { detectPaneNumber } from '@kurimats/shared'
+/** ペイン番号（環境変数 or worktreeパスから自動検出） */
+const PANE_NUMBER = detectPaneNumber()
 
 /**
  * PTYに渡す環境変数を組み立てる

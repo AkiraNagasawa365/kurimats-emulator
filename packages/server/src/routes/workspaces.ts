@@ -5,7 +5,7 @@ import type { SshManager } from '../services/ssh-manager.js'
 import { WorktreeService } from '../services/worktree-service.js'
 import type { DevInstanceManager } from '../services/dev-instance-manager.js'
 import type { SessionDevBindingService } from '../services/session-dev-binding-service.js'
-import type { PaneNode, PaneLeaf, SplitDirection, Session } from '@kurimats/shared'
+import { type PaneNode, type PaneLeaf, type SplitDirection, type Session, detectPaneNumber } from '@kurimats/shared'
 import { createAndSpawnSession, cleanupSession } from '../services/session-lifecycle.js'
 import {
   genId,
@@ -154,9 +154,7 @@ export function createWorkspacesRouter(
       )
 
       // persistent develop worktree を確保（ローカルリポジトリのみ）
-      const paneNumber = process.env.PANE_NUMBER != null
-        ? parseInt(process.env.PANE_NUMBER, 10)
-        : null
+      const paneNumber = detectPaneNumber()
       if (paneNumber != null) {
         ensurePersistentDevelop(worktreeService, devInstanceManager, repoPath, sshHost, paneNumber)
 
@@ -223,7 +221,7 @@ export function createWorkspacesRouter(
           name: sessionName,
           repoPath: effectiveRepoPath,
           sshHost: effectiveSshHost,
-          useWorktree: !isRemotePane, // リモートの場合はworktree不要
+          useWorktree: false, // ペイン分割時はworktreeを作成しない
           workspaceId: workspace.id,
         },
       )

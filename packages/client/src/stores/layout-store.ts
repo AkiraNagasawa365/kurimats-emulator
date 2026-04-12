@@ -38,6 +38,13 @@ import {
 } from './layout-store.utils'
 import { layoutApi } from '../lib/api'
 
+/** お気に入りフィルタ適用前のレイアウト退避データ */
+interface SavedLayoutSnapshot {
+  mode: LayoutMode
+  panels: LayoutPanel[]
+  activePanelIndex: number
+}
+
 interface LayoutState {
   mode: LayoutMode
   panels: LayoutPanel[]
@@ -49,6 +56,7 @@ interface LayoutState {
   fileTiles: FileTilePosition[]
   activeSessionId: string | null
   viewport: { x: number; y: number; zoom: number }
+  savedLayoutBeforeFavorites: SavedLayoutSnapshot | null
   setMode: (mode: LayoutMode) => void
   assignSession: (panelIndex: number, sessionId: string) => void
   removeSession: (sessionId: string) => void
@@ -72,6 +80,8 @@ interface LayoutState {
   removeFileTile: (id: string) => void
   updateFileTilePosition: (id: string, x: number, y: number) => void
   updateFileTileSize: (id: string, width: number, height: number) => void
+  showFavoritesOnly: (favoriteSessionIds: string[]) => void
+  restoreFromFavorites: () => void
 }
 
 const savedState = readSavedLayout()
@@ -111,6 +121,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   fileTiles: savedBoardState?.fileTiles ?? [],
   activeSessionId: null,
   viewport: savedBoardState?.viewport ?? DEFAULT_VIEWPORT,
+  savedLayoutBeforeFavorites: null,
 
   setMode: (mode) => {
     const count = panelCountForMode(mode)
@@ -420,6 +431,59 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       fileTiles: get().fileTiles.map((tile) => (tile.id === id ? { ...tile, width, height } : tile)),
     })
     persistCurrentBoardState(get)
+  },
+
+  showFavoritesOnly: (favoriteSessionIds) => {
+    if (favoriteSessionIds.length === 0) {
+      return
+    }
+
+    const state = get()
+    // 現在のレイアウトを退避
+    set({
+      savedLayoutBeforeFavorites: {
+        mode: state.mode,
+        panels: [...state.panels],
+        activePanelIndex: state.activePanelIndex,
+      },
+    })
+
+    // セッション数に応じた最適モードを決定
+    const count = favoriteSessionIds.length
+    const targetMode = MODE_PROGRESSION.find(m => panelCountForMode(m) >= count)
+      ?? MODE_PROGRESSION[MODE_PROGRESSION.length - 1]
+    const panelCount = panelCountForMode(targetMode)
+
+    // お気に入りセッションで均等にパネルを構築
+    const panels: LayoutPanel[] = Array.from({ length: panelCount }, (_, i) => ({
+      sessionId: favoriteSessionIds[i] ?? null,
+      position: i,
+    }))
+
+    // ボードに未追加のセッションがあれば追加
+    for (const sessionId of favoriteSessionIds) {
+      if (!get().boardNodes.some(node => node.sessionId === sessionId)) {
+        get().addBoardNode(sessionId)
+      }
+    }
+
+    set({ mode: targetMode, panels, activePanelIndex: 0 })
+    persistCurrentLayoutState(get)
+  },
+
+  restoreFromFavorites: () => {
+    const saved = get().savedLayoutBeforeFavorites
+    if (!saved) {
+      return
+    }
+
+    set({
+      mode: saved.mode,
+      panels: saved.panels,
+      activePanelIndex: saved.activePanelIndex,
+      savedLayoutBeforeFavorites: null,
+    })
+    persistCurrentLayoutState(get)
   },
 }))
 

@@ -27,12 +27,10 @@ import { CanvasStore } from './services/canvas-store.js'
 import { SERVER_PORT_BASE, calculatePort } from './utils/ports.js'
 import { runStartupTasks } from './startup.js'
 import { acquireLock, registerLockCleanup } from './services/leader-lock.js'
+import { detectPaneNumber } from '@kurimats/shared'
 
-// PANE_NUMBERからポートを自動算出（develop=0, paneN=N）
-// 設定時は既存PORT環境変数より優先。未設定時のみPORTにフォールバック
-const PANE_NUMBER = process.env.PANE_NUMBER != null
-  ? parseInt(process.env.PANE_NUMBER, 10)
-  : null
+// PANE_NUMBERを自動検出（環境変数 → worktreeパス名 → null）
+const PANE_NUMBER = detectPaneNumber()
 const PORT = PANE_NUMBER != null
   ? calculatePort(SERVER_PORT_BASE, PANE_NUMBER)
   : parseInt(process.env.PORT || '3001', 10)
