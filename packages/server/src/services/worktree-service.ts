@@ -224,9 +224,11 @@ export class WorktreeService {
 
   /**
    * パスが persistent develop worktree かどうか判定する
+   * パスセグメント境界で判定し、部分一致の誤判定を防ぐ
    */
   static isPersistentDevelop(worktreePath: string): boolean {
-    return worktreePath.includes('persistent-develop-pane')
+    const segments = worktreePath.split(path.sep)
+    return segments.some(seg => seg.startsWith('persistent-develop-pane'))
   }
 
   /**
