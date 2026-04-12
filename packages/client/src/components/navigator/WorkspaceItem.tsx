@@ -96,10 +96,18 @@ export function WorkspaceItem({
           </span>
         )}
 
-        {/* ピンアイコン */}
-        {workspace.isPinned && (
-          <span className="text-[10px] text-accent">📌</span>
-        )}
+        {/* ピン（お気に入り）トグルボタン */}
+        <span
+          onClick={(e) => { e.stopPropagation(); onTogglePin() }}
+          className={`text-[10px] flex-shrink-0 cursor-pointer transition-colors ${
+            workspace.isPinned
+              ? 'text-yellow-500 hover:text-yellow-400'
+              : 'text-text-muted opacity-0 group-hover:opacity-100 hover:text-yellow-500'
+          }`}
+          title={workspace.isPinned ? 'お気に入り解除' : 'お気に入りに追加'}
+        >
+          ★
+        </span>
 
         {/* 通知バッジ */}
         {workspace.notificationCount > 0 && (
