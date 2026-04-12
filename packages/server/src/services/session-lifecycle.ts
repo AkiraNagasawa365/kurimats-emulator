@@ -9,13 +9,14 @@ import type { SshManager } from './ssh-manager.js'
 import { WorktreeService } from './worktree-service.js'
 
 /**
- * シェルの初期化完了を検出してclaude --continueコマンドを送信する
+ * シェルの初期化完了を検出してclaude --dangerously-skip-permissionsコマンドを送信する
  * シェルのプロンプト出力（$ や % や > の末尾文字）を監視し、
- * 表示されたらclaude --continueを実行する。最大5秒のタイムアウト付き。
+ * 表示されたらclaudeを実行する。最大5秒のタイムアウト付き。
+ * --dangerously-skip-permissionsにより権限確認プロンプトをスキップする。
  * --continueにより、前回の会話履歴がある場合は自動復元される。
  */
 /**
- * @param continueSession trueの場合 `claude --continue`、falseの場合 `claude` を実行
+ * @param continueSession trueの場合 `claude --dangerously-skip-permissions --continue`、falseの場合 `claude --dangerously-skip-permissions` を実行
  */
 export function waitForShellReady(
   sessionId: string,
@@ -27,7 +28,7 @@ export function waitForShellReady(
   const manager = isRemote ? sshManager : ptyManager
   let resolved = false
   let timeoutId: ReturnType<typeof setTimeout> | null = null
-  const claudeCmd = continueSession ? 'claude --continue\r' : 'claude\r'
+  const claudeCmd = continueSession ? 'claude --dangerously-skip-permissions --continue\r' : 'claude --dangerously-skip-permissions\r'
 
   const cleanup = () => {
     manager.removeListener('data', onData)
@@ -160,8 +161,8 @@ export async function createAndSpawnSession(
           waitForShellReady(session.id, ptyManager, sshManager, false)
         }
       } else {
-        // child_processモード: claude --continueを直接起動
-        await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--continue'])
+        // child_processモード: claude --dangerously-skip-permissions --continueを直接起動
+        await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--dangerously-skip-permissions', '--continue'])
       }
     }
   } catch (e) {
