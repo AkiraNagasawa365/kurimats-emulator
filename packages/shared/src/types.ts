@@ -485,6 +485,48 @@ export interface PlaywrightRunResult {
   port: number
 }
 
+// ========== Resource HUD ==========
+
+/** プロセスの生存状態 */
+export type ProcessAliveness = 'alive' | 'exited' | 'error' | 'unknown'
+
+/** 単一インスタンス/セッションのリソースメトリクス */
+export interface ResourceMetrics {
+  /** 対象の DevInstance ID（セッション単体の場合は null） */
+  instanceId: string | null
+  /** 対象のセッション ID */
+  sessionId: string | null
+  /** PID（プロセスが存在する場合） */
+  pid: number | null
+  /** CPU 使用率（%、0-100+）。取得不可の場合は null */
+  cpuPercent: number | null
+  /** メモリ使用量 RSS（バイト）。取得不可の場合は null */
+  memoryRss: number | null
+  /** プロセスの生存状態 */
+  processStatus: ProcessAliveness
+  /** worktree ディスク使用量（バイト）。worktree がない場合は null */
+  worktreeDiskUsage: number | null
+  /** 収集時刻 */
+  collectedAt: number
+}
+
+/** 全体のリソーススナップショット */
+export interface ResourceSnapshot {
+  /** サーバープロセス自身の CPU/メモリ */
+  server: {
+    pid: number
+    cpuPercent: number | null
+    memoryRss: number
+    uptime: number
+  }
+  /** 各インスタンス/セッションのメトリクス */
+  instances: ResourceMetrics[]
+  /** アクティブ WebSocket 接続数 */
+  wsConnectionCount: number
+  /** 収集時刻 */
+  collectedAt: number
+}
+
 // ========== bookmarks ==========
 
 // bookmarks.toml のブックマーク情報

@@ -9,7 +9,9 @@ import { SessionStore } from './services/session-store.js'
 import { DevInstanceManager } from './services/dev-instance-manager.js'
 import { SessionDevBindingService } from './services/session-dev-binding-service.js'
 import { PlaywrightRunner } from './services/playwright-runner.js'
+import { ResourceMonitorService } from './services/resource-monitor.js'
 import { createPlaywrightRouter } from './routes/playwright.js'
+import { createResourcesRouter } from './routes/resources.js'
 import { setupTerminalWs } from './ws/terminal-handler.js'
 import { setupNotificationWs } from './ws/notification-handler.js'
 import { createSessionsRouter } from './routes/sessions.js'
@@ -150,7 +152,18 @@ setupTerminalWs(terminalWss, ptyManager, sshManager)
 
 // WebSocketサーバー（通知用）
 const notificationWss = new WebSocketServer({ noServer: true })
-setupNotificationWs(notificationWss, sshManager, playwrightRunner)
+
+// ResourceMonitor: WS 接続数を通知 WSS から取得
+const resourceMonitor = new ResourceMonitorService(devInstanceManager, ptyManager, {
+  getWsConnectionCount: () => terminalWss.clients.size + notificationWss.clients.size,
+})
+resourceMonitor.start()
+
+// 通知 WS セットアップ（ResourceMonitor 初期化後）
+const cleanupNotificationWs = setupNotificationWs(notificationWss, sshManager, playwrightRunner, resourceMonitor)
+
+// Resource API（モニター初期化後に登録）
+app.use('/api/resources', createResourcesRouter(resourceMonitor))
 
 // WebSocketアップグレード処理
 server.on('upgrade', (request, socket, head) => {
@@ -189,6 +202,8 @@ server.listen(PORT, HOST, () => {
 // グレースフルシャットダウン
 async function shutdown() {
   console.log('\nシャットダウン中...')
+  cleanupNotificationWs()
+  resourceMonitor.stop()
   await playwrightRunner.stopAllAndWait()
   devInstanceManager.shutdown()
   ptyManager.killAll()
