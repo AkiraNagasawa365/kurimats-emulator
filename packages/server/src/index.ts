@@ -6,6 +6,8 @@ import { PtyManager } from './services/pty-manager.js'
 import { SshManager } from './services/ssh-manager.js'
 import { WorktreeService } from './services/worktree-service.js'
 import { SessionStore } from './services/session-store.js'
+import { DevInstanceManager } from './services/dev-instance-manager.js'
+import { SessionDevBindingService } from './services/session-dev-binding-service.js'
 import { setupTerminalWs } from './ws/terminal-handler.js'
 import { setupNotificationWs } from './ws/notification-handler.js'
 import { createSessionsRouter } from './routes/sessions.js'
@@ -55,6 +57,11 @@ const sshManager = new SshManager()
 const worktreeService = new WorktreeService()
 const sessionStore = new SessionStore()
 const canvasStore = new CanvasStore()
+const devInstanceManager = new DevInstanceManager(sessionStore)
+devInstanceManager.on('error', (instanceId: string, err: unknown) => {
+  console.error(`❌ DevInstance ${instanceId} エラー:`, err)
+})
+const bindingService = new SessionDevBindingService(sessionStore, devInstanceManager)
 
 const markDisconnected = (sessionId: string) => {
   const session = sessionStore.getById(sessionId)
@@ -100,7 +107,7 @@ app.use('/api/layout', createLayoutRouter(sessionStore, canvasStore))
 app.use('/api/tab', createTabRouter(sessionStore, ptyManager, sshManager, worktreeService))
 app.use('/api/ssh', createSshRouter(sshManager, sessionStore))
 app.use('/api/feedback', createFeedbackRouter(sessionStore))
-app.use('/api/workspaces', createWorkspacesRouter(sessionStore, ptyManager, sshManager, worktreeService))
+app.use('/api/workspaces', createWorkspacesRouter(sessionStore, ptyManager, sshManager, worktreeService, devInstanceManager, bindingService))
 
 // 本番時: 静的ファイル配信（Electronビルド or スタンドアロン）
 const STATIC_DIR = process.env.STATIC_DIR
@@ -175,6 +182,7 @@ server.listen(PORT, HOST, () => {
 // グレースフルシャットダウン
 function shutdown() {
   console.log('\nシャットダウン中...')
+  devInstanceManager.shutdown()
   ptyManager.killAll()
   sshManager.disconnectAll()
   sessionStore.close()
