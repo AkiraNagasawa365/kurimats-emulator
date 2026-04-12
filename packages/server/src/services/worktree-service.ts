@@ -165,10 +165,10 @@ export class WorktreeService {
       return []
     }
 
-    // 使用中でないブランチを削除
+    // 使用中でないブランチを削除（persistent develop ブランチは除外）
     const deleted: string[] = []
     for (const branch of allBranches) {
-      if (!activeBranches.has(branch)) {
+      if (!activeBranches.has(branch) && !WorktreeService.isPersistentDevelopBranch(branch)) {
         try {
           execFileSync('git', ['branch', '-D', branch], {
             cwd: repoPath,
@@ -182,6 +182,58 @@ export class WorktreeService {
       }
     }
     return deleted
+  }
+
+  /**
+   * persistent develop worktree を確保する（冪等）
+   * 存在すればそのまま返し、なければ作成する。
+   * 命名規則: .kurimats-worktrees/persistent-develop-paneN/
+   * ブランチ: kurimats/persistent-develop-paneN
+   */
+  ensurePersistentDevelopWorktree(repoPath: string, slotNumber: number, baseBranch = 'develop'): string {
+    const name = `persistent-develop-pane${slotNumber}`
+    const worktreeBase = path.join(repoPath, WORKTREE_DIR)
+    const worktreePath = path.join(worktreeBase, name)
+
+    if (existsSync(worktreePath)) {
+      return worktreePath
+    }
+
+    // worktree ディレクトリがなければ作成
+    mkdirSync(worktreeBase, { recursive: true })
+
+    const branchName = `kurimats/${name}`
+    try {
+      execFileSync('git', ['worktree', 'add', worktreePath, '-b', branchName, baseBranch], {
+        cwd: repoPath, encoding: 'utf-8', stdio: 'pipe',
+      })
+    } catch {
+      // ブランチが既に存在する場合、ブランチなしで追加
+      try {
+        execFileSync('git', ['worktree', 'add', worktreePath, branchName], {
+          cwd: repoPath, encoding: 'utf-8', stdio: 'pipe',
+        })
+      } catch (e) {
+        throw new Error(`persistent develop worktree の作成に失敗: ${e}`)
+      }
+    }
+
+    console.log(`🌿 persistent develop worktree 作成: ${worktreePath}`)
+    return worktreePath
+  }
+
+  /**
+   * パスが persistent develop worktree かどうか判定する
+   */
+  static isPersistentDevelop(worktreePath: string): boolean {
+    return worktreePath.includes('persistent-develop-pane')
+  }
+
+  /**
+   * ブランチ名が persistent develop のものかどうか判定する
+   */
+  static isPersistentDevelopBranch(branchName: string): boolean {
+    return branchName.startsWith('kurimats/persistent-develop-pane')
   }
 
   /**

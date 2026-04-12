@@ -479,4 +479,49 @@ describe('runStartupTasks', () => {
       expect(worktreeService.getBranch).toHaveBeenCalledWith('/tmp/repo/.kurimats-worktrees/pane1')
     })
   })
+
+  describe('persistent develop worktree の保護', () => {
+    it('段階2で persistent develop worktree が削除されない', () => {
+      const session = store.create({
+        name: 'persistent-session',
+        repoPath: '/tmp/repo',
+        worktreePath: '/tmp/repo/.kurimats-worktrees/persistent-develop-pane0',
+        baseBranch: 'kurimats/persistent-develop-pane0',
+        isRemote: false,
+        workspaceId: null,
+        projectId: null,
+      })
+      store.updateStatus(session.id, 'disconnected')
+
+      runStartupTasks(store, worktreeService as unknown as WorktreeService, OUTSIDE_CWD)
+
+      // persistent develop worktree は削除されない
+      const updated = store.getById(session.id)
+      expect(updated?.worktreePath).toBe('/tmp/repo/.kurimats-worktrees/persistent-develop-pane0')
+      expect(worktreeService.remove).not.toHaveBeenCalled()
+    })
+
+    it('段階3で persistent develop worktree を持つ孤立セッションが保護される', () => {
+      const ws = store.createCmuxWorkspace(
+        { name: 'test-ws', repoPath: '/tmp/repo' },
+        { kind: 'leaf', id: 'pane-a', sessionId: 'some-other-session', ratio: 1 },
+      )
+      const orphan = store.create({
+        name: 'persistent-orphan',
+        repoPath: '/tmp/repo',
+        worktreePath: '/tmp/repo/.kurimats-worktrees/persistent-develop-pane1',
+        isRemote: false,
+        workspaceId: ws.id,
+        projectId: null,
+      })
+
+      runStartupTasks(store, worktreeService as unknown as WorktreeService, OUTSIDE_CWD)
+
+      // persistent develop worktree は worktreeService.remove されない
+      expect(worktreeService.remove).not.toHaveBeenCalledWith(
+        '/tmp/repo',
+        '/tmp/repo/.kurimats-worktrees/persistent-develop-pane1',
+      )
+    })
+  })
 })
