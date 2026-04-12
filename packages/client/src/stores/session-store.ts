@@ -10,6 +10,8 @@ interface SessionState {
 
   fetchSessions: () => Promise<void>
   createSession: (params: CreateSessionParams) => Promise<Session>
+  /** 外部で作成済みのセッションをストアに追加（ペイン分割時等） */
+  addSession: (session: Session) => void
   deleteSession: (id: string) => Promise<void>
   toggleFavorite: (id: string) => Promise<void>
   assignProject: (sessionId: string, projectId: string | null) => Promise<void>
@@ -42,6 +44,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const session = await sessionsApi.create(params)
     set({ sessions: [session, ...get().sessions] })
     return session
+  },
+
+  addSession: (session) => {
+    // 重複防止
+    if (get().sessions.some(s => s.id === session.id)) return
+    set({ sessions: [session, ...get().sessions] })
   },
 
   deleteSession: async (id) => {
