@@ -8,6 +8,7 @@ import { loadBoardLayoutState, loadLegacyLayout, saveBoardLayoutState, saveLegac
 import { mapCmuxWorkspaceRow, mapFeedbackRow, mapProjectRow, mapSessionRow, mapSshPresetRow, mapStartupTemplateRow } from './session-store-mappers.js'
 import { runSessionStoreMigrations } from './session-store-migrations.js'
 import { findFirstLeafId } from '../utils/pane-tree.js'
+import { detectPaneNumber } from '@kurimats/shared'
 
 /**
  * PANE_NUMBERに応じたDBパスを算出
@@ -17,9 +18,7 @@ import { findFirstLeafId } from '../utils/pane-tree.js'
  */
 function getDefaultDbPath(): string {
   const baseDir = path.join(homedir(), '.kurimats')
-  const paneNumber = process.env.PANE_NUMBER != null
-    ? parseInt(process.env.PANE_NUMBER, 10)
-    : null
+  const paneNumber = detectPaneNumber()
   if (paneNumber === null) return path.join(baseDir, 'sessions.db')
   if (paneNumber === 0) return path.join(baseDir, 'sessions-dev.db')
   return path.join(baseDir, `sessions-pane${paneNumber}.db`)
