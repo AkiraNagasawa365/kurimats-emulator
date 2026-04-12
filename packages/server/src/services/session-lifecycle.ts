@@ -6,16 +6,17 @@ import type { Session } from '@kurimats/shared'
 import type { SessionStore } from './session-store.js'
 import type { PtyManager } from './pty-manager.js'
 import type { SshManager } from './ssh-manager.js'
-import type { WorktreeService } from './worktree-service.js'
+import { WorktreeService } from './worktree-service.js'
 
 /**
- * シェルの初期化完了を検出してclaude --continueコマンドを送信する
+ * シェルの初期化完了を検出してclaude --dangerously-skip-permissionsコマンドを送信する
  * シェルのプロンプト出力（$ や % や > の末尾文字）を監視し、
- * 表示されたらclaude --continueを実行する。最大5秒のタイムアウト付き。
+ * 表示されたらclaudeを実行する。最大5秒のタイムアウト付き。
+ * --dangerously-skip-permissionsにより権限確認プロンプトをスキップする。
  * --continueにより、前回の会話履歴がある場合は自動復元される。
  */
 /**
- * @param continueSession trueの場合 `claude --continue`、falseの場合 `claude` を実行
+ * @param continueSession trueの場合 `claude --dangerously-skip-permissions --continue`、falseの場合 `claude --dangerously-skip-permissions` を実行
  */
 export function waitForShellReady(
   sessionId: string,
@@ -27,7 +28,7 @@ export function waitForShellReady(
   const manager = isRemote ? sshManager : ptyManager
   let resolved = false
   let timeoutId: ReturnType<typeof setTimeout> | null = null
-  const claudeCmd = continueSession ? 'claude --continue\r' : 'claude\r'
+  const claudeCmd = continueSession ? 'claude --dangerously-skip-permissions --continue\r' : 'claude --dangerously-skip-permissions\r'
 
   const cleanup = () => {
     manager.removeListener('data', onData)
@@ -160,8 +161,8 @@ export async function createAndSpawnSession(
           waitForShellReady(session.id, ptyManager, sshManager, false)
         }
       } else {
-        // child_processモード: claude --continueを直接起動
-        await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--continue'])
+        // child_processモード: claude --dangerously-skip-permissions --continueを直接起動
+        await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--dangerously-skip-permissions', '--continue'])
       }
     }
   } catch (e) {
@@ -187,18 +188,27 @@ export async function createAndSpawnSession(
 }
 
 /**
- * セッションのPTY/SSH kill + worktree削除 + DB削除
+ * セッションのPTY/SSH kill + worktree削除 + DB削除（非同期版）
+ *
+ * ステート遷移:
+ * - status → 'cleaning' → worktree 削除試行
+ *   - 成功: DB から完全削除
+ *   - 失敗: status → 'tombstone'（次回起動時に retry）
+ *
  * workspaces.ts / sessions.ts で共通利用
  */
-export function cleanupSession(
+export async function cleanupSession(
   store: SessionStore,
   ptyManager: PtyManager,
   sshManager: SshManager,
   worktreeService: WorktreeService,
   sessionId: string,
-): void {
+): Promise<void> {
   const session = store.getById(sessionId)
   if (!session) return
+
+  // cleaning 状態に遷移
+  store.updateStatus(sessionId, 'cleaning')
 
   // PTY/SSH kill
   if (sshManager.hasSession(sessionId)) {
@@ -207,16 +217,55 @@ export function cleanupSession(
     ptyManager.kill(sessionId)
   }
 
-  // worktree削除
-  if (session.worktreePath && session.repoPath) {
+  // persistent develop worktree はセッション削除時に worktree を残す
+  const isPersistent = session.worktreePath
+    ? WorktreeService.isPersistentDevelop(session.worktreePath)
+    : false
+
+  // worktree削除（persistent 以外）
+  if (session.worktreePath && session.repoPath && !isPersistent) {
     try {
       worktreeService.remove(session.repoPath, session.worktreePath)
       console.log(`🗑️ worktree削除: ${session.worktreePath}`)
     } catch (e) {
-      console.warn(`⚠️ worktree削除エラー (無視): ${e}`)
+      console.warn(`⚠️ worktree削除失敗 → tombstone に遷移: ${e}`)
+      store.updateStatus(sessionId, 'tombstone')
+      return
     }
   }
 
   // DB削除
   store.delete(sessionId)
+}
+
+/**
+ * tombstone セッションの cleanup を再試行する
+ * startup.ts から呼ばれる
+ */
+export function retryTombstoneCleanup(
+  store: SessionStore,
+  worktreeService: WorktreeService,
+): void {
+  const tombstones = store.getAll().filter(s => s.status === 'tombstone')
+  if (tombstones.length === 0) return
+
+  console.log(`🔄 ${tombstones.length}件の tombstone セッションの cleanup を再試行します`)
+  for (const session of tombstones) {
+    const isPersistent = session.worktreePath
+      ? WorktreeService.isPersistentDevelop(session.worktreePath)
+      : false
+
+    if (session.worktreePath && session.repoPath && !isPersistent) {
+      try {
+        worktreeService.remove(session.repoPath, session.worktreePath)
+        console.log(`   🗑️ tombstone worktree 削除成功: ${session.worktreePath}`)
+      } catch (e) {
+        console.warn(`   ⚠️ tombstone worktree 削除再失敗 (残留): ${e}`)
+        continue // 削除失敗は tombstone のまま残す
+      }
+    }
+
+    store.delete(session.id)
+    console.log(`   ✅ tombstone セッション "${session.name}" (${session.id.slice(0, 8)}...) を削除`)
+  }
 }

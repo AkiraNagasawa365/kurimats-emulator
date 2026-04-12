@@ -1,5 +1,5 @@
 // セッション状態
-export type SessionStatus = 'active' | 'paused' | 'terminated' | 'disconnected'
+export type SessionStatus = 'active' | 'paused' | 'terminated' | 'disconnected' | 'cleaning' | 'tombstone'
 
 // セッション
 export interface Session {
@@ -425,6 +425,107 @@ export const FEEDBACK_PRIORITY_LABELS: Record<FeedbackPriority, string> = {
   medium: '中',
   low: '低',
 } as const
+
+// ========== 開発インスタンス / スロット管理 ==========
+
+/** 開発インスタンスの状態 */
+export type DevInstanceStatus = 'idle' | 'running' | 'error'
+
+/** 開発インスタンス（pane 単位の開発環境） */
+export interface DevInstance {
+  id: string
+  /** スロット番号（PANE_NUMBER に対応） */
+  slotNumber: number
+  /** サーバーポート */
+  serverPort: number
+  /** クライアントポート */
+  clientPort: number
+  /** Playwright ポート */
+  playwrightPort: number
+  status: DevInstanceStatus
+  pid: number | null
+  /** persistent develop worktree パス */
+  worktreePath: string | null
+  /** バインドされたセッションID */
+  assignedSessionId: string | null
+  createdAt: number
+  lastActiveAt: number
+}
+
+/** スロット割り当て（UNIQUE 制約で排他制御） */
+export interface SlotAssignment {
+  slotNumber: number
+  instanceId: string
+  assignedAt: number
+}
+
+// ========== Playwright Runner ==========
+
+/** Playwright テスト実行の状態 */
+export type PlaywrightRunStatus = 'idle' | 'running' | 'passed' | 'failed' | 'cancelled' | 'error'
+
+/** Playwright テスト実行結果 */
+export interface PlaywrightRunResult {
+  /** 実行 ID（instanceId と同一） */
+  instanceId: string
+  status: PlaywrightRunStatus
+  /** 実行対象のテストパス */
+  testPath: string | null
+  /** プロセス PID */
+  pid: number | null
+  /** 開始時刻 */
+  startedAt: number | null
+  /** 終了時刻 */
+  finishedAt: number | null
+  /** exit code（完了時のみ） */
+  exitCode: number | null
+  /** テスト出力（stdout + stderr） */
+  output: string
+  /** Playwright ポート */
+  port: number
+}
+
+// ========== Resource HUD ==========
+
+/** プロセスの生存状態 */
+export type ProcessAliveness = 'alive' | 'exited' | 'error' | 'unknown'
+
+/** 単一インスタンス/セッションのリソースメトリクス */
+export interface ResourceMetrics {
+  /** 対象の DevInstance ID（セッション単体の場合は null） */
+  instanceId: string | null
+  /** 対象のセッション ID */
+  sessionId: string | null
+  /** PID（プロセスが存在する場合） */
+  pid: number | null
+  /** CPU 使用率（%、0-100+）。取得不可の場合は null */
+  cpuPercent: number | null
+  /** メモリ使用量 RSS（バイト）。取得不可の場合は null */
+  memoryRss: number | null
+  /** プロセスの生存状態 */
+  processStatus: ProcessAliveness
+  /** worktree ディスク使用量（バイト）。worktree がない場合は null */
+  worktreeDiskUsage: number | null
+  /** 収集時刻 */
+  collectedAt: number
+}
+
+/** 全体のリソーススナップショット */
+export interface ResourceSnapshot {
+  /** サーバープロセス自身の CPU/メモリ */
+  server: {
+    pid: number
+    cpuPercent: number | null
+    memoryRss: number
+    uptime: number
+  }
+  /** 各インスタンス/セッションのメトリクス */
+  instances: ResourceMetrics[]
+  /** アクティブ WebSocket 接続数 */
+  wsConnectionCount: number
+  /** 収集時刻 */
+  collectedAt: number
+}
 
 // ========== bookmarks ==========
 

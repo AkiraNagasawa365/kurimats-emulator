@@ -6,6 +6,12 @@ import { PtyManager } from './services/pty-manager.js'
 import { SshManager } from './services/ssh-manager.js'
 import { WorktreeService } from './services/worktree-service.js'
 import { SessionStore } from './services/session-store.js'
+import { DevInstanceManager } from './services/dev-instance-manager.js'
+import { SessionDevBindingService } from './services/session-dev-binding-service.js'
+import { PlaywrightRunner } from './services/playwright-runner.js'
+import { ResourceMonitorService } from './services/resource-monitor.js'
+import { createPlaywrightRouter } from './routes/playwright.js'
+import { createResourcesRouter } from './routes/resources.js'
 import { setupTerminalWs } from './ws/terminal-handler.js'
 import { setupNotificationWs } from './ws/notification-handler.js'
 import { createSessionsRouter } from './routes/sessions.js'
@@ -20,6 +26,7 @@ import { createWorkspacesRouter } from './routes/workspaces.js'
 import { CanvasStore } from './services/canvas-store.js'
 import { SERVER_PORT_BASE, calculatePort } from './utils/ports.js'
 import { runStartupTasks } from './startup.js'
+import { acquireLock, registerLockCleanup } from './services/leader-lock.js'
 
 // PANE_NUMBERからポートを自動算出（develop=0, paneN=N）
 // 設定時は既存PORT環境変数より優先。未設定時のみPORTにフォールバック
@@ -34,12 +41,35 @@ const HOST = process.env.HOST || 'localhost'
 // トークン認証（リモートアクセス用、オプション）
 const AUTH_TOKEN = process.env.AUTH_TOKEN || ''
 
+// LeaderLock: 重複サーバー起動を防止
+const lockResult = acquireLock({
+  port: PORT,
+  paneNumber: PANE_NUMBER,
+  type: PANE_NUMBER != null ? 'dev' : 'electron',
+})
+if (!lockResult.acquired) {
+  const info = lockResult.existingLock!
+  console.error(`❌ LeaderLock: サーバーは既に起動中です (PID=${info.pid}, port=${info.port}, 起動=${info.startedAt})`)
+  process.exit(1)
+}
+registerLockCleanup({ paneNumber: PANE_NUMBER })
+console.log(`🔒 LeaderLock: 取得成功 (PID=${process.pid}, port=${PORT})`)
+
 // サービス初期化
 const ptyManager = new PtyManager()
 const sshManager = new SshManager()
 const worktreeService = new WorktreeService()
 const sessionStore = new SessionStore()
 const canvasStore = new CanvasStore()
+const devInstanceManager = new DevInstanceManager(sessionStore)
+devInstanceManager.on('error', (instanceId: string, err: unknown) => {
+  console.error(`❌ DevInstance ${instanceId} エラー:`, err)
+})
+const bindingService = new SessionDevBindingService(sessionStore, devInstanceManager)
+const playwrightRunner = new PlaywrightRunner()
+playwrightRunner.on('runner_error', (instanceId: string, err: unknown) => {
+  console.error(`❌ Playwright Runner ${instanceId} エラー:`, err)
+})
 
 const markDisconnected = (sessionId: string) => {
   const session = sessionStore.getById(sessionId)
@@ -85,7 +115,8 @@ app.use('/api/layout', createLayoutRouter(sessionStore, canvasStore))
 app.use('/api/tab', createTabRouter(sessionStore, ptyManager, sshManager, worktreeService))
 app.use('/api/ssh', createSshRouter(sshManager, sessionStore))
 app.use('/api/feedback', createFeedbackRouter(sessionStore))
-app.use('/api/workspaces', createWorkspacesRouter(sessionStore, ptyManager, sshManager, worktreeService))
+app.use('/api/workspaces', createWorkspacesRouter(sessionStore, ptyManager, sshManager, worktreeService, devInstanceManager, bindingService))
+app.use('/api/playwright', createPlaywrightRouter(playwrightRunner, devInstanceManager))
 
 // 本番時: 静的ファイル配信（Electronビルド or スタンドアロン）
 const STATIC_DIR = process.env.STATIC_DIR
@@ -121,7 +152,18 @@ setupTerminalWs(terminalWss, ptyManager, sshManager)
 
 // WebSocketサーバー（通知用）
 const notificationWss = new WebSocketServer({ noServer: true })
-setupNotificationWs(notificationWss, sshManager)
+
+// ResourceMonitor: WS 接続数を通知 WSS から取得
+const resourceMonitor = new ResourceMonitorService(devInstanceManager, ptyManager, {
+  getWsConnectionCount: () => terminalWss.clients.size + notificationWss.clients.size,
+})
+resourceMonitor.start()
+
+// 通知 WS セットアップ（ResourceMonitor 初期化後）
+const cleanupNotificationWs = setupNotificationWs(notificationWss, sshManager, playwrightRunner, resourceMonitor)
+
+// Resource API（モニター初期化後に登録）
+app.use('/api/resources', createResourcesRouter(resourceMonitor))
 
 // WebSocketアップグレード処理
 server.on('upgrade', (request, socket, head) => {
@@ -158,8 +200,12 @@ server.listen(PORT, HOST, () => {
 })
 
 // グレースフルシャットダウン
-function shutdown() {
+async function shutdown() {
   console.log('\nシャットダウン中...')
+  cleanupNotificationWs()
+  resourceMonitor.stop()
+  await playwrightRunner.stopAllAndWait()
+  devInstanceManager.shutdown()
   ptyManager.killAll()
   sshManager.disconnectAll()
   sessionStore.close()

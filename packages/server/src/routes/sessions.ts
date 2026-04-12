@@ -58,15 +58,20 @@ export function createSessionsRouter(
   })
 
   // セッション終了
-  router.delete('/:id', (req, res) => {
+  router.delete('/:id', async (req, res) => {
     const session = store.getById(req.params.id)
     if (!session) {
       res.status(404).json({ error: 'セッションが見つかりません' })
       return
     }
 
-    cleanupSession(store, ptyManager, sshManager, worktreeService, session.id)
-    res.json({ ok: true })
+    try {
+      await cleanupSession(store, ptyManager, sshManager, worktreeService, session.id)
+      res.json({ ok: true })
+    } catch (e) {
+      console.error(`セッション終了エラー "${session.name}":`, e)
+      res.status(500).json({ error: `セッション終了に失敗: ${e}` })
+    }
   })
 
   // セッション再接続（PTY再spawn）
@@ -95,7 +100,7 @@ export function createSessionsRouter(
           await ptyManager.spawn(session.id, cwd, 120, 30, shell, [])
           waitForShellReady(session.id, ptyManager, sshManager, false, true)
         } else {
-          await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--continue'])
+          await ptyManager.spawn(session.id, cwd, 120, 30, 'claude', ['--dangerously-skip-permissions', '--continue'])
         }
       }
 

@@ -5,6 +5,7 @@ import {
   findAdjacentPane,
 } from '../lib/pane-tree-utils'
 import { useWorkspaceStore } from './workspace-store'
+import { useSessionStore } from './session-store'
 import { workspacesApi } from '../lib/api'
 
 type Direction = 'up' | 'down' | 'left' | 'right'
@@ -59,6 +60,10 @@ export const usePaneStore = create<PaneState>((set, get) => ({
     try {
       // サーバーAPIで新セッション+worktree+Claude Code起動
       const result = await workspacesApi.splitPane(workspace.id, { paneId, direction, ...opts })
+      // 新セッションをsession storeに即座追加（ツールバー即時描画のため）
+      if (result.newSession) {
+        useSessionStore.getState().addSession(result.newSession)
+      }
       // サーバーが返した新しいペインツリーをストアに反映
       wsStore.updatePaneTree(workspace.id, result.paneTree, result.activePaneId)
     } catch (e) {

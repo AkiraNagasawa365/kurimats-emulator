@@ -1,5 +1,6 @@
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { countLeaves } from '../../lib/pane-tree-utils'
+import { ResourceHud } from './ResourceHud'
 
 /**
  * 画面下部のステータスバー（cmux v3）
@@ -27,6 +28,11 @@ export function StatusBar() {
       <span>{workspaces.length} ワークスペース</span>
 
       <div className="flex-1" />
+
+      {/* リソース HUD */}
+      <ResourceHud />
+
+      <span className="text-text-muted mx-1">|</span>
 
       {/* キーボードショートカットヒント */}
       <span className="text-text-muted">

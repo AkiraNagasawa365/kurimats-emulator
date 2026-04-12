@@ -177,7 +177,7 @@ describeServer('セッションAPI', () => {
     expect(updated?.status).toBe('disconnected')
   })
 
-  it('セッション作成時にclaude --continueで起動される', async () => {
+  it('セッション作成時にclaude --dangerously-skip-permissions --continueで起動される', async () => {
     const res = await fetch(`${baseUrl}/api/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -185,13 +185,13 @@ describeServer('セッションAPI', () => {
     })
     expect(res.status).toBe(201)
 
-    // child_processモードではclaude --continueが直接spawnされる
+    // child_processモードではclaude --dangerously-skip-permissions --continueが直接spawnされる
     expect(ptyManager.spawn).toHaveBeenCalledWith(
-      expect.any(String), '/tmp', 120, 30, 'claude', ['--continue'],
+      expect.any(String), '/tmp', 120, 30, 'claude', ['--dangerously-skip-permissions', '--continue'],
     )
   })
 
-  it('再接続時にclaude --continueで起動される', async () => {
+  it('再接続時にclaude --dangerously-skip-permissions --continueで起動される', async () => {
     const createRes = await fetch(`${baseUrl}/api/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -207,7 +207,7 @@ describeServer('セッションAPI', () => {
     await fetch(`${baseUrl}/api/sessions/${session.id}/reconnect`, { method: 'POST' })
 
     expect(ptyManager.spawn).toHaveBeenCalledWith(
-      session.id, '/tmp', 120, 30, 'claude', ['--continue'],
+      session.id, '/tmp', 120, 30, 'claude', ['--dangerously-skip-permissions', '--continue'],
     )
   })
 

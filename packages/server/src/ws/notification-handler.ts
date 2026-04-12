@@ -1,12 +1,21 @@
 import { WebSocket, WebSocketServer } from 'ws'
 import type { SshManager } from '../services/ssh-manager.js'
-import type { NotificationMessage } from '@kurimats/shared'
+import type { PlaywrightRunner } from '../services/playwright-runner.js'
+import type { ResourceMonitorService } from '../services/resource-monitor.js'
+import type { NotificationMessage, PlaywrightRunStatus, ResourceSnapshot } from '@kurimats/shared'
 
 /**
  * 通知WebSocketハンドラー
- * SSH接続状態の変更やリモートClaude通知をクライアントに中継する
+ * SSH接続状態の変更、リモートClaude通知、Playwright進捗、リソースメトリクスをクライアントに中継する
+ *
+ * @returns cleanup 関数（シャットダウン時にリスナーを解除する）
  */
-export function setupNotificationWs(wss: WebSocketServer, sshManager: SshManager): void {
+export function setupNotificationWs(
+  wss: WebSocketServer,
+  sshManager: SshManager,
+  playwrightRunner?: PlaywrightRunner,
+  resourceMonitor?: ResourceMonitorService,
+): () => void {
   const clients = new Set<WebSocket>()
 
   /**
@@ -29,14 +38,13 @@ export function setupNotificationWs(wss: WebSocketServer, sshManager: SshManager
   }
 
   // SSH接続状態の変更を監視
-  sshManager.on('connection_status', (host: string, status: 'online' | 'offline' | 'reconnecting') => {
+  const onConnectionStatus = (host: string, status: 'online' | 'offline' | 'reconnecting') => {
     broadcast({ type: 'connection_status', host, status })
-  })
+  }
+  sshManager.on('connection_status', onConnectionStatus)
 
   // リモートセッションのデータを監視してClaude通知を検出
-  sshManager.on('data', (sessionId: string, data: string) => {
-    // Claude Code の通知パターンを検出
-    // 例: 「Claude has a question」「Waiting for input」「Task completed」などのパターン
+  const onSshData = (sessionId: string, data: string) => {
     const notificationPatterns = [
       /🔔\s*(.+)/,
       /\[notification\]\s*(.+)/i,
@@ -55,7 +63,30 @@ export function setupNotificationWs(wss: WebSocketServer, sshManager: SshManager
         break
       }
     }
-  })
+  }
+  sshManager.on('data', onSshData)
+
+  // Playwrightテスト進捗を監視
+  const onPlaywrightProgress = (instanceId: string, status: PlaywrightRunStatus, line?: string) => {
+    broadcast({
+      type: 'playwright_progress',
+      instanceId,
+      status,
+      line,
+      timestamp: Date.now(),
+    })
+  }
+  if (playwrightRunner) {
+    playwrightRunner.on('progress', onPlaywrightProgress)
+  }
+
+  // リソースメトリクス変化を配信
+  const onSnapshot = (snapshot: ResourceSnapshot) => {
+    broadcast({ type: 'resource_update', snapshot })
+  }
+  if (resourceMonitor) {
+    resourceMonitor.on('snapshot', onSnapshot)
+  }
 
   // WebSocket接続処理
   wss.on('connection', (ws: WebSocket) => {
@@ -80,4 +111,20 @@ export function setupNotificationWs(wss: WebSocketServer, sshManager: SshManager
       clients.delete(ws)
     })
   })
+
+  // cleanup 関数: シャットダウン時にリスナーを解除
+  return () => {
+    sshManager.off('connection_status', onConnectionStatus)
+    sshManager.off('data', onSshData)
+    if (playwrightRunner) {
+      playwrightRunner.off('progress', onPlaywrightProgress)
+    }
+    if (resourceMonitor) {
+      resourceMonitor.off('snapshot', onSnapshot)
+    }
+    for (const ws of clients) {
+      ws.close()
+    }
+    clients.clear()
+  }
 }

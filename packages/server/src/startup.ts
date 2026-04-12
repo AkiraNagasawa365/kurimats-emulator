@@ -1,17 +1,85 @@
 /**
  * サーバー起動時の初期化タスク
- * - orphanedセッション(active)をdisconnectedに変更
- * - disconnectedセッションのworktree+ブランチを削除してDB更新
- * - ペインツリーに含まれない孤立セッションを削除
- * - git worktree pruneで物理的な孤立worktreeを除去
- * - 孤立したkurimats/ブランチを一括削除
- * - worktreeセッションのブランチ名を最新化
+ * - 段階0: ペインツリーマイグレーション（非破壊、常時実行）
+ * - 段階1: orphanedセッション(active)をdisconnectedに変更
+ * - 段階2: disconnectedセッションのworktree+ブランチを削除してDB更新
+ * - 段階3: ペインツリーに含まれない孤立セッションを削除
+ * - 段階4: git worktree prune + 孤立kurimats/ブランチの一括削除
+ * - 段階5: worktreeセッションのブランチ名を最新化（非破壊、常時実行）
+ *
+ * StartupGuard: cwdがworktree内の場合は段階1-4をスキップし自爆を防止
  */
+import { realpathSync } from 'fs'
 import { existsSync } from 'fs'
+import path from 'path'
 import type { PaneNode } from '@kurimats/shared'
 import type { SessionStore } from './services/session-store.js'
-import type { WorktreeService } from './services/worktree-service.js'
+import { WorktreeService } from './services/worktree-service.js'
+import { retryTombstoneCleanup } from './services/session-lifecycle.js'
 import { collectSessionIds } from './utils/pane-tree.js'
+
+/** StartupGuard の判定結果 */
+export type StartupGuardVerdict = 'inside' | 'outside' | 'unknown'
+
+/** StartupOptions: テスト容易性のために cwd を注入可能 */
+export interface StartupOptions {
+  cwd?: string
+}
+
+/**
+ * 現在の cwd が自身の管理する worktree 内かどうかを判定する
+ *
+ * - 'inside': cwd が既知の worktreePath 配下、またはパスに .kurimats-worktrees を含む → 破壊的操作をスキップ
+ * - 'outside': cwd はどの worktree にも含まれない → 通常通り全段階実行
+ * - 'unknown': 判定不能（sessionStore.getAll() 例外等） → fail-safe でスキップ
+ *
+ * cwd/worktreePath の正規化は realpathSync を優先し、失敗時は path.resolve にフォールバック。
+ * これにより存在しないパスでも正規化して比較できる。
+ */
+export function resolveSelfWorktreeVerdict(
+  sessionStore: SessionStore,
+  options?: StartupOptions,
+): StartupGuardVerdict {
+  // cwd を正規化（realpathSync でシンボリックリンクを解決、失敗時は path.resolve にフォールバック）
+  const rawCwd = options?.cwd ?? process.cwd()
+  let cwdReal: string
+  try {
+    cwdReal = realpathSync(rawCwd)
+  } catch {
+    cwdReal = path.resolve(rawCwd)
+  }
+
+  let sessions: ReturnType<SessionStore['getAll']>
+  try {
+    sessions = sessionStore.getAll()
+  } catch {
+    return 'unknown'
+  }
+
+  // 各セッションの worktreePath を正規化して cwd が配下か判定
+  for (const session of sessions) {
+    if (!session.worktreePath) continue
+    let wtReal: string
+    try {
+      wtReal = realpathSync(session.worktreePath)
+    } catch {
+      wtReal = path.resolve(session.worktreePath)
+    }
+    const rel = path.relative(wtReal, cwdReal)
+    // rel が '..' で始まらず、絶対パスでもなければ cwd は worktree 配下
+    if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
+      return 'inside'
+    }
+  }
+
+  // フォールバック: cwd パスセグメントに .kurimats-worktrees を含むか
+  const segments = cwdReal.split(path.sep)
+  if (segments.includes('.kurimats-worktrees')) {
+    return 'inside'
+  }
+
+  return 'outside'
+}
 
 /**
  * 旧surfaces形式のペインツリーをsessionId形式にマイグレーションする
@@ -43,14 +111,15 @@ function migratePaneTree(node: any): PaneNode {
   return node
 }
 
-export function runStartupTasks(sessionStore: SessionStore, worktreeService: WorktreeService): void {
-  // 0. ペインツリーの旧形式(surfaces[])から新形式(sessionId)へマイグレーション
+// ── 段階関数 ──────────────────────────────────────────
+
+/** 段階0: ペインツリーの旧形式(surfaces[])から新形式(sessionId)へマイグレーション（非破壊） */
+function phase0_migratePaneTrees(sessionStore: SessionStore): void {
   try {
     const workspaces = sessionStore.getAllCmuxWorkspaces()
     let migratedCount = 0
     for (const ws of workspaces) {
       const tree = ws.paneTree as any
-      // 旧形式の判定: リーフノードに surfaces プロパティがある
       const needsMigration = JSON.stringify(tree).includes('"surfaces"')
       if (needsMigration) {
         const migrated = migratePaneTree(tree)
@@ -64,9 +133,11 @@ export function runStartupTasks(sessionStore: SessionStore, worktreeService: Wor
   } catch (e) {
     console.error('⚠️ ペインツリーマイグレーション中にエラー（サーバー起動は続行）:', e)
   }
+}
 
-  // 1. PTYが消失したactiveセッションをdisconnectedに変更
-  const orphanedSessions = sessionStore.getAll().filter(s => s.status === 'active')
+/** 段階1: PTYが消失したactive/cleaningセッションをdisconnectedに変更 */
+function phase1_markOrphanedDisconnected(sessionStore: SessionStore): void {
+  const orphanedSessions = sessionStore.getAll().filter(s => s.status === 'active' || s.status === 'cleaning')
   if (orphanedSessions.length > 0) {
     console.log(`⚠️  ${orphanedSessions.length}件のorphanedセッションを検出 → disconnectedに変更`)
     for (const s of orphanedSessions) {
@@ -77,22 +148,27 @@ export function runStartupTasks(sessionStore: SessionStore, worktreeService: Wor
   } else {
     console.log('✅ orphanedセッションなし')
   }
+}
 
-  // 2. disconnectedセッションのworktreeをクリーンアップ
-  //    アプリ再起動後のdisconnectedは実質再接続不可能なのでworktreeを解放する
+/** 段階2: disconnectedセッションのworktreeをクリーンアップ */
+function phase2_cleanupDisconnectedWorktrees(sessionStore: SessionStore, worktreeService: WorktreeService): void {
   try {
     const disconnectedSessions = sessionStore.getAll().filter(s => s.status === 'disconnected' && s.worktreePath)
     if (disconnectedSessions.length > 0) {
       console.log(`🧹 ${disconnectedSessions.length}件のdisconnectedセッションのworktreeを解放`)
       for (const s of disconnectedSessions) {
         if (s.worktreePath && s.repoPath) {
+          // persistent develop worktree は削除しない
+          if (WorktreeService.isPersistentDevelop(s.worktreePath)) {
+            console.log(`   🛡️ persistent develop worktree をスキップ: ${s.worktreePath}`)
+            continue
+          }
           try {
             worktreeService.remove(s.repoPath, s.worktreePath)
             console.log(`   🗑️ worktree+ブランチ削除: ${s.worktreePath}`)
           } catch {
             // 既に削除済みの場合は無視
           }
-          // worktreePathをnullに更新（セッション自体は再接続可能なまま保持）
           sessionStore.updateWorktreePath(s.id, null)
         }
       }
@@ -101,8 +177,10 @@ export function runStartupTasks(sessionStore: SessionStore, worktreeService: Wor
   } catch (e) {
     console.error('⚠️ disconnectedセッションworktree解放中にエラー（サーバー起動は続行）:', e)
   }
+}
 
-  // 3. ペインツリーに含まれない孤立セッションを削除
+/** 段階3: ペインツリーに含まれない孤立セッションを削除 */
+function phase3_deleteOrphanedSessions(sessionStore: SessionStore, worktreeService: WorktreeService): void {
   try {
     const workspaces = sessionStore.getAllCmuxWorkspaces()
     const referencedIds = new Set<string>()
@@ -112,13 +190,18 @@ export function runStartupTasks(sessionStore: SessionStore, worktreeService: Wor
       }
     }
 
-    // workspace_id が NULL のセッション（単体セッション）は孤立とみなさない
     const allSessions = sessionStore.getAll()
     const orphanedCleanup = allSessions.filter(s => s.workspaceId && !referencedIds.has(s.id))
     if (orphanedCleanup.length > 0) {
       console.log(`🧹 ${orphanedCleanup.length}件の孤立セッションを削除します`)
       for (const s of orphanedCleanup) {
         if (s.worktreePath && s.repoPath) {
+          // persistent develop worktree は worktree もセッションも削除しない
+          // （DevInstanceManager が管理するため、孤立判定の対象外）
+          if (WorktreeService.isPersistentDevelop(s.worktreePath)) {
+            console.log(`   🛡️ persistent develop worktree をスキップ: ${s.worktreePath}`)
+            continue
+          }
           try {
             worktreeService.remove(s.repoPath, s.worktreePath)
             console.log(`   🗑️ worktree+ブランチ削除: ${s.worktreePath}`)
@@ -136,8 +219,10 @@ export function runStartupTasks(sessionStore: SessionStore, worktreeService: Wor
   } catch (e) {
     console.error('⚠️ 孤立セッション削除中にエラー（サーバー起動は続行）:', e)
   }
+}
 
-  // 4. git worktree prune + 孤立kurimats/ブランチの一括削除
+/** 段階4: git worktree prune + 孤立kurimats/ブランチの一括削除 */
+function phase4_pruneWorktreesAndBranches(sessionStore: SessionStore, worktreeService: WorktreeService): void {
   try {
     const allSessions = sessionStore.getAll()
     const repoPathsWithWorktrees = new Set(
@@ -145,8 +230,6 @@ export function runStartupTasks(sessionStore: SessionStore, worktreeService: Wor
         .filter(s => s.repoPath && s.worktreePath)
         .map(s => s.repoPath),
     )
-    // 過去にworktreeが存在した可能性があるリポジトリも対象に含める
-    // （全セッションのrepoPathのうち .kurimats-worktrees ディレクトリが存在するもの）
     for (const s of allSessions) {
       if (s.repoPath && existsSync(`${s.repoPath}/.kurimats-worktrees`)) {
         repoPathsWithWorktrees.add(s.repoPath)
@@ -170,8 +253,10 @@ export function runStartupTasks(sessionStore: SessionStore, worktreeService: Wor
   } catch (e) {
     console.error('⚠️ orphanedブランチ削除中にエラー（サーバー起動は続行）:', e)
   }
+}
 
-  // 5. worktreeセッションのブランチ名を最新化
+/** 段階5: worktreeセッションのブランチ名を最新化（非破壊） */
+function phase5_syncBranchNames(sessionStore: SessionStore, worktreeService: WorktreeService): void {
   try {
     const allSessionsForBranch = sessionStore.getAll()
     let branchFixCount = 0
@@ -191,4 +276,45 @@ export function runStartupTasks(sessionStore: SessionStore, worktreeService: Wor
   } catch (e) {
     console.error('⚠️ ブランチ修正中にエラー（サーバー起動は続行）:', e)
   }
+}
+
+// ── メインエントリポイント ────────────────────────────
+
+export function runStartupTasks(
+  sessionStore: SessionStore,
+  worktreeService: WorktreeService,
+  options?: StartupOptions,
+): void {
+  // StartupGuard: cwd が worktree 内かどうかを判定
+  const verdict = resolveSelfWorktreeVerdict(sessionStore, options)
+  const skipDestructive = verdict === 'inside' || verdict === 'unknown'
+
+  if (skipDestructive) {
+    console.warn(
+      `⚠️ StartupGuard verdict=${verdict}: 破壊的段階1-4をスキップします (fail-safe)`,
+    )
+  }
+
+  // 段階0: ペインツリーマイグレーション（非破壊、常時実行）
+  phase0_migratePaneTrees(sessionStore)
+
+  if (!skipDestructive) {
+    // 段階1: orphaned active → disconnected
+    phase1_markOrphanedDisconnected(sessionStore)
+
+    // 段階2: disconnected worktree 削除
+    phase2_cleanupDisconnectedWorktrees(sessionStore, worktreeService)
+
+    // 段階3: ペインツリー外セッション削除
+    phase3_deleteOrphanedSessions(sessionStore, worktreeService)
+
+    // 段階4: git worktree prune + orphaned branch 削除
+    phase4_pruneWorktreesAndBranches(sessionStore, worktreeService)
+
+    // 段階4.5: tombstone セッションの cleanup 再試行
+    retryTombstoneCleanup(sessionStore, worktreeService)
+  }
+
+  // 段階5: ブランチ名修正（非破壊、常時実行）
+  phase5_syncBranchNames(sessionStore, worktreeService)
 }

@@ -1,4 +1,4 @@
-import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams, CmuxWorkspace, CreateCmuxWorkspaceParams, PaneNode, SplitPaneRequest, SplitPaneResponse, ClosePaneRequest, ClosePaneResponse, LayoutState, BoardLayoutState } from '@kurimats/shared'
+import type { Session, CreateSessionParams, FileNode, Project, CreateProjectParams, TabListResponse, TabSyncResponse, TabBookmark, SshHost, SshConnectionStatus, Feedback, CreateFeedbackParams, SshPreset, CreateSshPresetParams, StartupTemplate, CreateStartupTemplateParams, CmuxWorkspace, CreateCmuxWorkspaceParams, PaneNode, SplitPaneRequest, SplitPaneResponse, ClosePaneRequest, ClosePaneResponse, LayoutState, BoardLayoutState, ResourceSnapshot, ResourceMetrics } from '@kurimats/shared'
 
 const BASE = '/api'
 
@@ -174,4 +174,11 @@ export const sshApi = {
     delete: (id: string) =>
       request<{ ok: boolean }>(`/ssh/templates/${id}`, { method: 'DELETE' }),
   },
+}
+
+// リソース監視API
+export const resourcesApi = {
+  snapshot: () => request<ResourceSnapshot>('/resources'),
+  instance: (id: string) => request<ResourceMetrics>(`/resources/${id}`),
+  collect: () => request<ResourceSnapshot>('/resources/collect', { method: 'POST' }),
 }
