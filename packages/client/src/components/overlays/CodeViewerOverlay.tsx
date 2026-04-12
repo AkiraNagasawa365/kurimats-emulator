@@ -63,7 +63,7 @@ export function CodeViewerOverlay({ filePath, onClose, sshHost }: Props) {
     <OverlayContainer isOpen={true} onClose={onClose} title={fileName}>
       <div className="flex flex-col h-full">
         {/* ツールバー */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-surface-1">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-chrome">
           <span className="text-xs text-text-muted truncate flex-1">{filePath}</span>
           <div className="flex items-center gap-2 ml-4">
             <button

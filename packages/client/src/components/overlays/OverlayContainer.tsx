@@ -39,7 +39,7 @@ export function OverlayContainer({ isOpen, onClose, title, children, fullScreen 
       {/* パネル */}
       <div
         ref={panelRef}
-        className={`relative h-full bg-surface-1 shadow-2xl flex flex-col animate-slide-in ${
+        className={`relative h-full bg-chrome shadow-2xl flex flex-col animate-slide-in ${
           fullScreen ? 'w-full' : 'w-1/2 max-w-[700px] min-w-[400px]'
         }`}
       >

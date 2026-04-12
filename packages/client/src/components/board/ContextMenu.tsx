@@ -54,7 +54,7 @@ export function NodeContextMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed bg-surface-1 border border-border rounded-lg shadow-xl py-1 z-[100] min-w-[180px]"
+      className="fixed bg-chrome border border-border rounded-lg shadow-xl py-1 z-[100] min-w-[180px]"
       style={{ left: position.x, top: position.y }}
     >
       {isRenaming ? (
@@ -151,7 +151,7 @@ export function CanvasContextMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed bg-surface-1 border border-border rounded-lg shadow-xl py-1 z-[100] min-w-[180px]"
+      className="fixed bg-chrome border border-border rounded-lg shadow-xl py-1 z-[100] min-w-[180px]"
       style={{ left: position.x, top: position.y }}
     >
       <MenuItem

@@ -131,7 +131,7 @@ export function CommandPalette() {
       <div className="absolute inset-0 bg-black/40" />
 
       <div
-        className="relative w-full max-w-[600px] bg-surface-1 rounded-lg shadow-2xl border border-border overflow-hidden animate-slide-down"
+        className="relative w-full max-w-[600px] bg-chrome rounded-lg shadow-2xl border border-border overflow-hidden animate-slide-down"
         style={{ maxHeight: '60vh' }}
         onClick={e => e.stopPropagation()}
       >

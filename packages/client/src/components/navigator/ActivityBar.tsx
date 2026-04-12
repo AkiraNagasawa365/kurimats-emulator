@@ -32,7 +32,7 @@ export function ActivityBar({ activeSection, onSectionToggle, totalNotifications
   ]
 
   return (
-    <div className="w-12 h-full bg-surface-1 border-r border-border flex flex-col items-center py-2 flex-shrink-0">
+    <div className="w-12 h-full bg-chrome border-r border-border flex flex-col items-center py-2 flex-shrink-0">
       {/* 上部アイコン */}
       <div className="flex flex-col items-center gap-1">
         {items.map(item => (

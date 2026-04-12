@@ -110,7 +110,7 @@ export function MarkdownOverlay({ onClose, filePath: initialPath, fullScreen, ss
     <OverlayContainer isOpen={true} onClose={onClose} title="Markdown プレビュー" fullScreen={fullScreen}>
       <div className="flex flex-col h-full">
         {/* ファイルパス入力 */}
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-surface-1">
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-chrome">
           <input
             type="text"
             value={filePath}
@@ -151,7 +151,7 @@ export function MarkdownOverlay({ onClose, filePath: initialPath, fullScreen, ss
                   <textarea
                     value={content}
                     onChange={e => handleContentChange(e.target.value)}
-                    className="w-full h-full p-4 text-sm font-mono text-text-primary bg-surface-1 resize-none outline-none custom-scrollbar"
+                    className="w-full h-full p-4 text-sm font-mono text-text-primary bg-chrome resize-none outline-none custom-scrollbar"
                     spellCheck={false}
                   />
                 </div>
@@ -163,8 +163,8 @@ export function MarkdownOverlay({ onClose, filePath: initialPath, fullScreen, ss
                   prose-headings:text-text-primary prose-headings:font-semibold
                   prose-p:text-text-primary prose-p:leading-relaxed
                   prose-a:text-accent prose-a:no-underline hover:prose-a:underline
-                  prose-code:text-accent prose-code:bg-surface-1 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
-                  prose-pre:bg-surface-1 prose-pre:border prose-pre:border-border
+                  prose-code:text-accent prose-code:bg-chrome prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
+                  prose-pre:bg-chrome prose-pre:border prose-pre:border-border
                   prose-blockquote:border-accent prose-blockquote:text-text-secondary
                   prose-strong:text-text-primary
                   prose-li:text-text-primary

@@ -8,6 +8,29 @@
 /** スターバーストのパーティクル数 */
 export const STARBURST_PARTICLE_COUNT = 8
 
+/**
+ * お気に入りボタンの className 定数
+ *
+ * #143 再発防止:
+ * 旧実装では非お気に入り時に `text-text-muted/30 group-hover:text-text-muted` を使用していたが、
+ * 30% alpha を bg-surface-1 (#151b22) とブレンドすると実効コントラスト比 ≈ 1.44:1 となり
+ * WCAG 2.1 UI コンポーネント最低 3:1 を大きく下回り、ボタンが「発見できない」状態になっていた。
+ *
+ * 本定数では以下を保証する:
+ * - 非お気に入り: text-text-muted (#64748b) を 100% alpha で使用 (bg-surface-1 上 3.64:1)
+ *   → 📁 ファイルツリーボタンと同等の視認性
+ * - hover では yellow-400 に遷移し「お気に入り色のプレビュー」のセマンティクスを与える
+ * - お気に入り: text-yellow-500 (明確なアクティブ色)
+ *
+ * group-hover: は削除した (ツールバー全体ホバーで初めて表示される挙動は #143 で否定された)。
+ */
+export const FAVORITE_BUTTON_CLASSES = {
+  /** 非お気に入り時: 📁 と同じ text-text-muted ベース + yellow hover プレビュー */
+  inactive: 'text-text-muted hover:text-yellow-400',
+  /** お気に入り時: 明確な yellow アクティブ色 */
+  active: 'text-yellow-500 hover:text-yellow-400',
+} as const
+
 /** パーティクルの放射角度を計算 */
 export function calculateParticleAngles(count: number): number[] {
   return Array.from({ length: count }, (_, i) => (360 / count) * i)
