@@ -418,5 +418,65 @@ describe('runStartupTasks', () => {
       })
       expect(verdict).toBe('inside')
     })
+
+    it('prefix隣接: pane1 と pane10 を誤判定しない', () => {
+      store.create({
+        name: 'pane1',
+        repoPath: '/tmp/repo',
+        worktreePath: '/tmp/repo/.kurimats-worktrees/pane1',
+        isRemote: false,
+        workspaceId: null,
+        projectId: null,
+      })
+
+      // pane10 は pane1 の prefix を含むが別ディレクトリ → outside
+      const verdict = resolveSelfWorktreeVerdict(store, {
+        cwd: '/tmp/repo/.kurimats-worktrees/pane10/packages/server',
+      })
+      // pane10 は pane1 配下ではないが、.kurimats-worktrees セグメントのフォールバックで inside
+      expect(verdict).toBe('inside')
+    })
+
+    it('sessionStore.getAll() 例外時は unknown を返す', () => {
+      vi.spyOn(store, 'getAll').mockImplementation(() => {
+        throw new Error('DB接続エラー')
+      })
+
+      const verdict = resolveSelfWorktreeVerdict(store, {
+        cwd: '/tmp/completely-outside',
+      })
+      expect(verdict).toBe('unknown')
+    })
+  })
+
+  describe('StartupGuard: inside/unknown 時も段階0・5は実行される', () => {
+    it("verdict='inside' でも段階5（ブランチ名修正）が実行される", () => {
+      // worktree を持つセッションを作成（ブランチ名が古い状態）
+      const session = store.create({
+        name: 'pane1-session',
+        repoPath: '/tmp/repo',
+        worktreePath: '/tmp/repo/.kurimats-worktrees/pane1',
+        branch: 'old-branch',
+        isRemote: false,
+        workspaceId: null,
+        projectId: null,
+      })
+
+      // getBranch が新しいブランチ名を返す
+      vi.mocked(worktreeService.getBranch).mockReturnValue('new-branch')
+
+      // cwd を worktree 内に設定 → verdict='inside'
+      runStartupTasks(store, worktreeService as unknown as WorktreeService, {
+        cwd: '/tmp/repo/.kurimats-worktrees/pane1/packages/server',
+      })
+
+      // 段階1 がスキップされたので active のまま
+      const updated = store.getById(session.id)
+      expect(updated?.status).toBe('active')
+
+      // 段階5 は実行: ブランチ名が修正される
+      expect(updated?.branch).toBe('new-branch')
+      expect(worktreeService.getBranch).toHaveBeenCalledWith('/tmp/repo/.kurimats-worktrees/pane1')
+    })
   })
 })

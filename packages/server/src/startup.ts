@@ -28,9 +28,12 @@ export interface StartupOptions {
 /**
  * 現在の cwd が自身の管理する worktree 内かどうかを判定する
  *
- * - 'inside': cwd が既知の worktreePath 配下にある → 破壊的操作をスキップ
+ * - 'inside': cwd が既知の worktreePath 配下、またはパスに .kurimats-worktrees を含む → 破壊的操作をスキップ
  * - 'outside': cwd はどの worktree にも含まれない → 通常通り全段階実行
- * - 'unknown': 判定不能（realpathSync 例外、DB例外等） → fail-safe でスキップ
+ * - 'unknown': 判定不能（sessionStore.getAll() 例外等） → fail-safe でスキップ
+ *
+ * cwd/worktreePath の正規化は realpathSync を優先し、失敗時は path.resolve にフォールバック。
+ * これにより存在しないパスでも正規化して比較できる。
  */
 export function resolveSelfWorktreeVerdict(
   sessionStore: SessionStore,
