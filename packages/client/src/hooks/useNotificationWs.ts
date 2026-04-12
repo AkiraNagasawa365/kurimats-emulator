@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { NotificationMessage } from '@kurimats/shared'
 import { useSshStore } from '../stores/ssh-store'
+import { useResourceStore } from '../stores/resource-store'
 
 /** 簡易ユニークID生成 */
 function generateId(): string {
@@ -15,6 +16,7 @@ export function useNotificationWs() {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const { updateConnectionStatus, addNotification } = useSshStore()
+  const updateSnapshot = useResourceStore(s => s.updateSnapshot)
 
   useEffect(() => {
     let disposed = false
@@ -57,6 +59,9 @@ export function useNotificationWs() {
               read: false,
             })
             break
+          case 'resource_update':
+            updateSnapshot(msg.snapshot)
+            break
         }
       }
 
@@ -82,5 +87,5 @@ export function useNotificationWs() {
       wsRef.current?.close()
       wsRef.current = null
     }
-  }, [updateConnectionStatus, addNotification])
+  }, [updateConnectionStatus, addNotification, updateSnapshot])
 }
