@@ -1,12 +1,17 @@
 import { WebSocket, WebSocketServer } from 'ws'
 import type { SshManager } from '../services/ssh-manager.js'
-import type { NotificationMessage } from '@kurimats/shared'
+import type { PlaywrightRunner } from '../services/playwright-runner.js'
+import type { NotificationMessage, PlaywrightRunStatus } from '@kurimats/shared'
 
 /**
  * 通知WebSocketハンドラー
- * SSH接続状態の変更やリモートClaude通知をクライアントに中継する
+ * SSH接続状態の変更、リモートClaude通知、Playwright進捗をクライアントに中継する
  */
-export function setupNotificationWs(wss: WebSocketServer, sshManager: SshManager): void {
+export function setupNotificationWs(
+  wss: WebSocketServer,
+  sshManager: SshManager,
+  playwrightRunner?: PlaywrightRunner,
+): void {
   const clients = new Set<WebSocket>()
 
   /**
@@ -56,6 +61,19 @@ export function setupNotificationWs(wss: WebSocketServer, sshManager: SshManager
       }
     }
   })
+
+  // Playwrightテスト進捗を監視
+  if (playwrightRunner) {
+    playwrightRunner.on('progress', (instanceId: string, status: PlaywrightRunStatus, line?: string) => {
+      broadcast({
+        type: 'playwright_progress',
+        instanceId,
+        status,
+        line,
+        timestamp: Date.now(),
+      })
+    })
+  }
 
   // WebSocket接続処理
   wss.on('connection', (ws: WebSocket) => {

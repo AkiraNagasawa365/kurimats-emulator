@@ -18,3 +18,4 @@ export type NotificationMessage =
   | { type: 'connection_status'; host: string; status: 'online' | 'offline' | 'reconnecting' }
   | { type: 'attention_ring'; sessionId: string; active: boolean }
   | { type: 'port_detected'; sessionId: string; port: number; url: string }
+  | { type: 'playwright_progress'; instanceId: string; status: import('./types').PlaywrightRunStatus; line?: string; timestamp: number }
